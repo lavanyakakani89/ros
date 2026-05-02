@@ -26,6 +26,17 @@ export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return handlePayments(reply, () => Promise.resolve(service.verifyRazorpayPayment(input)));
   });
 
+  fastify.post("/api/payments/razorpay/webhook", async (request, reply) => {
+    const signature = request.headers["x-razorpay-signature"];
+    const input = {
+      rawBody: request.rawBody ?? "",
+      signature: Array.isArray(signature) ? signature[0] : signature,
+      event: request.body,
+    };
+
+    return handlePayments(reply, () => Promise.resolve(service.verifyRazorpayWebhook(input)));
+  });
+
   done();
 };
 

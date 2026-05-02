@@ -7,6 +7,12 @@ import Razorpay from "razorpay";
 import { PaymentsRepository } from "./payments.repository.js";
 import type { PaymentListQuery, RazorpayOrderInput, RazorpayVerifyInput, RecordPaymentInput } from "./payments.types.js";
 
+interface RazorpayWebhookInput {
+  rawBody: string;
+  signature: string | undefined;
+  event: unknown;
+}
+
 export class PaymentsError extends Error {
   constructor(
     message: string,
@@ -79,4 +85,35 @@ export class PaymentsService {
       verified: expectedSignature === input.signature,
     };
   }
+
+  verifyRazorpayWebhook(input: RazorpayWebhookInput) {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    if (!webhookSecret) {
+      throw new PaymentsError("Razorpay webhook secret is not configured", 501);
+    }
+
+    if (!input.signature) {
+      throw new PaymentsError("Missing Razorpay signature", 400);
+    }
+
+    const expectedSignature = createHmac("sha256", webhookSecret).update(input.rawBody).digest("hex");
+    if (expectedSignature !== input.signature) {
+      throw new PaymentsError("Invalid Razorpay webhook signature", 400);
+    }
+
+    return {
+      received: true,
+      event: readEventName(input.event),
+    };
+  }
+}
+
+function readEventName(event: unknown): string | undefined {
+  if (typeof event !== "object" || event === null || !("event" in event)) {
+    return undefined;
+  }
+
+  const eventName = event.event;
+  return typeof eventName === "string" ? eventName : undefined;
 }

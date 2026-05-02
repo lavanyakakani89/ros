@@ -5,7 +5,7 @@ import fp from "fastify-plugin";
 import { verifyRequestJwt } from "./auth.js";
 
 const tenantCacheTtlSeconds = 300;
-const publicRoutePrefixes = ["/health", "/api/health", "/metrics", "/api/auth/"];
+const publicRoutePrefixes = ["/health", "/api/health", "/metrics", "/api/auth/", "/api/payments/razorpay/webhook"];
 
 const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.addHook("preHandler", async (request, reply) => {

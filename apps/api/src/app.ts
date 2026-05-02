@@ -23,6 +23,23 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
   });
 
+  fastify.removeContentTypeParser("application/json");
+  fastify.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    const rawBody = body.toString("utf8");
+    request.rawBody = rawBody;
+
+    if (rawBody.trim() === "") {
+      done(null, null);
+      return;
+    }
+
+    try {
+      done(null, JSON.parse(rawBody) as unknown);
+    } catch (error) {
+      done(error as Error);
+    }
+  });
+
   await fastify.register(prismaPlugin);
   await fastify.register(redisPlugin);
   await fastify.register(minioPlugin);
