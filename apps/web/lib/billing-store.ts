@@ -17,13 +17,24 @@ interface BillingState {
   reset: () => void;
 }
 
+function createEmptyLine(): PosLine {
+  return {
+    id: crypto.randomUUID(),
+    productId: "",
+    productName: "",
+    quantity: 1,
+    sellingPrice: 0,
+    discount: 0,
+  };
+}
+
 const initialLines: PosLine[] = [
   {
     id: "line-1",
     productId: "",
-    productName: "Paracetamol 500",
-    quantity: 2,
-    sellingPrice: 22,
+    productName: "",
+    quantity: 1,
+    sellingPrice: 0,
     discount: 0,
   },
 ];
@@ -38,19 +49,12 @@ export const useBillingStore = create<BillingState>((set) => ({
     set((state) => ({
       lines: [
         ...state.lines,
-        {
-          id: crypto.randomUUID(),
-          productId: "",
-          productName: "",
-          quantity: 1,
-          sellingPrice: 0,
-          discount: 0,
-        },
+        createEmptyLine(),
       ],
     })),
   removeLine: (id) =>
     set((state) => ({
       lines: state.lines.filter((line) => line.id !== id),
     })),
-  reset: () => set({ lines: initialLines }),
+  reset: () => set({ lines: [createEmptyLine()] }),
 }));

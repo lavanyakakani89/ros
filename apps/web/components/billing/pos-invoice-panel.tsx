@@ -1,10 +1,11 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Receipt, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { createAuthenticatedApiClient, listProducts, refreshAuthSession } from "@/lib/api-client";
 import { useBillingStore } from "@/lib/billing-store";
-import { createAuthenticatedApiClient, refreshAuthSession } from "@/lib/api-client";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
 import { hasStoredAuthSession } from "@/lib/vertical-config";
 
@@ -13,6 +14,12 @@ export function PosInvoicePanel() {
   const [online, setOnline] = useState(true);
   const [queueCounts, setQueueCounts] = useState({ pending: 0, syncing: 0, failed: 0 });
   const [status, setStatus] = useState<string | null>(null);
+
+  const productsQuery = useQuery({
+    queryKey: ["products", "billing"],
+    queryFn: listProducts,
+  });
+  const products = productsQuery.data?.data ?? [];
 
   const totals = useMemo(() => {
     const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.sellingPrice, 0);
@@ -80,7 +87,7 @@ export function PosInvoicePanel() {
     };
 
     if (payload.items.length === 0) {
-      setStatus("Enter product IDs before confirming or syncing.");
+      setStatus("Choose at least one product before confirming.");
       return;
     }
 
@@ -104,10 +111,8 @@ export function PosInvoicePanel() {
       await createAuthenticatedApiClient().post("/billing/invoices", payload);
       setStatus("Invoice created.");
       reset();
-    } catch {
-      await queueInvoice(payload, "local-tenant");
-      setQueueCounts(await getPendingInvoiceCounts());
-      setStatus("Network issue. Invoice queued.");
+    } catch (caught) {
+      setStatus(caught instanceof Error ? caught.message : "Unable to create invoice.");
     }
   }
 
@@ -132,10 +137,10 @@ export function PosInvoicePanel() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[820px] text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-3 py-3 font-medium">Product ID</th>
+                <th className="px-3 py-3 font-medium">Product</th>
                 <th className="px-3 py-3 font-medium">Name</th>
                 <th className="px-3 py-3 font-medium">Qty</th>
                 <th className="px-3 py-3 font-medium">Rate</th>
@@ -147,12 +152,32 @@ export function PosInvoicePanel() {
             <tbody>
               {lines.map((line) => (
                 <tr key={line.id} className="border-t border-border">
-                  <td className="px-3 py-2"><input className="h-9 w-44 rounded-md border border-border px-2" value={line.productId} onChange={(event) => setLine(line.id, { productId: event.target.value })} /></td>
+                  <td className="px-3 py-2">
+                    <select
+                      className="h-9 w-52 rounded-md border border-border px-2"
+                      value={line.productId}
+                      onChange={(event) => {
+                        const product = products.find((item) => item.id === event.target.value);
+                        setLine(line.id, {
+                          productId: event.target.value,
+                          productName: product?.name ?? "",
+                          sellingPrice: product ? Number(product.sellingPrice) : 0,
+                        });
+                      }}
+                    >
+                      <option value="">{productsQuery.isLoading ? "Loading products" : "Select product"}</option>
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-3 py-2"><input className="h-9 w-48 rounded-md border border-border px-2" value={line.productName} onChange={(event) => setLine(line.id, { productName: event.target.value })} /></td>
                   <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="0" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: Number(event.target.value) })} /></td>
                   <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
                   <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.discount} onChange={(event) => setLine(line.id, { discount: Number(event.target.value) })} /></td>
-                  <td className="px-3 py-2 text-right font-semibold">₹{(line.quantity * line.sellingPrice - line.discount).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-semibold">INR {(line.quantity * line.sellingPrice - line.discount).toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">
                     <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100" onClick={() => removeLine(line.id)}>
                       <Trash2 className="size-4" aria-hidden="true" />
@@ -167,14 +192,14 @@ export function PosInvoicePanel() {
       <aside className="rounded-md border border-border bg-white p-4">
         <div className="text-sm font-semibold text-slate-950">Bill summary</div>
         <div className="mt-4 space-y-3 text-sm">
-          <div className="flex justify-between"><span>Subtotal</span><span>₹{totals.subtotal.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>Discount</span><span>₹{totals.discount.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>CGST</span><span>₹{totals.cgst.toFixed(2)}</span></div>
-          <div className="flex justify-between"><span>SGST</span><span>₹{totals.sgst.toFixed(2)}</span></div>
-          <div className="flex justify-between border-t border-border pt-3 text-lg font-semibold"><span>Total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>Subtotal</span><span>INR {totals.subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>Discount</span><span>INR {totals.discount.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>CGST</span><span>INR {totals.cgst.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span>SGST</span><span>INR {totals.sgst.toFixed(2)}</span></div>
+          <div className="flex justify-between border-t border-border pt-3 text-lg font-semibold"><span>Total</span><span>INR {totals.grandTotal.toFixed(2)}</span></div>
         </div>
         <div className="mt-4 rounded-md border border-border bg-slate-50 p-3 text-xs text-slate-600">
-          Pending {queueCounts.pending} • Syncing {queueCounts.syncing} • Failed {queueCounts.failed}
+          Pending {queueCounts.pending} | Syncing {queueCounts.syncing} | Failed {queueCounts.failed}
         </div>
         {status ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{status}</div> : null}
         <button className="mt-5 h-11 w-full rounded-md bg-emerald-600 text-sm font-semibold text-white" onClick={() => void confirmInvoice()}>Confirm invoice</button>

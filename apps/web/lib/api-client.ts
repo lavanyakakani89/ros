@@ -26,6 +26,41 @@ export interface RegisterPayload {
   password: string;
 }
 
+export interface ProductPayload {
+  name: string;
+  sku?: string;
+  barcode?: string;
+  unit: string;
+  mrp: number;
+  sellingPrice: number;
+  purchasePrice?: number;
+  gstRate: number;
+  hsnCode?: string;
+  currentStock: number;
+  reorderLevel?: number;
+  verticalData?: Record<string, unknown>;
+}
+
+export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPrice" | "purchasePrice" | "gstRate" | "currentStock" | "reorderLevel"> {
+  id: string;
+  mrp: number | string;
+  sellingPrice: number | string;
+  purchasePrice?: number | string;
+  gstRate: number | string;
+  currentStock: number | string;
+  reorderLevel?: number | string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
 export async function login(payload: { tenantSlug: string; email: string; password: string }): Promise<AuthResponse> {
   return postJson<AuthResponse>("/auth/login", payload);
 }
@@ -74,7 +109,7 @@ export function createAuthenticatedApiClient() {
       const response = await fetchWithCookieAuth(path);
       return response.json() as Promise<T>;
     },
-    async post(path: string, payload: object) {
+    async post<T = unknown>(path: string, payload: object) {
       const response = await fetchWithCookieAuth(path, {
         method: "POST",
         headers: {
@@ -83,9 +118,17 @@ export function createAuthenticatedApiClient() {
         body: JSON.stringify(payload),
       });
 
-      return response.json() as Promise<unknown>;
+      return response.json() as Promise<T>;
     },
   };
+}
+
+export async function listProducts(): Promise<PaginatedResponse<ProductRecord>> {
+  return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>("/inventory/products?limit=100");
+}
+
+export async function createProduct(payload: ProductPayload): Promise<ProductRecord> {
+  return createAuthenticatedApiClient().post<ProductRecord>("/inventory/products", payload);
 }
 
 async function postJson<T>(path: string, payload: unknown): Promise<T> {
