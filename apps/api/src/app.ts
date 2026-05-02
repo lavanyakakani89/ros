@@ -6,6 +6,9 @@ import { minioPlugin } from "./plugins/minio.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { redisPlugin } from "./plugins/redis.js";
 import { tenantPlugin } from "./plugins/tenant.js";
+import { createExpiryAlertsWorker, scheduleExpiryAlerts } from "./jobs/expiry-alerts.job.js";
+import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
+import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { billingRoutes } from "./modules/billing/billing.routes.js";
 import { deliveryRoutes } from "./modules/delivery/delivery.routes.js";
@@ -53,6 +56,22 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(billingRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(deliveryRoutes);
+
+  if (process.env.ENABLE_WORKERS !== "false") {
+    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];
+
+    for (const worker of workers) {
+      worker.on("failed", (job, error) => {
+        fastify.log.error({ error, jobId: job?.id, queue: worker.name }, "Background job failed");
+      });
+    }
+
+    await scheduleExpiryAlerts();
+
+    fastify.addHook("onClose", async () => {
+      await Promise.all(workers.map((worker) => worker.close()));
+    });
+  }
 
   return fastify;
 }

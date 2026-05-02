@@ -32,6 +32,7 @@ export class InventoryRepository {
     const where: Prisma.ProductWhereInput = {
       tenantId,
       isActive: true,
+      ...(query.lowStock ? { reorderLevel: { not: null } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -42,6 +43,24 @@ export class InventoryRepository {
           }
         : {}),
     };
+
+    if (query.lowStock) {
+      const products = await this.prisma.product.findMany({
+        where,
+        orderBy: {
+          updatedAt: "desc",
+        },
+      });
+      const filteredProducts = products.filter((product) => product.reorderLevel !== null && product.currentStock.lte(product.reorderLevel));
+      const offset = (query.page - 1) * query.limit;
+
+      return {
+        data: filteredProducts.slice(offset, offset + query.limit),
+        page: query.page,
+        limit: query.limit,
+        total: filteredProducts.length,
+      };
+    }
 
     const [total, products] = await Promise.all([
       this.prisma.product.count({ where }),
@@ -55,15 +74,11 @@ export class InventoryRepository {
       }),
     ]);
 
-    const filteredProducts = query.lowStock
-      ? products.filter((product) => product.reorderLevel !== null && product.currentStock.lte(product.reorderLevel))
-      : products;
-
     return {
-      data: filteredProducts,
+      data: products,
       page: query.page,
       limit: query.limit,
-      total: query.lowStock ? filteredProducts.length : total,
+      total,
     };
   }
 

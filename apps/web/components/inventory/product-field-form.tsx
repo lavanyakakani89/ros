@@ -27,17 +27,18 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
     return { base, vertical };
   }, [verticalConfig.productFields]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setStatus(null);
     setError(null);
     setSaving(true);
 
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
 
     try {
       await createProduct(toProductPayload(form, verticalConfig.productFields));
-      event.currentTarget.reset();
+      formElement.reset();
       setStatus("Product saved.");
       onCreated?.();
     } catch (caught) {
@@ -51,32 +52,32 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
     <section className="rounded-md border border-border bg-white">
       <form onSubmit={handleSubmit}>
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <div className="text-sm font-semibold text-slate-950">Product entry</div>
-          <div className="text-xs text-slate-500">{verticalConfig.displayName}</div>
-        </div>
-        <button className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white" disabled={saving}>
-          {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
-          {saving ? "Saving" : "Save"}
-        </button>
-        </div>
-      <div className="grid gap-4 p-4 lg:grid-cols-2">
-        {groupedFields.base.map((field) => (
-          <DynamicField key={field.key} field={field} />
-        ))}
-        {groupedFields.vertical.length > 0 ? (
-          <div className="border-t border-border pt-4 lg:col-span-2">
-            <div className="mb-3 text-xs font-semibold uppercase text-slate-500">{verticalConfig.displayName} fields</div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {groupedFields.vertical.map((field) => (
-                <DynamicField key={field.key} field={field} />
-              ))}
-            </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Product entry</div>
+            <div className="text-xs text-slate-500">{verticalConfig.displayName}</div>
           </div>
-        ) : null}
-        {status ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 lg:col-span-2">{status}</div> : null}
-        {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 lg:col-span-2">{error}</div> : null}
-      </div>
+          <button className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white" disabled={saving}>
+            {saving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
+            {saving ? "Saving" : "Save"}
+          </button>
+        </div>
+        <div className="grid gap-4 p-4 lg:grid-cols-2">
+          {groupedFields.base.map((field) => (
+            <DynamicField key={field.key} field={field} />
+          ))}
+          {groupedFields.vertical.length > 0 ? (
+            <div className="border-t border-border pt-4 lg:col-span-2">
+              <div className="mb-3 text-xs font-semibold uppercase text-slate-500">{verticalConfig.displayName} fields</div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                {groupedFields.vertical.map((field) => (
+                  <DynamicField key={field.key} field={field} />
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {status ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 lg:col-span-2">{status}</div> : null}
+          {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 lg:col-span-2">{error}</div> : null}
+        </div>
       </form>
     </section>
   );
@@ -145,12 +146,12 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[]): Pro
     mrp: requireNumber(payload.mrp, "MRP is required"),
     sellingPrice: requireNumber(payload.sellingPrice, "Selling price is required"),
     gstRate: requireNumber(payload.gstRate, "GST rate is required"),
-    currentStock: Number(payload.currentStock ?? 0),
+    currentStock: payload.currentStock ?? 0,
     ...(payload.sku ? { sku: payload.sku } : {}),
     ...(payload.barcode ? { barcode: payload.barcode } : {}),
-    ...(payload.purchasePrice !== undefined ? { purchasePrice: Number(payload.purchasePrice) } : {}),
+    ...(payload.purchasePrice !== undefined ? { purchasePrice: payload.purchasePrice } : {}),
     ...(payload.hsnCode ? { hsnCode: payload.hsnCode } : {}),
-    ...(payload.reorderLevel !== undefined ? { reorderLevel: Number(payload.reorderLevel) } : {}),
+    ...(payload.reorderLevel !== undefined ? { reorderLevel: payload.reorderLevel } : {}),
     ...(payload.verticalData ? { verticalData: payload.verticalData } : {}),
   };
 }
@@ -164,7 +165,7 @@ function normalizeFieldValue(field: VerticalField, value: FormDataEntryValue | b
     return Number(value);
   }
 
-  return value.toString();
+  return typeof value === "string" ? value : value.name;
 }
 
 function setProductValue(payload: Partial<ProductPayload>, key: string, value: string | number | boolean): void {

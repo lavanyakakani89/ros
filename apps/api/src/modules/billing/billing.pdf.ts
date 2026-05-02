@@ -17,6 +17,7 @@ export async function generateGstInvoicePdf(input: {
   const html = template({
     invoice: input.invoice,
     tenant: input.tenant,
+    invoiceDate: input.invoice.invoiceDate.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
     items: input.invoice.items.map((item) => ({
       ...item,
       quantity: item.quantity.toString(),
@@ -40,6 +41,7 @@ export async function generateGstInvoicePdf(input: {
   });
 
   const browser = await puppeteer.launch({
+    ...(process.env.PUPPETEER_EXECUTABLE_PATH ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH } : {}),
     args: ["--no-sandbox"],
   });
 
@@ -96,7 +98,7 @@ function getTemplate(): string {
       <div>
         <div class="title">GST Invoice</div>
         <div class="muted">Invoice: {{invoice.invoiceNumber}}</div>
-        <div class="muted">Date: {{invoice.invoiceDate}}</div>
+        <div class="muted">Date: {{invoiceDate}}</div>
         <div class="muted">Generated: {{generatedAt}}</div>
       </div>
     </section>
