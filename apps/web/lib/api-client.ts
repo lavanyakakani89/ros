@@ -1,6 +1,7 @@
 import type { TenantVertical, VerticalConfig } from "@retailos/shared";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/api";
+const apiBaseUrl =
+  process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "development" ? "http://localhost:3001/api" : "/api");
 
 export interface AuthUser {
   id: string;
