@@ -1,0 +1,40 @@
+{
+  "name": "@retailos/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint app components lib tailwind.config.ts",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@retailos/eslint-config": "workspace:*",
+    "@retailos/shared": "workspace:*",
+    "@retailos/vertical-configs": "workspace:*",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.0",
+    "babel-loader": "^10.1.1",
+    "eslint-config-next": "14",
+    "postcss": "^8.5.13",
+    "tailwindcss": "3",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.100.8",
+    "clsx": "^2.1.1",
+    "dexie": "^4.4.2",
+    "lucide-react": "^1.14.0",
+    "next": "14",
+    "next-pwa": "^5.6.0",
+    "react": "18",
+    "react-dom": "18",
+    "recharts": "^3.8.1",
+    "tailwind-merge": "^3.5.0",
+    "zustand": "^5.0.12"
+  }
+}

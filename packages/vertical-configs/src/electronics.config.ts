@@ -1,0 +1,48 @@
+import type { VerticalConfig } from "@retailos/shared";
+
+export const electronicsConfig: VerticalConfig = {
+  vertical: "ELECTRONICS",
+  displayName: "Electronics / Mobile store",
+  icon: "smartphone",
+  modules: {
+    billing: true,
+    inventory: true,
+    delivery: true,
+    payments: true,
+    purchaseOrders: true,
+    suppliers: true,
+    reports: true,
+    customers: true,
+  },
+  productFields: [
+    { key: "name", label: "Product name", type: "text", required: true },
+    { key: "sku", label: "SKU / Model code", type: "text", required: true },
+    { key: "barcode", label: "Barcode", type: "text", required: false },
+    { key: "unit", label: "Unit", type: "select", required: true, options: ["piece"] },
+    { key: "mrp", label: "MRP (₹)", type: "decimal", required: true },
+    { key: "sellingPrice", label: "Selling price (₹)", type: "decimal", required: true },
+    { key: "purchasePrice", label: "Purchase price (₹)", type: "decimal", required: false },
+    { key: "gstRate", label: "GST %", type: "select", required: true, options: ["5", "12", "18", "28"] },
+    { key: "hsnCode", label: "HSN code", type: "text", required: false },
+    { key: "reorderLevel", label: "Reorder level", type: "decimal", required: false },
+    { key: "verticalData.brand", label: "Brand", type: "text", required: false, vertical: true },
+    { key: "verticalData.serialNumber", label: "Serial number", type: "text", required: false, vertical: true },
+    { key: "verticalData.imei", label: "IMEI", type: "text", required: false, vertical: true },
+    { key: "verticalData.warrantyMonths", label: "Warranty months", type: "number", required: false, vertical: true },
+  ],
+  billingFields: [
+    { key: "verticalData.customerGadgetSerial", label: "Device serial / IMEI", type: "text", required: false, vertical: true },
+  ],
+  billTemplate: "electronics-gst-bill",
+  reportTemplates: ["daily-sales", "stock-report", "warranty-report", "serial-stock-report"],
+  navigation: [
+    { label: "Billing", icon: "receipt", href: "/billing" },
+    { label: "Inventory", icon: "smartphone", href: "/inventory" },
+    { label: "Warranty", icon: "shield", href: "/inventory/warranty" },
+    { label: "Delivery", icon: "truck", href: "/delivery" },
+    { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
+};

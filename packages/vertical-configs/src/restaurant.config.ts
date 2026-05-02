@@ -1,0 +1,47 @@
+import type { VerticalConfig } from "@retailos/shared";
+
+export const restaurantConfig: VerticalConfig = {
+  vertical: "RESTAURANT",
+  displayName: "Restaurant / Cafe",
+  icon: "utensils",
+  modules: {
+    billing: true,
+    inventory: true,
+    delivery: true,
+    payments: true,
+    purchaseOrders: false,
+    suppliers: true,
+    reports: true,
+    customers: true,
+  },
+  productFields: [
+    { key: "name", label: "Menu item name", type: "text", required: true },
+    { key: "sku", label: "Item code", type: "text", required: false },
+    { key: "barcode", label: "Barcode", type: "text", required: false },
+    { key: "unit", label: "Unit", type: "select", required: true, options: ["plate", "piece", "glass", "bowl", "kg", "litre"] },
+    { key: "mrp", label: "Menu price (₹)", type: "decimal", required: true },
+    { key: "sellingPrice", label: "Selling price (₹)", type: "decimal", required: true },
+    { key: "purchasePrice", label: "Food cost (₹)", type: "decimal", required: false },
+    { key: "gstRate", label: "GST %", type: "select", required: true, options: ["0", "5", "18"] },
+    { key: "hsnCode", label: "SAC / HSN code", type: "text", required: false },
+    { key: "reorderLevel", label: "Reorder level", type: "decimal", required: false },
+    { key: "verticalData.course", label: "Course", type: "select", required: false, vertical: true, options: ["Starter", "Main", "Dessert", "Beverage"] },
+    { key: "verticalData.foodType", label: "Food type", type: "select", required: false, vertical: true, options: ["Veg", "Egg", "Non-veg"] },
+    { key: "verticalData.prepTimeMinutes", label: "Prep time minutes", type: "number", required: false, vertical: true },
+  ],
+  billingFields: [
+    { key: "verticalData.tableNumber", label: "Table number", type: "text", required: false, vertical: true },
+    { key: "verticalData.orderType", label: "Order type", type: "select", required: true, vertical: true, options: ["Dine-in", "Takeaway", "Delivery"] },
+  ],
+  billTemplate: "restaurant-gst-bill",
+  reportTemplates: ["daily-sales", "item-sales", "kitchen-report", "delivery-report"],
+  navigation: [
+    { label: "Billing", icon: "receipt", href: "/billing" },
+    { label: "Menu", icon: "utensils", href: "/inventory" },
+    { label: "Delivery", icon: "truck", href: "/delivery" },
+    { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Suppliers", icon: "building", href: "/suppliers" },
+    { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
+};

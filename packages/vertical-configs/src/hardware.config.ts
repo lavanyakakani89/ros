@@ -1,0 +1,47 @@
+import type { VerticalConfig } from "@retailos/shared";
+
+export const hardwareConfig: VerticalConfig = {
+  vertical: "HARDWARE",
+  displayName: "Hardware / Building materials",
+  icon: "hammer",
+  modules: {
+    billing: true,
+    inventory: true,
+    delivery: true,
+    payments: true,
+    purchaseOrders: true,
+    suppliers: true,
+    reports: true,
+    customers: true,
+  },
+  productFields: [
+    { key: "name", label: "Material name", type: "text", required: true },
+    { key: "sku", label: "SKU / Item code", type: "text", required: false },
+    { key: "barcode", label: "Barcode", type: "text", required: false },
+    { key: "unit", label: "Primary unit", type: "select", required: true, options: ["piece", "kg", "metre", "foot", "bag", "box"] },
+    { key: "mrp", label: "MRP (₹)", type: "decimal", required: true },
+    { key: "sellingPrice", label: "Selling price (₹)", type: "decimal", required: true },
+    { key: "purchasePrice", label: "Purchase price (₹)", type: "decimal", required: false },
+    { key: "gstRate", label: "GST %", type: "select", required: true, options: ["0", "5", "12", "18", "28"] },
+    { key: "hsnCode", label: "HSN code", type: "text", required: false },
+    { key: "reorderLevel", label: "Reorder level", type: "decimal", required: false },
+    { key: "verticalData.brand", label: "Brand", type: "text", required: false, vertical: true },
+    { key: "verticalData.grade", label: "Grade / gauge", type: "text", required: false, vertical: true },
+    { key: "verticalData.conversionFactor", label: "Unit conversion factor", type: "decimal", required: false, vertical: true },
+  ],
+  billingFields: [
+    { key: "verticalData.siteName", label: "Site name", type: "text", required: false, vertical: true },
+  ],
+  billTemplate: "hardware-gst-bill",
+  reportTemplates: ["daily-sales", "stock-report", "purchase-report", "contractor-ledger"],
+  navigation: [
+    { label: "Billing", icon: "receipt", href: "/billing" },
+    { label: "Inventory", icon: "boxes", href: "/inventory" },
+    { label: "Delivery", icon: "truck", href: "/delivery" },
+    { label: "Customers", icon: "users", href: "/customers" },
+    { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
+};

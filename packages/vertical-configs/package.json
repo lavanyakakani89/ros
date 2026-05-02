@@ -1,0 +1,23 @@
+{
+  "name": "@retailos/vertical-configs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/packages/vertical-configs/src/index.d.ts",
+  "exports": {
+    ".": "./dist/packages/vertical-configs/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/fix-esm-imports.mjs",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@retailos/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@retailos/eslint-config": "workspace:*",
+    "typescript": "^5.7.2"
+  }
+}

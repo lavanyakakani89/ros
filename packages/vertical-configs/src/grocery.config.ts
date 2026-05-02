@@ -1,0 +1,48 @@
+import type { VerticalConfig } from "@retailos/shared";
+
+export const groceryConfig: VerticalConfig = {
+  vertical: "GROCERY",
+  displayName: "Grocery / Kirana store",
+  icon: "shopping-basket",
+  modules: {
+    billing: true,
+    inventory: true,
+    delivery: true,
+    payments: true,
+    purchaseOrders: true,
+    suppliers: true,
+    reports: true,
+    customers: true,
+  },
+  productFields: [
+    { key: "name", label: "Item name", type: "text", required: true },
+    { key: "sku", label: "SKU / Item code", type: "text", required: false },
+    { key: "barcode", label: "Barcode", type: "text", required: false },
+    { key: "unit", label: "Unit", type: "select", required: true, options: ["piece", "kg", "gram", "litre", "ml", "packet"] },
+    { key: "mrp", label: "MRP (₹)", type: "decimal", required: true },
+    { key: "sellingPrice", label: "Selling price (₹)", type: "decimal", required: true },
+    { key: "purchasePrice", label: "Purchase price (₹)", type: "decimal", required: false },
+    { key: "gstRate", label: "GST %", type: "select", required: true, options: ["0", "5", "12", "18"] },
+    { key: "hsnCode", label: "HSN code", type: "text", required: false },
+    { key: "reorderLevel", label: "Reorder level", type: "decimal", required: false },
+    { key: "verticalData.brand", label: "Brand", type: "text", required: false, vertical: true },
+    { key: "verticalData.category", label: "Category", type: "text", required: false, vertical: true },
+    { key: "verticalData.perishable", label: "Perishable", type: "boolean", required: false, vertical: true },
+  ],
+  billingFields: [],
+  expiryAlerts: {
+    enabled: true,
+    thresholds: [7, 15, 30],
+  },
+  billTemplate: "grocery-gst-bill",
+  reportTemplates: ["daily-sales", "stock-report", "purchase-report", "fast-moving-items"],
+  navigation: [
+    { label: "Billing", icon: "receipt", href: "/billing" },
+    { label: "Inventory", icon: "boxes", href: "/inventory" },
+    { label: "Delivery", icon: "truck", href: "/delivery" },
+    { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
+};

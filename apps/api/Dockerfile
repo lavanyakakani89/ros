@@ -1,0 +1,32 @@
+FROM node:20-bookworm-slim
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+ENV NODE_ENV=production
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+
+WORKDIR /app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git openssl \
+  && rm -rf /var/lib/apt/lists/* \
+  && corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/vertical-configs/package.json packages/vertical-configs/package.json
+COPY packages/eslint-config/package.json packages/eslint-config/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm --filter @retailos/shared build \
+  && pnpm --filter @retailos/vertical-configs build \
+  && pnpm --filter @retailos/api prisma:generate \
+  && pnpm --filter @retailos/api build
+
+EXPOSE 3001
+
+CMD ["pnpm", "--filter", "@retailos/api", "start"]

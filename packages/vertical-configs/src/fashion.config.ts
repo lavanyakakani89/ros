@@ -1,0 +1,47 @@
+import type { VerticalConfig } from "@retailos/shared";
+
+export const fashionConfig: VerticalConfig = {
+  vertical: "FASHION",
+  displayName: "Fashion / Apparel store",
+  icon: "shirt",
+  modules: {
+    billing: true,
+    inventory: true,
+    delivery: false,
+    payments: true,
+    purchaseOrders: true,
+    suppliers: true,
+    reports: true,
+    customers: true,
+  },
+  productFields: [
+    { key: "name", label: "Style name", type: "text", required: true },
+    { key: "sku", label: "Style code", type: "text", required: true },
+    { key: "barcode", label: "Barcode", type: "text", required: false },
+    { key: "unit", label: "Unit", type: "select", required: true, options: ["piece"] },
+    { key: "mrp", label: "MRP (₹)", type: "decimal", required: true },
+    { key: "sellingPrice", label: "Selling price (₹)", type: "decimal", required: true },
+    { key: "purchasePrice", label: "Purchase price (₹)", type: "decimal", required: false },
+    { key: "gstRate", label: "GST %", type: "select", required: true, options: ["5", "12", "18"] },
+    { key: "hsnCode", label: "HSN code", type: "text", required: false },
+    { key: "reorderLevel", label: "Reorder level", type: "decimal", required: false },
+    { key: "verticalData.brand", label: "Brand", type: "text", required: false, vertical: true },
+    { key: "verticalData.season", label: "Season", type: "select", required: false, vertical: true, options: ["Summer", "Monsoon", "Winter", "Festive"] },
+    { key: "verticalData.size", label: "Size", type: "select", required: false, vertical: true, options: ["XS", "S", "M", "L", "XL", "XXL", "Free size"] },
+    { key: "verticalData.color", label: "Color", type: "text", required: false, vertical: true },
+  ],
+  billingFields: [
+    { key: "verticalData.alterationRequired", label: "Alteration required", type: "boolean", required: false, vertical: true },
+  ],
+  billTemplate: "fashion-gst-bill",
+  reportTemplates: ["daily-sales", "stock-report", "size-wise-stock", "season-report"],
+  navigation: [
+    { label: "Billing", icon: "receipt", href: "/billing" },
+    { label: "Inventory", icon: "shirt", href: "/inventory" },
+    { label: "Customers", icon: "users", href: "/customers" },
+    { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Settings", icon: "settings", href: "/settings" },
+  ],
+};

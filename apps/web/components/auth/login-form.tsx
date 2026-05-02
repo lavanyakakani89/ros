@@ -1,0 +1,65 @@
+"use client";
+
+import { Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { getCurrentVerticalConfig, login } from "@/lib/api-client";
+import { storeAuthSession, storeVerticalConfig } from "@/lib/vertical-config";
+
+export function LoginForm() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const form = new FormData(event.currentTarget);
+
+    try {
+      const auth = await login({
+        tenantSlug: getFormString(form, "tenantSlug"),
+        email: getFormString(form, "email"),
+        password: getFormString(form, "password"),
+      });
+      const verticalConfig = await getCurrentVerticalConfig(auth.tokens.accessToken);
+      storeAuthSession(auth);
+      storeVerticalConfig(verticalConfig.config);
+      router.push("/billing");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to sign in");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+      <label className="block text-sm font-medium text-slate-700">
+        Shop slug
+        <input name="tenantSlug" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" defaultValue="demo-pharmacy" />
+      </label>
+      <label className="block text-sm font-medium text-slate-700">
+        Email
+        <input name="email" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" defaultValue="owner@demo-pharmacy.test" />
+      </label>
+      <label className="block text-sm font-medium text-slate-700">
+        Password
+        <input name="password" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" type="password" defaultValue="RetailOS@123" />
+      </label>
+      {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
+      <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 text-sm font-semibold text-white" disabled={loading}>
+        {loading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : null}
+        Sign in
+      </button>
+    </form>
+  );
+}
+
+function getFormString(form: FormData, name: string): string {
+  const value = form.get(name);
+  return typeof value === "string" ? value : "";
+}

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test-build:
+    name: Lint, test, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: postgresql://retailos:password@localhost:5432/retailos
+      REDIS_URL: redis://:password@localhost:6379
+      JWT_SECRET: ci-only-jwt-secret
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      NEXT_PUBLIC_APP_NAME: RetailOS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @retailos/api prisma:generate
+
+      - name: Lint, typecheck, and test
+        run: pnpm check
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Validate production compose
+        run: docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config

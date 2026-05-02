@@ -1,0 +1,18 @@
+{
+  "name": "RetailOS",
+  "short_name": "RetailOS",
+  "description": "Retail management for Indian SMB shops",
+  "start_url": "/billing",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
