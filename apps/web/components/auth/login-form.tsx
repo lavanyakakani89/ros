@@ -25,7 +25,7 @@ export function LoginForm() {
         email: getFormString(form, "email"),
         password: getFormString(form, "password"),
       });
-      const verticalConfig = await getCurrentVerticalConfig(auth.tokens.accessToken);
+      const verticalConfig = await getCurrentVerticalConfig();
       storeAuthSession(auth);
       storeVerticalConfig(verticalConfig.config);
       router.push("/billing");

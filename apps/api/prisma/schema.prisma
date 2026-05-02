@@ -25,6 +25,7 @@ model Tenant {
   stockAdjustments   StockAdjustment[]
   customers          Customer[]
   invoices           Invoice[]
+  invoiceCounters    InvoiceCounter[]
   invoiceItems       InvoiceItem[]
   deliveries         Delivery[]
   payments           Payment[]
@@ -199,6 +200,17 @@ model Invoice {
   @@index([tenantId, invoiceDate])
   @@index([tenantId, customerId])
   @@map("invoices")
+}
+
+model InvoiceCounter {
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  date      String
+  nextSeq   Int      @default(1) @map("next_seq")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@id([tenantId, date])
+  @@map("invoice_counters")
 }
 
 model InvoiceItem {

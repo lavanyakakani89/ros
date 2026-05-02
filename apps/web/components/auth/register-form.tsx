@@ -41,7 +41,7 @@ export function RegisterForm({ initialVertical }: Readonly<{ initialVertical: Te
         ownerPhone: getFormString(form, "phone"),
         password: getFormString(form, "password"),
       });
-      const verticalConfig = await getCurrentVerticalConfig(auth.tokens.accessToken);
+      const verticalConfig = await getCurrentVerticalConfig();
       storeAuthSession(auth);
       storeVerticalConfig(verticalConfig.config);
       router.push("/billing");

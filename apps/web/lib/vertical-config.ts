@@ -5,23 +5,13 @@ const verticalConfigStorageKey = "retailos.verticalConfig";
 
 export function storeAuthSession(input: {
   user: unknown;
-  tokens: {
-    accessToken: string;
-    refreshToken: string;
-    expiresIn: string;
-  };
 }) {
   window.localStorage.setItem(authStorageKey, JSON.stringify(input));
 }
 
-export function getAccessToken(): string | null {
+export function hasStoredAuthSession(): boolean {
   const raw = window.localStorage.getItem(authStorageKey);
-  if (!raw) {
-    return null;
-  }
-
-  const parsed = JSON.parse(raw) as { tokens?: { accessToken?: string } };
-  return parsed.tokens?.accessToken ?? null;
+  return Boolean(raw);
 }
 
 export function storeVerticalConfig(config: VerticalConfig) {

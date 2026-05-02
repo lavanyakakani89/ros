@@ -10,6 +10,8 @@ coverage/
 *.log
 pnpm-debug.log*
 *.tsbuildinfo
+whatsapp-session/
+*.session
 apps/web/public/sw.js
 apps/web/public/workbox-*.js
 apps/web/public/fallback-*.js

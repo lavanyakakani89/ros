@@ -82,6 +82,10 @@ export class AuthService {
   }
 
   async logout(input: LogoutInput): Promise<void> {
+    if (!input.refreshToken) {
+      return;
+    }
+
     const parsed = parseRefreshToken(input.refreshToken);
     await this.repository.revokeRefreshToken(parsed.id);
   }

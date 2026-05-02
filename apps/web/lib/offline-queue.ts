@@ -43,8 +43,14 @@ export async function getPendingInvoiceCounts() {
   return { pending, syncing, failed };
 }
 
-export async function syncPendingInvoices(apiClient: { post: (path: string, payload: object) => Promise<unknown> }) {
+export async function syncPendingInvoices(getApiClient: () => Promise<{ post: (path: string, payload: object) => Promise<unknown> }>) {
   const pending = await offlineDB.pendingInvoices.where("syncStatus").equals("pending").toArray();
+
+  if (pending.length === 0) {
+    return;
+  }
+
+  const apiClient = await getApiClient();
 
   for (const invoice of pending) {
     try {

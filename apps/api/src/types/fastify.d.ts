@@ -1,7 +1,7 @@
 import type { PrismaClient, Tenant, UserRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest as BaseFastifyRequest } from "fastify";
 import type { Client } from "minio";
-import type Redis from "ioredis";
+import type { Redis } from "ioredis";
 
 declare module "fastify" {
   interface FastifyInstance {

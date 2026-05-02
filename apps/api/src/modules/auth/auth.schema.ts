@@ -29,7 +29,9 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(32),
 });
 
-export const logoutSchema = refreshSchema;
+export const logoutSchema = z.object({
+  refreshToken: z.string().min(32).optional(),
+});
 
 export type RegisterRequest = z.infer<typeof registerSchema>;
 export type LoginRequest = z.infer<typeof loginSchema>;

@@ -5,18 +5,6 @@ import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
 export class BillingRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async countInvoicesForDate(tenantId: string, start: Date, end: Date): Promise<number> {
-    return this.prisma.invoice.count({
-      where: {
-        tenantId,
-        invoiceDate: {
-          gte: start,
-          lt: end,
-        },
-      },
-    });
-  }
-
   async findProducts(tenantId: string, productIds: string[]) {
     return this.prisma.product.findMany({
       where: {
@@ -31,32 +19,54 @@ export class BillingRepository {
 
   async createInvoice(input: {
     tenantId: string;
-    invoiceNumber: string;
+    datePart: string;
     invoice: CreateInvoiceInput;
     totals: InvoiceTotals;
     items: Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput[];
   }) {
-    return this.prisma.invoice.create({
-      data: {
-        tenantId: input.tenantId,
-        invoiceNumber: input.invoiceNumber,
-        paymentMode: input.invoice.paymentMode,
-        subtotal: input.totals.subtotal,
-        totalDiscount: input.totals.totalDiscount,
-        totalCgst: input.totals.totalCgst,
-        totalSgst: input.totals.totalSgst,
-        totalIgst: 0,
-        grandTotal: input.totals.grandTotal,
-        amountDue: input.totals.grandTotal,
-        ...(input.invoice.customerId ? { customerId: input.invoice.customerId } : {}),
-        ...(input.invoice.dueDate ? { dueDate: input.invoice.dueDate } : {}),
-        ...(input.invoice.verticalData ? { verticalData: input.invoice.verticalData as Prisma.InputJsonValue } : {}),
-        ...(input.invoice.notes ? { notes: input.invoice.notes } : {}),
-        items: {
-          create: input.items,
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.invoiceCounter.upsert({
+        where: {
+          tenantId_date: {
+            tenantId: input.tenantId,
+            date: input.datePart,
+          },
         },
-      },
-      include: invoiceInclude,
+        create: {
+          tenantId: input.tenantId,
+          date: input.datePart,
+          nextSeq: 2,
+        },
+        update: {
+          nextSeq: {
+            increment: 1,
+          },
+        },
+      });
+      const sequence = counter.nextSeq - 1;
+
+      return tx.invoice.create({
+        data: {
+          tenantId: input.tenantId,
+          invoiceNumber: `INV-${input.datePart}-${String(sequence).padStart(4, "0")}`,
+          paymentMode: input.invoice.paymentMode,
+          subtotal: input.totals.subtotal,
+          totalDiscount: input.totals.totalDiscount,
+          totalCgst: input.totals.totalCgst,
+          totalSgst: input.totals.totalSgst,
+          totalIgst: 0,
+          grandTotal: input.totals.grandTotal,
+          amountDue: input.totals.grandTotal,
+          ...(input.invoice.customerId ? { customerId: input.invoice.customerId } : {}),
+          ...(input.invoice.dueDate ? { dueDate: input.invoice.dueDate } : {}),
+          ...(input.invoice.verticalData ? { verticalData: input.invoice.verticalData as Prisma.InputJsonValue } : {}),
+          ...(input.invoice.notes ? { notes: input.invoice.notes } : {}),
+          items: {
+            create: input.items,
+          },
+        },
+        include: invoiceInclude,
+      });
     });
   }
 
@@ -173,20 +183,26 @@ export class BillingRepository {
         return null;
       }
 
-      for (const item of invoice.items) {
-        const product = await tx.product.findFirst({
-          where: {
-            id: item.productId,
-            tenantId,
-            isActive: true,
+      const products = await tx.product.findMany({
+        where: {
+          id: {
+            in: invoice.items.map((item) => item.productId),
           },
-        });
+          tenantId,
+          isActive: true,
+        },
+      });
+      const productById = new Map(products.map((product) => [product.id, product]));
 
+      for (const item of invoice.items) {
+        const product = productById.get(item.productId);
         if (!product || product.currentStock.lt(item.quantity)) {
           throw new Error(`Insufficient stock for ${item.productName}`);
         }
+      }
 
-        await tx.product.update({
+      await Promise.all(
+        invoice.items.map((item) => tx.product.update({
           where: {
             id: item.productId,
           },
@@ -195,8 +211,8 @@ export class BillingRepository {
               decrement: item.quantity,
             },
           },
-        });
-      }
+        })),
+      );
 
       return tx.invoice.update({
         where: {

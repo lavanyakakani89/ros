@@ -12,11 +12,6 @@ export interface AuthUser {
 
 export interface AuthResponse {
   user: AuthUser;
-  tokens: {
-    accessToken: string;
-    refreshToken: string;
-    expiresIn: string;
-  };
 }
 
 export interface RegisterPayload {
@@ -38,11 +33,17 @@ export async function registerShop(payload: RegisterPayload): Promise<AuthRespon
   return postJson<AuthResponse>("/auth/register", payload);
 }
 
-export async function getCurrentVerticalConfig(accessToken: string): Promise<{ tenantId: string; config: VerticalConfig }> {
+export async function refreshAuthSession(): Promise<AuthResponse> {
+  return postJson<AuthResponse>("/auth/refresh", {});
+}
+
+export async function logout(): Promise<void> {
+  await postJson("/auth/logout", {});
+}
+
+export async function getCurrentVerticalConfig(): Promise<{ tenantId: string; config: VerticalConfig }> {
   const response = await fetch(`${apiBaseUrl}/vertical-config/current`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+    credentials: "include",
   });
 
   if (!response.ok) {
@@ -52,34 +53,20 @@ export async function getCurrentVerticalConfig(accessToken: string): Promise<{ t
   return response.json() as Promise<{ tenantId: string; config: VerticalConfig }>;
 }
 
-export function createAuthenticatedApiClient(accessToken: string) {
+export function createAuthenticatedApiClient() {
   return {
     async get<T>(path: string) {
-      const response = await fetch(`${apiBaseUrl}${path}`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
-
+      const response = await fetchWithCookieAuth(path);
       return response.json() as Promise<T>;
     },
     async post(path: string, payload: object) {
-      const response = await fetch(`${apiBaseUrl}${path}`, {
+      const response = await fetchWithCookieAuth(path, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(payload),
       });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response));
-      }
 
       return response.json() as Promise<unknown>;
     },
@@ -89,6 +76,7 @@ export function createAuthenticatedApiClient(accessToken: string) {
 async function postJson<T>(path: string, payload: unknown): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -100,6 +88,24 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...init,
+    credentials: "include",
+  });
+
+  if (response.status === 401 && retry) {
+    await refreshAuthSession();
+    return fetchWithCookieAuth(path, init, false);
+  }
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  return response;
 }
 
 async function readApiError(response: Response): Promise<string> {

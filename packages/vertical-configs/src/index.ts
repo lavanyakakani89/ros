@@ -1,11 +1,11 @@
 import type { TenantVertical, VerticalConfig } from "@retailos/shared";
 
-import { electronicsConfig } from "./electronics.config";
-import { fashionConfig } from "./fashion.config";
-import { groceryConfig } from "./grocery.config";
-import { hardwareConfig } from "./hardware.config";
-import { pharmacyConfig } from "./pharmacy.config";
-import { restaurantConfig } from "./restaurant.config";
+import { electronicsConfig } from "./electronics.config.js";
+import { fashionConfig } from "./fashion.config.js";
+import { groceryConfig } from "./grocery.config.js";
+import { hardwareConfig } from "./hardware.config.js";
+import { pharmacyConfig } from "./pharmacy.config.js";
+import { restaurantConfig } from "./restaurant.config.js";
 
 export { electronicsConfig, fashionConfig, groceryConfig, hardwareConfig, pharmacyConfig, restaurantConfig };
 

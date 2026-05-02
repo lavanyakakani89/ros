@@ -43,5 +43,5 @@ export interface RefreshInput {
 }
 
 export interface LogoutInput {
-  refreshToken: string;
+  refreshToken?: string | undefined;
 }

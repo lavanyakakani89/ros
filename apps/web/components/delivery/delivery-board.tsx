@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Truck } from "lucide-react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
-import { getAccessToken } from "@/lib/vertical-config";
+import { hasStoredAuthSession } from "@/lib/vertical-config";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 
@@ -36,15 +36,15 @@ const fallbackDeliveries: DeliveryItem[] = [
 ];
 
 export function DeliveryBoard() {
-  const accessToken = typeof window !== "undefined" ? getAccessToken() : null;
+  const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const deliveriesQuery = useQuery({
     queryKey: ["deliveries"],
     queryFn: async () => {
-      if (!accessToken) {
+      if (!hasSession) {
         return fallbackDeliveries;
       }
 
-      return createAuthenticatedApiClient(accessToken).get<DeliveryItem[]>("/delivery");
+      return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery");
     },
     staleTime: 30_000,
   });

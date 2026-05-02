@@ -25,12 +25,11 @@ export class BillingService {
   }
 
   async createInvoice(tenant: Tenant, input: CreateInvoiceInput) {
-    const invoiceNumber = await this.generateInvoiceNumber(tenant.id);
     const calculated = await this.calculateInvoice(tenant.id, input.items);
 
     return this.repository.createInvoice({
       tenantId: tenant.id,
-      invoiceNumber,
+      datePart: getInvoiceDatePart(),
       invoice: input,
       totals: calculated.totals,
       items: calculated.items,
@@ -178,17 +177,6 @@ export class BillingService {
     };
   }
 
-  private async generateInvoiceNumber(tenantId: string) {
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    const count = await this.repository.countInvoicesForDate(tenantId, start, end);
-    const datePart = now.toISOString().slice(0, 10).replaceAll("-", "");
-
-    return `INV-${datePart}-${String(count + 1).padStart(4, "0")}`;
-  }
 }
 
 function createInvoiceItem(
@@ -229,4 +217,13 @@ function createInvoiceItem(
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function getInvoiceDatePart(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date()).replaceAll("-", "");
 }

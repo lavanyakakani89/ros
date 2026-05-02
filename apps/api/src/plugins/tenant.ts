@@ -2,6 +2,8 @@ import type { Tenant } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import fp from "fastify-plugin";
 
+import { verifyRequestJwt } from "./auth.js";
+
 const tenantCacheTtlSeconds = 300;
 const publicRoutePrefixes = ["/health", "/api/health", "/metrics", "/api/auth/"];
 
@@ -12,7 +14,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
     }
 
     try {
-      await request.jwtVerify();
+      verifyRequestJwt(fastify, request);
     } catch {
       return reply.status(401).send({ error: "Unauthorized" });
     }
@@ -43,7 +45,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
     }
 
     request.tenant = tenant;
-    await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+    await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, FALSE)`;
   });
 
   done();

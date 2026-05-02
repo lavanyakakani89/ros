@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:verify-rls": "tsx prisma/verify-rls.ts",
     "prisma:seed": "tsx prisma/seed.ts",
     "start": "node dist/apps/api/src/server.js",
     "typecheck": "tsc --noEmit",

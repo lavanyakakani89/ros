@@ -4,9 +4,9 @@ import { Plus, Receipt, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useBillingStore } from "@/lib/billing-store";
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { createAuthenticatedApiClient, refreshAuthSession } from "@/lib/api-client";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
-import { getAccessToken } from "@/lib/vertical-config";
+import { hasStoredAuthSession } from "@/lib/vertical-config";
 
 export function PosInvoicePanel() {
   const { lines, setLine, addLine, removeLine, reset } = useBillingStore();
@@ -54,13 +54,15 @@ export function PosInvoicePanel() {
   }, []);
 
   async function syncNow() {
-    const accessToken = getAccessToken();
-    if (!accessToken) {
+    if (!hasStoredAuthSession()) {
       setStatus("Sign in before syncing queued invoices.");
       return;
     }
 
-    await syncPendingInvoices(createAuthenticatedApiClient(accessToken));
+    await syncPendingInvoices(async () => {
+      await refreshAuthSession();
+      return createAuthenticatedApiClient();
+    });
     setQueueCounts(await getPendingInvoiceCounts());
     setStatus("Offline queue synced.");
   }
@@ -90,8 +92,7 @@ export function PosInvoicePanel() {
       return;
     }
 
-    const accessToken = getAccessToken();
-    if (!accessToken) {
+    if (!hasStoredAuthSession()) {
       await queueInvoice(payload, "local-tenant");
       setQueueCounts(await getPendingInvoiceCounts());
       setStatus("Invoice queued until sign in.");
@@ -100,7 +101,7 @@ export function PosInvoicePanel() {
     }
 
     try {
-      await createAuthenticatedApiClient(accessToken).post("/billing/invoices", payload);
+      await createAuthenticatedApiClient().post("/billing/invoices", payload);
       setStatus("Invoice created.");
       reset();
     } catch {
