@@ -4,23 +4,74 @@ import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
 import { CreditCard } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { cn } from "@/lib/utils";
-import { getStoredVerticalConfig } from "@/lib/vertical-config";
 import { iconMap } from "@/components/shared/icon-map";
+import { getCurrentVerticalConfig } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+import {
+  getStoredAuthSession,
+  getStoredTenant,
+  getStoredVerticalConfig,
+  storeTenant,
+  storeVerticalConfig,
+  type StoredAuthSession,
+  type StoredTenant,
+} from "@/lib/vertical-config";
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
+  const router = useRouter();
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
+  const [tenant, setTenant] = useState<StoredTenant | null>(null);
+  const [session, setSession] = useState<StoredAuthSession | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
+    const storedTenant = getStoredTenant();
+    const storedSession = getStoredAuthSession();
+
     if (storedConfig) {
       setVerticalConfig(storedConfig);
     }
-  }, []);
+
+    if (storedTenant) {
+      setTenant(storedTenant);
+    }
+
+    if (storedSession) {
+      setSession(storedSession);
+    }
+
+    async function verifySession() {
+      try {
+        const current = await getCurrentVerticalConfig();
+        setTenant(current.tenant);
+        setVerticalConfig(current.config);
+        storeTenant(current.tenant);
+        storeVerticalConfig(current.config);
+        setCheckingSession(false);
+      } catch {
+        router.replace("/login");
+      }
+    }
+
+    void verifySession();
+  }, [router]);
+
+  if (checkingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface text-sm font-medium text-slate-600">
+        Loading RetailOS
+      </div>
+    );
+  }
+
+  const tenantName = tenant?.name ?? "RetailOS";
+  const userName = session?.user?.name ?? "Owner";
+  const initials = getInitials(userName);
 
   return (
     <div className="min-h-screen bg-surface text-ink">
@@ -31,7 +82,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </div>
           <div>
             <div className="text-sm font-semibold">RetailOS</div>
-            <div className="text-xs text-slate-500">{verticalConfig.displayName}</div>
+            <div className="text-xs text-slate-500">{tenantName}</div>
           </div>
         </div>
         <nav className="space-y-1 px-3 py-4">
@@ -59,13 +110,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       <div className="lg:pl-64">
         <header className="sticky top-0 z-10 border-b border-border bg-white/95 backdrop-blur">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">Demo Pharmacy</div>
-            <div className="text-xs text-slate-500">{verticalConfig.displayName} • GST enabled • INR</div>
-          </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-900">{tenantName}</div>
+              <div className="text-xs text-slate-500">{verticalConfig.displayName} | GST enabled | INR</div>
+            </div>
             <div className="flex items-center gap-2">
               <div className="hidden rounded-md border border-border px-3 py-1.5 text-xs text-slate-600 sm:block">Online</div>
-              <div className="flex size-9 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">DO</div>
+              <div className="flex size-9 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">{initials}</div>
             </div>
           </div>
           <nav className="flex gap-1 overflow-x-auto border-t border-border px-2 py-2 lg:hidden">
@@ -92,6 +143,17 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         <main className="px-4 py-5 sm:px-6">{children}</main>
       </div>
     </div>
+  );
+}
+
+function getInitials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "RO"
   );
 }
 

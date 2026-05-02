@@ -42,7 +42,14 @@ export async function logout(): Promise<void> {
   await postJson("/auth/logout", {});
 }
 
-export async function getCurrentVerticalConfig(): Promise<{ tenantId: string; config: VerticalConfig }> {
+export async function getCurrentVerticalConfig(): Promise<{
+  tenantId: string;
+  tenant: {
+    name: string;
+    slug: string;
+  };
+  config: VerticalConfig;
+}> {
   const response = await fetch(`${apiBaseUrl}/vertical-config/current`, {
     credentials: "include",
   });
@@ -51,7 +58,14 @@ export async function getCurrentVerticalConfig(): Promise<{ tenantId: string; co
     throw new Error(await readApiError(response));
   }
 
-  return response.json() as Promise<{ tenantId: string; config: VerticalConfig }>;
+  return response.json() as Promise<{
+    tenantId: string;
+    tenant: {
+      name: string;
+      slug: string;
+    };
+    config: VerticalConfig;
+  }>;
 }
 
 export function createAuthenticatedApiClient() {

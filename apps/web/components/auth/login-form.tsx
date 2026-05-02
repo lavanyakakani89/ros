@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { getCurrentVerticalConfig, login } from "@/lib/api-client";
-import { storeAuthSession, storeVerticalConfig } from "@/lib/vertical-config";
+import { storeAuthSession, storeTenant, storeVerticalConfig } from "@/lib/vertical-config";
 
 export function LoginForm() {
   const router = useRouter();
@@ -27,6 +27,7 @@ export function LoginForm() {
       });
       const verticalConfig = await getCurrentVerticalConfig();
       storeAuthSession(auth);
+      storeTenant(verticalConfig.tenant);
       storeVerticalConfig(verticalConfig.config);
       router.push("/billing");
     } catch (caught) {
@@ -40,15 +41,15 @@ export function LoginForm() {
     <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
       <label className="block text-sm font-medium text-slate-700">
         Shop slug
-        <input name="tenantSlug" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" defaultValue="demo-pharmacy" />
+        <input name="tenantSlug" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="your-shop-slug" required />
       </label>
       <label className="block text-sm font-medium text-slate-700">
         Email
-        <input name="email" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" defaultValue="owner@demo-pharmacy.test" />
+        <input name="email" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="owner@example.com" type="email" required />
       </label>
       <label className="block text-sm font-medium text-slate-700">
         Password
-        <input name="password" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" type="password" defaultValue="RetailOS@123" />
+        <input name="password" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" type="password" required />
       </label>
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
       <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 text-sm font-semibold text-white" disabled={loading}>

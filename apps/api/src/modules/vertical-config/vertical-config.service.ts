@@ -9,6 +9,10 @@ export class VerticalConfigService {
   getCurrentTenantConfig(tenant: Tenant): CurrentVerticalConfigResponse {
     return {
       tenantId: tenant.id,
+      tenant: {
+        name: tenant.name,
+        slug: tenant.slug,
+      },
       config: this.repository.getByVertical(tenant.vertical),
     };
   }
