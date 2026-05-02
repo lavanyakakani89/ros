@@ -2,7 +2,6 @@ FROM node:20-bookworm-slim
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
@@ -25,6 +24,8 @@ COPY . .
 RUN pnpm --filter @retailos/shared build \
   && pnpm --filter @retailos/vertical-configs build \
   && pnpm --filter @retailos/web build
+
+ENV NODE_ENV=production
 
 EXPOSE 3000
 

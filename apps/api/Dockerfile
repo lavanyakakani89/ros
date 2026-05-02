@@ -2,7 +2,6 @@ FROM node:20-bookworm-slim
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 
 WORKDIR /app
@@ -26,6 +25,8 @@ RUN pnpm --filter @retailos/shared build \
   && pnpm --filter @retailos/vertical-configs build \
   && pnpm --filter @retailos/api prisma:generate \
   && pnpm --filter @retailos/api build
+
+ENV NODE_ENV=production
 
 EXPOSE 3001
 
