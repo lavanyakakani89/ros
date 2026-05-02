@@ -1,4 +1,4 @@
-﻿-- CreateEnum
+-- CreateEnum
 CREATE TYPE "VerticalType" AS ENUM ('PHARMACY', 'GROCERY', 'FASHION', 'HARDWARE', 'ELECTRONICS', 'RESTAURANT');
 
 -- CreateEnum

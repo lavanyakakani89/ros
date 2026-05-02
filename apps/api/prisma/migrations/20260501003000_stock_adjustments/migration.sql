@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "stock_adjustments" (
     "id" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,

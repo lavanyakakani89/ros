@@ -1,4 +1,4 @@
-﻿-- CreateTable
+-- CreateTable
 CREATE TABLE "refresh_tokens" (
     "id" TEXT NOT NULL,
     "tenant_id" TEXT NOT NULL,
