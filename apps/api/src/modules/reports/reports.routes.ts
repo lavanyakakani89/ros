@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { FastifyPluginCallback } from "fastify";
 
 import { reportDateRangeSchema } from "./reports.schema.js";
@@ -20,10 +21,7 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.get("/api/reports/gst", async (request) => {
     const query = reportDateRangeSchema.parse(request.query);
     const summary = await service.getSalesSummary(request.tenant, query);
-    return {
-      gstByRate: summary.gstByRate,
-      hsnSummary: summary.hsnSummary,
-    };
+    return { gstByRate: summary.gstByRate, hsnSummary: summary.hsnSummary, totalCgst: summary.totalCgst, totalSgst: summary.totalSgst };
   });
 
   fastify.get("/api/reports/moving-items", async (request) => {
@@ -34,6 +32,16 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   fastify.get("/api/reports/inventory", async (request) => {
     return service.getInventorySummary(request.tenant);
+  });
+
+  fastify.get("/api/reports/pnl", async (request) => {
+    const query = reportDateRangeSchema.parse(request.query);
+    return service.getPnlReport(request.tenant, query);
+  });
+
+  fastify.get("/api/reports/day-end", async (request) => {
+    const { date } = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(request.query);
+    return service.getDayEndReport(request.tenant, date);
   });
 
   done();

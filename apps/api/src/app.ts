@@ -10,13 +10,22 @@ import { createExpiryAlertsWorker, scheduleExpiryAlerts } from "./jobs/expiry-al
 import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
 import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
+import { auditRoutes } from "./modules/audit/audit.routes.js";
 import { billingRoutes } from "./modules/billing/billing.routes.js";
+import { categoriesRoutes } from "./modules/categories/categories.routes.js";
+import { couponsRoutes } from "./modules/coupons/coupons.routes.js";
+import { creditNotesRoutes } from "./modules/credit-notes/credit-notes.routes.js";
 import { customersRoutes } from "./modules/customers/customers.routes.js";
 import { deliveryRoutes } from "./modules/delivery/delivery.routes.js";
+import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
+import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes.js";
+import { purchaseReturnsRoutes } from "./modules/purchase-returns/purchase-returns.routes.js";
+import { quotationsRoutes } from "./modules/quotations/quotations.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
+import { restaurantRoutes } from "./modules/restaurant/restaurant.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
@@ -74,15 +83,24 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await fastify.register(tenantPlugin);
   await fastify.register(verticalConfigRoutes);
+  await fastify.register(categoriesRoutes);
   await fastify.register(customersRoutes);
   await fastify.register(suppliersRoutes);
   await fastify.register(purchaseOrdersRoutes);
+  await fastify.register(purchaseReturnsRoutes);
   await fastify.register(inventoryRoutes);
   await fastify.register(billingRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(deliveryRoutes);
   await fastify.register(reportsRoutes);
   await fastify.register(settingsRoutes);
+  await fastify.register(expensesRoutes);
+  await fastify.register(creditNotesRoutes);
+  await fastify.register(quotationsRoutes);
+  await fastify.register(loyaltyRoutes);
+  await fastify.register(couponsRoutes);
+  await fastify.register(auditRoutes);
+  await fastify.register(restaurantRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
     const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];

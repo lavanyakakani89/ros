@@ -22,6 +22,7 @@ model Tenant {
   users              User[]
   products           Product[]
   productBatches     ProductBatch[]
+  productVariants    ProductVariant[]
   stockAdjustments   StockAdjustment[]
   customers          Customer[]
   invoices           Invoice[]
@@ -33,6 +34,24 @@ model Tenant {
   purchaseOrders     PurchaseOrder[]
   purchaseOrderItems PurchaseOrderItem[]
   refreshTokens      RefreshToken[]
+  categories         Category[]
+  expenses           Expense[]
+  creditNotes        CreditNote[]
+  creditNoteItems    CreditNoteItem[]
+  quotations         Quotation[]
+  quotationItems     QuotationItem[]
+  loyaltyAccounts    LoyaltyAccount[]
+  loyaltyTransactions LoyaltyTransaction[]
+  coupons            Coupon[]
+  auditLogs          AuditLog[]
+  supplierPayments   SupplierPayment[]
+  purchaseReturns    PurchaseReturn[]
+  restaurantTables   RestaurantTable[]
+  menuCategories     MenuCategory[]
+  menuModifierGroups MenuModifierGroup[]
+  kots               KOT[]
+  kotItems           KOTItem[]
+  recipes            Recipe[]
 
   @@map("tenants")
 }
@@ -87,35 +106,84 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+model Category {
+  id        String     @id @default(cuid())
+  tenantId  String     @map("tenant_id")
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  name      String
+  parentId  String?    @map("parent_id")
+  parent    Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryHierarchy")
+  sortOrder Int        @default(0) @map("sort_order")
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+  products  Product[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("categories")
+}
+
 model Product {
-  id               String            @id @default(cuid())
-  tenantId         String            @map("tenant_id")
-  tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  name             String
-  sku              String?
-  barcode          String?
-  unit             String            @default("piece")
-  mrp              Decimal           @db.Decimal(10, 2)
-  sellingPrice     Decimal           @map("selling_price") @db.Decimal(10, 2)
-  purchasePrice    Decimal?          @map("purchase_price") @db.Decimal(10, 2)
-  gstRate          Decimal           @map("gst_rate") @db.Decimal(5, 2)
-  hsnCode          String?           @map("hsn_code")
-  currentStock     Decimal           @default(0) @map("current_stock") @db.Decimal(10, 3)
-  reorderLevel     Decimal?          @map("reorder_level") @db.Decimal(10, 3)
-  supplierId       String?           @map("supplier_id")
-  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
-  isActive         Boolean           @default(true) @map("is_active")
-  verticalData     Json?             @map("vertical_data")
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-  invoiceItems     InvoiceItem[]
-  batches          ProductBatch[]
-  stockAdjustments StockAdjustment[]
+  id                 String              @id @default(cuid())
+  tenantId           String              @map("tenant_id")
+  tenant             Tenant              @relation(fields: [tenantId], references: [id])
+  name               String
+  sku                String?
+  barcode            String?
+  unit               String              @default("piece")
+  mrp                Decimal             @db.Decimal(10, 2)
+  sellingPrice       Decimal             @map("selling_price") @db.Decimal(10, 2)
+  purchasePrice      Decimal?            @map("purchase_price") @db.Decimal(10, 2)
+  gstRate            Decimal             @map("gst_rate") @db.Decimal(5, 2)
+  hsnCode            String?             @map("hsn_code")
+  currentStock       Decimal             @default(0) @map("current_stock") @db.Decimal(10, 3)
+  reorderLevel       Decimal?            @map("reorder_level") @db.Decimal(10, 3)
+  supplierId         String?             @map("supplier_id")
+  supplier           Supplier?           @relation(fields: [supplierId], references: [id])
+  categoryId         String?             @map("category_id")
+  category           Category?           @relation(fields: [categoryId], references: [id])
+  menuCategoryId     String?             @map("menu_category_id")
+  menuCategory       MenuCategory?       @relation(fields: [menuCategoryId], references: [id])
+  isActive           Boolean             @default(true) @map("is_active")
+  verticalData       Json?               @map("vertical_data")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  invoiceItems       InvoiceItem[]
+  batches            ProductBatch[]
+  variants           ProductVariant[]
+  stockAdjustments   StockAdjustment[]
   purchaseOrderItems PurchaseOrderItem[]
+  creditNoteItems    CreditNoteItem[]
+  recipesAsMenu      Recipe[]            @relation("RecipeProduct")
+  recipesAsIngredient Recipe[]           @relation("RecipeIngredient")
 
   @@unique([tenantId, sku])
   @@index([tenantId, barcode])
+  @@index([tenantId, categoryId])
   @@map("products")
+}
+
+model ProductVariant {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  productId     String   @map("product_id")
+  product       Product  @relation(fields: [productId], references: [id])
+  name          String
+  sku           String?
+  barcode       String?
+  sellingPrice  Decimal  @map("selling_price") @db.Decimal(10, 2)
+  purchasePrice Decimal? @map("purchase_price") @db.Decimal(10, 2)
+  mrp           Decimal  @db.Decimal(10, 2)
+  currentStock  Decimal  @default(0) @map("current_stock") @db.Decimal(10, 3)
+  attributes    Json?
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, productId])
+  @@index([tenantId, barcode])
+  @@map("product_variants")
 }
 
 model ProductBatch {
@@ -152,18 +220,22 @@ model StockAdjustment {
 }
 
 model Customer {
-  id             String     @id @default(cuid())
-  tenantId       String     @map("tenant_id")
-  tenant         Tenant     @relation(fields: [tenantId], references: [id])
-  name           String
-  phone          String
-  email          String?
-  address        String?
-  creditLimit    Decimal?   @map("credit_limit") @db.Decimal(10, 2)
-  outstandingDue Decimal    @default(0) @map("outstanding_due") @db.Decimal(10, 2)
-  createdAt      DateTime   @default(now()) @map("created_at")
-  invoices       Invoice[]
-  deliveries     Delivery[]
+  id              String           @id @default(cuid())
+  tenantId        String           @map("tenant_id")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  name            String
+  phone           String
+  email           String?
+  address         String?
+  creditLimit     Decimal?         @map("credit_limit") @db.Decimal(10, 2)
+  outstandingDue  Decimal          @default(0) @map("outstanding_due") @db.Decimal(10, 2)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  invoices        Invoice[]
+  deliveries      Delivery[]
+  creditNotes     CreditNote[]
+  quotations      Quotation[]
+  loyaltyAccount  LoyaltyAccount?
+  kots            KOT[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -171,32 +243,37 @@ model Customer {
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  tenantId      String        @map("tenant_id")
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  invoiceNumber String        @map("invoice_number")
-  customerId    String?       @map("customer_id")
-  customer      Customer?     @relation(fields: [customerId], references: [id])
-  invoiceDate   DateTime      @default(now()) @map("invoice_date")
-  dueDate       DateTime?     @map("due_date")
-  status        InvoiceStatus @default(DRAFT)
-  paymentMode   PaymentMode   @default(CASH) @map("payment_mode")
-  subtotal      Decimal       @db.Decimal(10, 2)
-  totalDiscount Decimal       @default(0) @map("total_discount") @db.Decimal(10, 2)
-  totalCgst     Decimal       @default(0) @map("total_cgst") @db.Decimal(10, 2)
-  totalSgst     Decimal       @default(0) @map("total_sgst") @db.Decimal(10, 2)
-  totalIgst     Decimal       @default(0) @map("total_igst") @db.Decimal(10, 2)
-  grandTotal    Decimal       @map("grand_total") @db.Decimal(10, 2)
-  amountPaid    Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
-  amountDue     Decimal       @default(0) @map("amount_due") @db.Decimal(10, 2)
-  verticalData  Json?         @map("vertical_data")
-  notes         String?
-  pdfUrl        String?       @map("pdf_url")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  items         InvoiceItem[]
-  payments      Payment[]
-  delivery      Delivery?
+  id                     String        @id @default(cuid())
+  tenantId               String        @map("tenant_id")
+  tenant                 Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceNumber          String        @map("invoice_number")
+  customerId             String?       @map("customer_id")
+  customer               Customer?     @relation(fields: [customerId], references: [id])
+  invoiceDate            DateTime      @default(now()) @map("invoice_date")
+  dueDate                DateTime?     @map("due_date")
+  status                 InvoiceStatus @default(DRAFT)
+  paymentMode            PaymentMode   @default(CASH) @map("payment_mode")
+  subtotal               Decimal       @db.Decimal(10, 2)
+  totalDiscount          Decimal       @default(0) @map("total_discount") @db.Decimal(10, 2)
+  totalCgst              Decimal       @default(0) @map("total_cgst") @db.Decimal(10, 2)
+  totalSgst              Decimal       @default(0) @map("total_sgst") @db.Decimal(10, 2)
+  totalIgst              Decimal       @default(0) @map("total_igst") @db.Decimal(10, 2)
+  grandTotal             Decimal       @map("grand_total") @db.Decimal(10, 2)
+  amountPaid             Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
+  amountDue              Decimal       @default(0) @map("amount_due") @db.Decimal(10, 2)
+  loyaltyPointsEarned    Int           @default(0) @map("loyalty_points_earned")
+  loyaltyPointsRedeemed  Int           @default(0) @map("loyalty_points_redeemed")
+  couponCode             String?       @map("coupon_code")
+  verticalData           Json?         @map("vertical_data")
+  notes                  String?
+  pdfUrl                 String?       @map("pdf_url")
+  createdAt              DateTime      @default(now()) @map("created_at")
+  updatedAt              DateTime      @updatedAt @map("updated_at")
+  items                  InvoiceItem[]
+  payments               Payment[]
+  delivery               Delivery?
+  creditNotes            CreditNote[]
+  kots                   KOT[]
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId, invoiceDate])
@@ -303,55 +380,59 @@ enum DeliveryStatus {
 }
 
 model Supplier {
-  id             String          @id @default(cuid())
-  tenantId       String          @map("tenant_id")
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  name           String
-  phone          String
-  email          String?
-  gstNumber      String?         @map("gst_number")
-  address        String?
-  createdAt      DateTime        @default(now()) @map("created_at")
-  products       Product[]
-  purchaseOrders PurchaseOrder[]
+  id               String            @id @default(cuid())
+  tenantId         String            @map("tenant_id")
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  name             String
+  phone            String
+  email            String?
+  gstNumber        String?           @map("gst_number")
+  address          String?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  products         Product[]
+  purchaseOrders   PurchaseOrder[]
+  supplierPayments SupplierPayment[]
+  purchaseReturns  PurchaseReturn[]
 
   @@index([tenantId])
   @@map("suppliers")
 }
 
 model PurchaseOrder {
-  id          String              @id @default(cuid())
-  tenantId    String              @map("tenant_id")
-  tenant      Tenant              @relation(fields: [tenantId], references: [id])
-  supplierId  String              @map("supplier_id")
-  supplier    Supplier            @relation(fields: [supplierId], references: [id])
-  poNumber    String              @map("po_number")
-  status      POStatus            @default(DRAFT)
-  totalAmount Decimal             @map("total_amount") @db.Decimal(10, 2)
-  receivedAt  DateTime?           @map("received_at")
-  createdAt   DateTime            @default(now()) @map("created_at")
-  items       PurchaseOrderItem[]
+  id              String              @id @default(cuid())
+  tenantId        String              @map("tenant_id")
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  supplierId      String              @map("supplier_id")
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
+  poNumber        String              @map("po_number")
+  status          POStatus            @default(DRAFT)
+  totalAmount     Decimal             @map("total_amount") @db.Decimal(10, 2)
+  receivedAt      DateTime?           @map("received_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  items           PurchaseOrderItem[]
+  supplierPayments SupplierPayment[]
+  purchaseReturns PurchaseReturn[]
 
   @@unique([tenantId, poNumber])
   @@map("purchase_orders")
 }
 
 model PurchaseOrderItem {
-  id              String        @id @default(cuid())
-  tenantId        String        @map("tenant_id")
-  tenant          Tenant        @relation(fields: [tenantId], references: [id])
-  purchaseOrderId String        @map("purchase_order_id")
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
-  productId       String?       @map("product_id")
-  product         Product?      @relation(fields: [productId], references: [id])
-  productName     String        @map("product_name")
-  quantity        Decimal       @db.Decimal(10, 3)
-  receivedQuantity Decimal      @default(0) @map("received_quantity") @db.Decimal(10, 3)
-  unit            String
-  purchasePrice   Decimal       @map("purchase_price") @db.Decimal(10, 2)
-  batchNumber     String?       @map("batch_number")
-  expiryDate      DateTime?     @map("expiry_date")
-  total           Decimal       @db.Decimal(10, 2)
+  id               String        @id @default(cuid())
+  tenantId         String        @map("tenant_id")
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  purchaseOrderId  String        @map("purchase_order_id")
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  productId        String?       @map("product_id")
+  product          Product?      @relation(fields: [productId], references: [id])
+  productName      String        @map("product_name")
+  quantity         Decimal       @db.Decimal(10, 3)
+  receivedQuantity Decimal       @default(0) @map("received_quantity") @db.Decimal(10, 3)
+  unit             String
+  purchasePrice    Decimal       @map("purchase_price") @db.Decimal(10, 2)
+  batchNumber      String?       @map("batch_number")
+  expiryDate       DateTime?     @map("expiry_date")
+  total            Decimal       @db.Decimal(10, 2)
 
   @@index([tenantId, purchaseOrderId])
   @@index([tenantId, productId])
@@ -364,4 +445,399 @@ enum POStatus {
   PARTIAL
   RECEIVED
   CANCELLED
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  category    String
+  description String
+  amount      Decimal  @db.Decimal(10, 2)
+  paidAt      DateTime @default(now()) @map("paid_at")
+  createdBy   String   @map("created_by")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, paidAt])
+  @@map("expenses")
+}
+
+model CreditNote {
+  id               String           @id @default(cuid())
+  tenantId         String           @map("tenant_id")
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  creditNoteNumber String           @map("credit_note_number")
+  originalInvoiceId String?         @map("original_invoice_id")
+  originalInvoice  Invoice?         @relation(fields: [originalInvoiceId], references: [id])
+  customerId       String?          @map("customer_id")
+  customer         Customer?        @relation(fields: [customerId], references: [id])
+  status           CreditNoteStatus @default(DRAFT)
+  subtotal         Decimal          @db.Decimal(10, 2)
+  totalDiscount    Decimal          @default(0) @map("total_discount") @db.Decimal(10, 2)
+  totalCgst        Decimal          @default(0) @map("total_cgst") @db.Decimal(10, 2)
+  totalSgst        Decimal          @default(0) @map("total_sgst") @db.Decimal(10, 2)
+  grandTotal       Decimal          @map("grand_total") @db.Decimal(10, 2)
+  reason           String?
+  notes            String?
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  items            CreditNoteItem[]
+
+  @@unique([tenantId, creditNoteNumber])
+  @@index([tenantId])
+  @@map("credit_notes")
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model CreditNoteItem {
+  id           String     @id @default(cuid())
+  tenantId     String     @map("tenant_id")
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  creditNoteId String     @map("credit_note_id")
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id])
+  productId    String     @map("product_id")
+  product      Product    @relation(fields: [productId], references: [id])
+  productName  String     @map("product_name")
+  quantity     Decimal    @db.Decimal(10, 3)
+  unit         String
+  sellingPrice Decimal    @map("selling_price") @db.Decimal(10, 2)
+  discount     Decimal    @default(0) @db.Decimal(10, 2)
+  gstRate      Decimal    @map("gst_rate") @db.Decimal(5, 2)
+  cgst         Decimal    @db.Decimal(10, 2)
+  sgst         Decimal    @db.Decimal(10, 2)
+  total        Decimal    @db.Decimal(10, 2)
+
+  @@index([tenantId, creditNoteId])
+  @@map("credit_note_items")
+}
+
+model Quotation {
+  id                    String          @id @default(cuid())
+  tenantId              String          @map("tenant_id")
+  tenant                Tenant          @relation(fields: [tenantId], references: [id])
+  quotationNumber       String          @map("quotation_number")
+  customerId            String?         @map("customer_id")
+  customer              Customer?       @relation(fields: [customerId], references: [id])
+  status                QuotationStatus @default(DRAFT)
+  validUntil            DateTime?       @map("valid_until")
+  subtotal              Decimal         @default(0) @db.Decimal(10, 2)
+  totalDiscount         Decimal         @default(0) @map("total_discount") @db.Decimal(10, 2)
+  totalCgst             Decimal         @default(0) @map("total_cgst") @db.Decimal(10, 2)
+  totalSgst             Decimal         @default(0) @map("total_sgst") @db.Decimal(10, 2)
+  grandTotal            Decimal         @default(0) @map("grand_total") @db.Decimal(10, 2)
+  notes                 String?
+  convertedToInvoiceId  String?         @map("converted_to_invoice_id")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  items                 QuotationItem[]
+
+  @@unique([tenantId, quotationNumber])
+  @@index([tenantId])
+  @@map("quotations")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  CONVERTED
+  EXPIRED
+}
+
+model QuotationItem {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  quotationId  String    @map("quotation_id")
+  quotation    Quotation @relation(fields: [quotationId], references: [id])
+  productId    String?   @map("product_id")
+  productName  String    @map("product_name")
+  quantity     Decimal   @db.Decimal(10, 3)
+  unit         String
+  sellingPrice Decimal   @map("selling_price") @db.Decimal(10, 2)
+  discount     Decimal   @default(0) @db.Decimal(10, 2)
+  gstRate      Decimal   @default(0) @map("gst_rate") @db.Decimal(5, 2)
+  total        Decimal   @db.Decimal(10, 2)
+
+  @@index([tenantId, quotationId])
+  @@map("quotation_items")
+}
+
+model LoyaltyAccount {
+  id           String               @id @default(cuid())
+  tenantId     String               @map("tenant_id")
+  tenant       Tenant               @relation(fields: [tenantId], references: [id])
+  customerId   String               @map("customer_id")
+  customer     Customer             @relation(fields: [customerId], references: [id])
+  points       Int                  @default(0)
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  transactions LoyaltyTransaction[]
+
+  @@unique([tenantId, customerId])
+  @@index([tenantId])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyTransaction {
+  id          String         @id @default(cuid())
+  tenantId    String         @map("tenant_id")
+  tenant      Tenant         @relation(fields: [tenantId], references: [id])
+  accountId   String         @map("account_id")
+  account     LoyaltyAccount @relation(fields: [accountId], references: [id])
+  points      Int
+  type        LoyaltyTxType
+  referenceId String?        @map("reference_id")
+  notes       String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([tenantId, accountId])
+  @@map("loyalty_transactions")
+}
+
+enum LoyaltyTxType {
+  EARNED
+  REDEEMED
+  EXPIRED
+  ADJUSTED
+}
+
+model Coupon {
+  id            String       @id @default(cuid())
+  tenantId      String       @map("tenant_id")
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  code          String
+  description   String?
+  discountType  DiscountType @default(FLAT) @map("discount_type")
+  discountValue Decimal      @map("discount_value") @db.Decimal(10, 2)
+  minOrderValue Decimal?     @map("min_order_value") @db.Decimal(10, 2)
+  maxDiscount   Decimal?     @map("max_discount") @db.Decimal(10, 2)
+  usageLimit    Int?         @map("usage_limit")
+  usedCount     Int          @default(0) @map("used_count")
+  validFrom     DateTime     @default(now()) @map("valid_from")
+  validUntil    DateTime     @map("valid_until")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("coupons")
+}
+
+enum DiscountType {
+  FLAT
+  PERCENTAGE
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String   @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  changes   Json?
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity])
+  @@map("audit_logs")
+}
+
+model SupplierPayment {
+  id              String        @id @default(cuid())
+  tenantId        String        @map("tenant_id")
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  supplierId      String        @map("supplier_id")
+  supplier        Supplier      @relation(fields: [supplierId], references: [id])
+  purchaseOrderId String?       @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  amount          Decimal       @db.Decimal(10, 2)
+  mode            PaymentMode   @default(CASH)
+  referenceNumber String?       @map("reference_number")
+  paidAt          DateTime      @default(now()) @map("paid_at")
+  notes           String?
+  createdBy       String        @map("created_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([tenantId, supplierId])
+  @@map("supplier_payments")
+}
+
+model PurchaseReturn {
+  id              String               @id @default(cuid())
+  tenantId        String               @map("tenant_id")
+  tenant          Tenant               @relation(fields: [tenantId], references: [id])
+  returnNumber    String               @map("return_number")
+  supplierId      String               @map("supplier_id")
+  supplier        Supplier             @relation(fields: [supplierId], references: [id])
+  purchaseOrderId String?              @map("purchase_order_id")
+  purchaseOrder   PurchaseOrder?       @relation(fields: [purchaseOrderId], references: [id])
+  status          PurchaseReturnStatus @default(DRAFT)
+  totalAmount     Decimal              @default(0) @map("total_amount") @db.Decimal(10, 2)
+  reason          String?
+  notes           String?
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  items           PurchaseReturnItem[]
+
+  @@unique([tenantId, returnNumber])
+  @@index([tenantId])
+  @@map("purchase_returns")
+}
+
+enum PurchaseReturnStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model PurchaseReturnItem {
+  id            String         @id @default(cuid())
+  tenantId      String         @map("tenant_id")
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  returnId      String         @map("return_id")
+  return        PurchaseReturn @relation(fields: [returnId], references: [id])
+  productId     String?        @map("product_id")
+  productName   String         @map("product_name")
+  quantity      Decimal        @db.Decimal(10, 3)
+  unit          String
+  purchasePrice Decimal        @map("purchase_price") @db.Decimal(10, 2)
+  total         Decimal        @db.Decimal(10, 2)
+
+  @@index([tenantId, returnId])
+  @@map("purchase_return_items")
+}
+
+model RestaurantTable {
+  id        String      @id @default(cuid())
+  tenantId  String      @map("tenant_id")
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  number    String
+  capacity  Int         @default(4)
+  section   String?
+  status    TableStatus @default(AVAILABLE)
+  createdAt DateTime    @default(now()) @map("created_at")
+  kots      KOT[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("restaurant_tables")
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+}
+
+model MenuCategory {
+  id        String    @id @default(cuid())
+  tenantId  String    @map("tenant_id")
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  name      String
+  sortOrder Int       @default(0) @map("sort_order")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  products  Product[]
+
+  @@unique([tenantId, name])
+  @@map("menu_categories")
+}
+
+model MenuModifierGroup {
+  id          String               @id @default(cuid())
+  tenantId    String               @map("tenant_id")
+  tenant      Tenant               @relation(fields: [tenantId], references: [id])
+  name        String
+  required    Boolean              @default(false)
+  multiSelect Boolean              @default(false) @map("multi_select")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  options     MenuModifierOption[]
+
+  @@index([tenantId])
+  @@map("menu_modifier_groups")
+}
+
+model MenuModifierOption {
+  id         String            @id @default(cuid())
+  groupId    String            @map("group_id")
+  group      MenuModifierGroup @relation(fields: [groupId], references: [id])
+  name       String
+  extraPrice Decimal           @default(0) @map("extra_price") @db.Decimal(10, 2)
+
+  @@map("menu_modifier_options")
+}
+
+model KOT {
+  id        String          @id @default(cuid())
+  tenantId  String          @map("tenant_id")
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  kotNumber String          @map("kot_number")
+  tableId   String?         @map("table_id")
+  table     RestaurantTable? @relation(fields: [tableId], references: [id])
+  customerId String?        @map("customer_id")
+  customer  Customer?       @relation(fields: [customerId], references: [id])
+  invoiceId String?         @map("invoice_id")
+  invoice   Invoice?        @relation(fields: [invoiceId], references: [id])
+  status    KOTStatus       @default(PENDING)
+  createdBy String          @map("created_by")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+  items     KOTItem[]
+
+  @@unique([tenantId, kotNumber])
+  @@index([tenantId, status])
+  @@map("kots")
+}
+
+enum KOTStatus {
+  PENDING
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+model KOTItem {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  kotId       String   @map("kot_id")
+  kot         KOT      @relation(fields: [kotId], references: [id])
+  productId   String?  @map("product_id")
+  productName String   @map("product_name")
+  quantity    Decimal  @db.Decimal(10, 3)
+  unit        String   @default("piece")
+  notes       String?
+  modifiers   Json?
+
+  @@index([tenantId, kotId])
+  @@map("kot_items")
+}
+
+model Recipe {
+  id                  String  @id @default(cuid())
+  tenantId            String  @map("tenant_id")
+  tenant              Tenant  @relation(fields: [tenantId], references: [id])
+  productId           String  @map("product_id")
+  product             Product @relation("RecipeProduct", fields: [productId], references: [id])
+  ingredientProductId String  @map("ingredient_product_id")
+  ingredient          Product @relation("RecipeIngredient", fields: [ingredientProductId], references: [id])
+  quantity            Decimal @db.Decimal(10, 3)
+  unit                String
+
+  @@unique([productId, ingredientProductId])
+  @@index([tenantId, productId])
+  @@map("recipes")
 }
