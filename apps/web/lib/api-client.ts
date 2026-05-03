@@ -120,11 +120,34 @@ export function createAuthenticatedApiClient() {
 
       return response.json() as Promise<T>;
     },
+    async put<T = unknown>(path: string, payload: object) {
+      const response = await fetchWithCookieAuth(path, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return response.json() as Promise<T>;
+    },
+    async delete<T = unknown>(path: string) {
+      const response = await fetchWithCookieAuth(path, {
+        method: "DELETE",
+      });
+
+      return response.json() as Promise<T>;
+    },
   };
 }
 
-export async function listProducts(): Promise<PaginatedResponse<ProductRecord>> {
-  return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>("/inventory/products?limit=100");
+export async function listProducts(options: { lowStock?: boolean } = {}): Promise<PaginatedResponse<ProductRecord>> {
+  const query = new URLSearchParams({ limit: "100" });
+  if (options.lowStock) {
+    query.set("lowStock", "true");
+  }
+
+  return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>(`/inventory/products?${query.toString()}`);
 }
 
 export async function createProduct(payload: ProductPayload): Promise<ProductRecord> {

@@ -40,6 +40,7 @@ export const restaurantConfig: VerticalConfig = {
     { label: "Menu", icon: "utensils", href: "/inventory" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
     { label: "Payments", icon: "wallet", href: "/payments" },
+    { label: "Customers", icon: "users", href: "/customers" },
     { label: "Suppliers", icon: "building", href: "/suppliers" },
     { label: "Reports", icon: "chart", href: "/reports" },
     { label: "Settings", icon: "settings", href: "/settings" },

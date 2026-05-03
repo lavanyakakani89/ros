@@ -55,6 +55,7 @@ export class AuthRepository {
     return this.prisma.user.findFirst({
       where: {
         email,
+        isActive: true,
         tenant: {
           slug: tenantSlug,
         },

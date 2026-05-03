@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Plus, Receipt, RefreshCcw, Trash2 } from "lucide-react";
+import { Plus, Printer, Receipt, RefreshCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createAuthenticatedApiClient, listProducts, refreshAuthSession } from "@/lib/api-client";
@@ -14,10 +14,17 @@ export function PosInvoicePanel() {
   const [online, setOnline] = useState(true);
   const [queueCounts, setQueueCounts] = useState({ pending: 0, syncing: 0, failed: 0 });
   const [status, setStatus] = useState<string | null>(null);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   const productsQuery = useQuery({
     queryKey: ["products", "billing"],
-    queryFn: listProducts,
+    queryFn: () => listProducts(),
+  });
+  const customersQuery = useQuery({
+    queryKey: ["customers", "billing", customerSearch],
+    queryFn: () => createAuthenticatedApiClient().get<{ data: Array<{ id: string; name: string; phone: string }> }>(`/customers?limit=20${customerSearch ? `&search=${encodeURIComponent(customerSearch)}` : ""}`),
   });
   const products = productsQuery.data?.data ?? [];
 
@@ -77,6 +84,7 @@ export function PosInvoicePanel() {
   async function confirmInvoice() {
     const payload = {
       paymentMode: "CASH",
+      ...(customerId ? { customerId } : {}),
       items: lines
         .filter((line) => line.productId)
         .map((line) => ({
@@ -108,8 +116,11 @@ export function PosInvoicePanel() {
     }
 
     try {
-      await createAuthenticatedApiClient().post("/billing/invoices", payload);
-      setStatus("Invoice created.");
+      const invoice = await createAuthenticatedApiClient().post<{ id: string }>("/billing/invoices", payload);
+      await createAuthenticatedApiClient().post(`/billing/invoices/${invoice.id}/confirm`, {});
+      const pdf = await createAuthenticatedApiClient().post<{ downloadUrl: string }>(`/billing/invoices/${invoice.id}/pdf`, {});
+      setPdfUrl(pdf.downloadUrl);
+      setStatus("Invoice confirmed.");
       reset();
     } catch (caught) {
       setStatus(caught instanceof Error ? caught.message : "Unable to create invoice.");
@@ -135,6 +146,15 @@ export function PosInvoicePanel() {
               Line
             </button>
           </div>
+        </div>
+        <div className="grid gap-3 border-b border-border p-3 md:grid-cols-2">
+          <input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search customer by name or phone" className="h-10 rounded-md border border-border px-3 text-sm" />
+          <select value={customerId} onChange={(event) => setCustomerId(event.target.value)} className="h-10 rounded-md border border-border px-3 text-sm">
+            <option value="">Walk-in customer</option>
+            {(customersQuery.data?.data ?? []).map((customer) => (
+              <option key={customer.id} value={customer.id}>{customer.name} | {customer.phone}</option>
+            ))}
+          </select>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm">
@@ -202,6 +222,12 @@ export function PosInvoicePanel() {
           Pending {queueCounts.pending} | Syncing {queueCounts.syncing} | Failed {queueCounts.failed}
         </div>
         {status ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{status}</div> : null}
+        {pdfUrl ? (
+          <a className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-border text-sm font-medium text-slate-700" href={pdfUrl} target="_blank">
+            <Printer className="size-4" aria-hidden="true" />
+            Print bill
+          </a>
+        ) : null}
         <button className="mt-5 h-11 w-full rounded-md bg-emerald-600 text-sm font-semibold text-white" onClick={() => void confirmInvoice()}>Confirm invoice</button>
       </aside>
     </section>

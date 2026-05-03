@@ -55,6 +55,7 @@ model User {
   phone         String?
   passwordHash  String         @map("password_hash")
   role          UserRole       @default(STAFF)
+  isActive      Boolean        @default(true) @map("is_active")
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
 
@@ -110,6 +111,7 @@ model Product {
   invoiceItems     InvoiceItem[]
   batches          ProductBatch[]
   stockAdjustments StockAdjustment[]
+  purchaseOrderItems PurchaseOrderItem[]
 
   @@unique([tenantId, sku])
   @@index([tenantId, barcode])
@@ -340,8 +342,11 @@ model PurchaseOrderItem {
   tenant          Tenant        @relation(fields: [tenantId], references: [id])
   purchaseOrderId String        @map("purchase_order_id")
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  productId       String?       @map("product_id")
+  product         Product?      @relation(fields: [productId], references: [id])
   productName     String        @map("product_name")
   quantity        Decimal       @db.Decimal(10, 3)
+  receivedQuantity Decimal      @default(0) @map("received_quantity") @db.Decimal(10, 3)
   unit            String
   purchasePrice   Decimal       @map("purchase_price") @db.Decimal(10, 2)
   batchNumber     String?       @map("batch_number")
@@ -349,6 +354,7 @@ model PurchaseOrderItem {
   total           Decimal       @db.Decimal(10, 2)
 
   @@index([tenantId, purchaseOrderId])
+  @@index([tenantId, productId])
   @@map("purchase_order_items")
 }
 

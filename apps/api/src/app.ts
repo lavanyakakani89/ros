@@ -11,9 +11,14 @@ import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
 import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { billingRoutes } from "./modules/billing/billing.routes.js";
+import { customersRoutes } from "./modules/customers/customers.routes.js";
 import { deliveryRoutes } from "./modules/delivery/delivery.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
+import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes.js";
+import { reportsRoutes } from "./modules/reports/reports.routes.js";
+import { settingsRoutes } from "./modules/settings/settings.routes.js";
+import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -69,10 +74,15 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await fastify.register(tenantPlugin);
   await fastify.register(verticalConfigRoutes);
+  await fastify.register(customersRoutes);
+  await fastify.register(suppliersRoutes);
+  await fastify.register(purchaseOrdersRoutes);
   await fastify.register(inventoryRoutes);
   await fastify.register(billingRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(deliveryRoutes);
+  await fastify.register(reportsRoutes);
+  await fastify.register(settingsRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
     const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];

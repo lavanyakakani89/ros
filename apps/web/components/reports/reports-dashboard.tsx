@@ -1,76 +1,121 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const salesData = [
-  { day: "Mon", sales: 14800, gst: 1320 },
-  { day: "Tue", sales: 17600, gst: 1580 },
-  { day: "Wed", sales: 15940, gst: 1410 },
-  { day: "Thu", sales: 21400, gst: 1910 },
-  { day: "Fri", sales: 18420, gst: 1640 },
-  { day: "Sat", sales: 24200, gst: 2160 },
-  { day: "Sun", sales: 12600, gst: 1120 },
-];
+import { StatStrip } from "@/components/shared/stat-strip";
+import { createAuthenticatedApiClient } from "@/lib/api-client";
 
-const stockData = [
-  { category: "Tablets", value: 420 },
-  { category: "Syrups", value: 180 },
-  { category: "OTC", value: 260 },
-  { category: "Devices", value: 84 },
-];
+interface ReportSummary {
+  grossSales: number;
+  netSales: number;
+  discountTotal: number;
+  totalGst: number;
+  invoiceCount: number;
+  averageBillValue: number;
+  dailySales: Array<{ date: string; sales: number; invoices: number }>;
+  gstByRate: Array<{ gstRate: number; totalGst: number }>;
+  hsnSummary: Array<{ hsnCode: string; totalSales: number }>;
+  movingItems: Array<{ productName: string; quantitySold: number; totalSales: number }>;
+}
 
-const expiryData = [
-  { bucket: "30 days", batches: 8 },
-  { bucket: "60 days", batches: 14 },
-  { bucket: "90 days", batches: 22 },
-];
+interface InventoryReport {
+  stockValue: number;
+  lowStockCount: number;
+  stockByCategory: Array<{ category: string; stock: number }>;
+}
 
 export function ReportsDashboard() {
+  const summaryQuery = useQuery({
+    queryKey: ["reports-summary"],
+    queryFn: () => createAuthenticatedApiClient().get<ReportSummary>("/reports/summary"),
+  });
+  const inventoryQuery = useQuery({
+    queryKey: ["reports-inventory"],
+    queryFn: () => createAuthenticatedApiClient().get<InventoryReport>("/reports/inventory"),
+  });
+
+  const summary = summaryQuery.data;
+  const inventory = inventoryQuery.data;
+  const salesData = summary?.dailySales.map((item) => ({
+    day: item.date.slice(5),
+    sales: item.sales,
+    invoices: item.invoices,
+  })) ?? [];
+  const stockData = inventory?.stockByCategory.map((item) => ({
+    category: item.category,
+    value: item.stock,
+  })) ?? [];
+  const error = summaryQuery.error ?? inventoryQuery.error;
+
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <section className="rounded-md border border-border bg-white p-4">
-        <div className="mb-4 text-sm font-semibold text-slate-950">Daily sales</div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={salesData}>
-              <CartesianGrid stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="day" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} />
-              <Tooltip formatter={(value) => `₹${Number(value).toLocaleString("en-IN")}`} />
-              <Line type="monotone" dataKey="sales" stroke="#059669" strokeWidth={3} dot={false} />
-              <Line type="monotone" dataKey="gst" stroke="#2563eb" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-      <section className="rounded-md border border-border bg-white p-4">
-        <div className="mb-4 text-sm font-semibold text-slate-950">Stock by category</div>
-        <div className="h-72">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={stockData}>
-              <CartesianGrid stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="category" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-      <section className="rounded-md border border-border bg-white p-4 xl:col-span-2">
-        <div className="mb-4 text-sm font-semibold text-slate-950">Expiry report</div>
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={expiryData}>
-              <CartesianGrid stroke="#e2e8f0" vertical={false} />
-              <XAxis dataKey="bucket" tickLine={false} axisLine={false} />
-              <YAxis tickLine={false} axisLine={false} />
-              <Tooltip />
-              <Bar dataKey="batches" fill="#d97706" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+    <div className="space-y-4">
+      <StatStrip
+        items={[
+          { label: "Gross sales", value: money(summary?.grossSales ?? 0), tone: "emerald" },
+          { label: "GST collected", value: money(summary?.totalGst ?? 0), tone: "blue" },
+          { label: "Invoices", value: String(summary?.invoiceCount ?? 0), tone: "slate" },
+          { label: "Avg bill", value: money(summary?.averageBillValue ?? 0), tone: "amber" },
+        ]}
+      />
+      {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section className="rounded-md border border-border bg-white p-4">
+          <div className="mb-4 text-sm font-semibold text-slate-950">Daily sales</div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={salesData}>
+                <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="day" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Line type="monotone" dataKey="sales" stroke="#059669" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="invoices" stroke="#2563eb" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+        <section className="rounded-md border border-border bg-white p-4">
+          <div className="mb-4 text-sm font-semibold text-slate-950">Stock by category</div>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stockData}>
+                <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="category" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+        <section className="rounded-md border border-border bg-white p-4 xl:col-span-2">
+          <div className="grid gap-4 md:grid-cols-3">
+            <ReportList title="GST by rate" items={(summary?.gstByRate ?? []).map((item) => `${String(item.gstRate)}% - ${money(item.totalGst)}`)} />
+            <ReportList title="HSN summary" items={(summary?.hsnSummary ?? []).slice(0, 6).map((item) => `${item.hsnCode} - ${money(item.totalSales)}`)} />
+            <ReportList title="Fast-moving items" items={(summary?.movingItems ?? []).slice(0, 6).map((item) => `${item.productName} - ${String(item.quantitySold)}`)} />
+          </div>
+        </section>
+      </div>
     </div>
   );
+}
+
+function ReportList({ title, items }: Readonly<{ title: string; items: string[] }>) {
+  return (
+    <div>
+      <div className="mb-2 text-sm font-semibold text-slate-950">{title}</div>
+      <div className="space-y-2">
+        {items.length > 0 ? (
+          items.map((item) => <div key={item} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{item}</div>)
+        ) : (
+          <div className="text-sm text-slate-500">No data yet</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function money(value: number): string {
+  return `INR ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }

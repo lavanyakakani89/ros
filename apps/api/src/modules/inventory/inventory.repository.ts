@@ -155,6 +155,18 @@ export class InventoryRepository {
     });
   }
 
+  async listBatches(tenantId: string, productId: string) {
+    return this.prisma.productBatch.findMany({
+      where: {
+        tenantId,
+        productId,
+      },
+      orderBy: {
+        expiryDate: "asc",
+      },
+    });
+  }
+
   async listExpiringBatches(tenantId: string, days: number) {
     const expiresBefore = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 

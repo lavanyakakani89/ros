@@ -59,6 +59,10 @@ export class InventoryService {
     return batch;
   }
 
+  listBatches(tenant: Tenant, productId: string) {
+    return this.repository.listBatches(tenant.id, productId);
+  }
+
   async listExpiringProducts(tenant: Tenant, days: number) {
     if (tenant.vertical !== "PHARMACY") {
       throw new InventoryError("Expiry reports are available only for pharmacy tenants", 403);

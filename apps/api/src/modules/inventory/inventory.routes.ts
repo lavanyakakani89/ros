@@ -46,6 +46,11 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
     return handleInventory(reply, () => service.addBatch(request.tenant, params.id, input));
   });
 
+  fastify.get("/api/inventory/products/:id/batches", async (request, reply) => {
+    const params = productIdParamsSchema.parse(request.params);
+    return handleInventory(reply, () => Promise.resolve(service.listBatches(request.tenant, params.id)));
+  });
+
   fastify.post("/api/inventory/stock-adjustment", async (request, reply) => {
     const input = stockAdjustmentSchema.parse(request.body);
     return handleInventory(reply, () => service.adjustStock(request.tenant, request.user, input));

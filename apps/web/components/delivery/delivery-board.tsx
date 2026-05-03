@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Truck } from "lucide-react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { formString } from "@/lib/form-values";
 import { hasStoredAuthSession } from "@/lib/vertical-config";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
@@ -25,17 +26,10 @@ interface DeliveryItem {
 
 const statuses: DeliveryStatus[] = ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY", "DELIVERED"];
 
-const fallbackDeliveries: DeliveryItem[] = [
-  {
-    id: "demo-1",
-    status: "PENDING",
-    deliveryAddress: "MG Road, Bengaluru",
-    invoice: { invoiceNumber: "INV-20260501-0005", grandTotal: "302.40" },
-    customer: { name: "Walk-in customer", phone: "9000000000" },
-  },
-];
+const fallbackDeliveries: DeliveryItem[] = [];
 
 export function DeliveryBoard() {
+  const queryClient = useQueryClient();
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const deliveriesQuery = useQuery({
     queryKey: ["deliveries"],
@@ -47,6 +41,14 @@ export function DeliveryBoard() {
       return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery");
     },
     staleTime: 30_000,
+  });
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
+  });
+  const assignDelivery = useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string }) => createAuthenticatedApiClient().post(`/delivery/${id}/assign`, { userId }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
   });
 
   const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
@@ -67,11 +69,30 @@ export function DeliveryBoard() {
                 <article key={delivery.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-start gap-2">
                     <Truck className="mt-0.5 size-4 text-emerald-700" aria-hidden="true" />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-slate-950">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.customer?.name ?? "Customer"}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.deliveryAddress}</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-900">INR {delivery.invoice?.grandTotal ?? "0.00"}</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {nextStatuses(delivery.status).map((nextStatus) => (
+                          <button
+                            key={nextStatus}
+                            className="h-8 rounded-md border border-border px-2 text-xs font-medium text-slate-700"
+                            onClick={() => updateStatus.mutate({ id: delivery.id, status: nextStatus })}
+                          >
+                            {nextStatus.replaceAll("_", " ")}
+                          </button>
+                        ))}
+                      </div>
+                      <form className="mt-2 flex gap-2" onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = new FormData(event.currentTarget);
+                        assignDelivery.mutate({ id: delivery.id, userId: formString(form, "userId") });
+                      }}>
+                        <input name="userId" placeholder="Delivery user ID" className="h-8 min-w-0 flex-1 rounded-md border border-border px-2 text-xs" />
+                        <button className="h-8 rounded-md bg-slate-900 px-2 text-xs font-medium text-white">Assign</button>
+                      </form>
                     </div>
                   </div>
                 </article>
@@ -83,4 +104,20 @@ export function DeliveryBoard() {
       })}
     </div>
   );
+}
+
+function nextStatuses(status: DeliveryStatus): DeliveryStatus[] {
+  if (status === "PENDING") {
+    return ["ASSIGNED", "OUT_FOR_DELIVERY", "CANCELLED"];
+  }
+
+  if (status === "ASSIGNED") {
+    return ["OUT_FOR_DELIVERY", "FAILED", "CANCELLED"];
+  }
+
+  if (status === "OUT_FOR_DELIVERY") {
+    return ["DELIVERED", "FAILED"];
+  }
+
+  return [];
 }
