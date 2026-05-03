@@ -8,7 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { getCurrentVerticalConfig } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import {
   getStoredAuthSession,
@@ -27,6 +27,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [tenant, setTenant] = useState<StoredTenant | null>(null);
   const [session, setSession] = useState<StoredAuthSession | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [lowStockCount, setLowStockCount] = useState(0);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
@@ -58,7 +59,17 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       }
     }
 
+    async function fetchLowStock() {
+      try {
+        const data = await createAuthenticatedApiClient().get<{ lowStockCount: number }>("/reports/inventory");
+        setLowStockCount(data.lowStockCount ?? 0);
+      } catch {
+        // non-critical
+      }
+    }
+
     void verifySession();
+    void fetchLowStock();
   }, [router]);
 
   if (checkingSession) {
@@ -89,6 +100,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           {verticalConfig.navigation.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = getNavigationIcon(item);
+            const isInventory = item.href === "/inventory";
 
             return (
               <Link
@@ -99,8 +111,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                   active && "bg-emerald-50 text-emerald-700",
                 )}
               >
-                <Icon className="size-4" aria-hidden="true" />
-                <span>{item.label}</span>
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                <span className="flex-1">{item.label}</span>
+                {isInventory && lowStockCount > 0 && (
+                  <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                    {lowStockCount > 99 ? "99+" : lowStockCount}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -123,17 +140,25 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             {verticalConfig.navigation.map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               const Icon = getNavigationIcon(item);
+              const isInventory = item.href === "/inventory";
 
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex min-w-24 flex-col items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-slate-600",
+                    "relative flex min-w-24 flex-col items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-slate-600",
                     active && "bg-emerald-50 text-emerald-700",
                   )}
                 >
-                  <Icon className="size-4" aria-hidden="true" />
+                  <div className="relative">
+                    <Icon className="size-4" aria-hidden="true" />
+                    {isInventory && lowStockCount > 0 && (
+                      <span className="absolute -right-2 -top-1.5 flex size-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                        {lowStockCount > 9 ? "9+" : lowStockCount}
+                      </span>
+                    )}
+                  </div>
                   <span>{item.label}</span>
                 </Link>
               );

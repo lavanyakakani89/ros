@@ -27,6 +27,49 @@ export const suppliersRoutes: FastifyPluginCallback = (fastify, _options, done) 
     return handleSuppliers(reply, () => service.updateSupplier(request.tenant, params.id, input));
   });
 
+  // Supplier payments (accounts payable)
+  fastify.get("/api/suppliers/:id/payments", async (request) => {
+    const { id } = supplierIdParamsSchema.parse(request.params);
+    const payments = await fastify.prisma.supplierPayment.findMany({
+      where: { tenantId: request.tenant.id, supplierId: id },
+      include: { purchaseOrder: { select: { poNumber: true } } },
+      orderBy: { paidAt: "desc" },
+    });
+    const totalPaid = payments.reduce((s, p) => s + p.amount.toNumber(), 0);
+    const totalPurchased = await fastify.prisma.purchaseOrder.aggregate({
+      where: { tenantId: request.tenant.id, supplierId: id, status: { in: ["PARTIAL", "RECEIVED"] } },
+      _sum: { totalAmount: true },
+    });
+    return { payments, totalPaid, totalPurchased: totalPurchased._sum.totalAmount?.toNumber() ?? 0, outstandingDue: (totalPurchased._sum.totalAmount?.toNumber() ?? 0) - totalPaid };
+  });
+
+  fastify.post("/api/suppliers/:id/payments", async (request) => {
+    const { id } = supplierIdParamsSchema.parse(request.params);
+    const { z } = await import("zod");
+    const input = z.object({
+      amount: z.coerce.number().positive(),
+      mode: z.enum(["CASH", "UPI", "CARD", "NETBANKING"]).default("CASH"),
+      purchaseOrderId: z.string().optional(),
+      referenceNumber: z.string().optional(),
+      notes: z.string().optional(),
+      paidAt: z.coerce.date().default(() => new Date()),
+    }).parse(request.body);
+
+    return fastify.prisma.supplierPayment.create({
+      data: {
+        tenantId: request.tenant.id,
+        supplierId: id,
+        amount: input.amount,
+        mode: input.mode as "CASH" | "UPI" | "CARD" | "NETBANKING",
+        referenceNumber: input.referenceNumber,
+        notes: input.notes,
+        paidAt: input.paidAt,
+        purchaseOrderId: input.purchaseOrderId,
+        createdBy: request.user.userId,
+      },
+    });
+  });
+
   done();
 };
 

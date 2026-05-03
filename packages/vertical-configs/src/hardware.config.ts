@@ -35,6 +35,7 @@ export const hardwareConfig: VerticalConfig = {
   billTemplate: "hardware-gst-bill",
   reportTemplates: ["daily-sales", "stock-report", "purchase-report", "contractor-ledger"],
   navigation: [
+    { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "boxes", href: "/inventory" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
@@ -42,7 +43,15 @@ export const hardwareConfig: VerticalConfig = {
     { label: "Payments", icon: "wallet", href: "/payments" },
     { label: "Suppliers", icon: "building", href: "/suppliers" },
     { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Expenses", icon: "expenses", href: "/expenses" },
+    { label: "Quotations", icon: "file-text", href: "/quotations" },
+    { label: "Coupons", icon: "tag", href: "/coupons" },
+    { label: "Loyalty", icon: "loyalty", href: "/loyalty" },
+    { label: "Credit Notes", icon: "credit-note", href: "/credit-notes" },
+    { label: "Purchase Returns", icon: "purchase-return", href: "/purchase-returns" },
+    { label: "Categories", icon: "categories", href: "/categories" },
     { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Audit Log", icon: "activity", href: "/audit" },
     { label: "Settings", icon: "settings", href: "/settings" },
   ],
 };

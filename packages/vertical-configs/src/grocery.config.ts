@@ -37,6 +37,7 @@ export const groceryConfig: VerticalConfig = {
   billTemplate: "grocery-gst-bill",
   reportTemplates: ["daily-sales", "stock-report", "purchase-report", "fast-moving-items"],
   navigation: [
+    { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "boxes", href: "/inventory" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
@@ -44,7 +45,15 @@ export const groceryConfig: VerticalConfig = {
     { label: "Customers", icon: "users", href: "/customers" },
     { label: "Suppliers", icon: "building", href: "/suppliers" },
     { label: "Purchases", icon: "shopping-bag", href: "/purchases" },
+    { label: "Expenses", icon: "expenses", href: "/expenses" },
+    { label: "Quotations", icon: "file-text", href: "/quotations" },
+    { label: "Coupons", icon: "tag", href: "/coupons" },
+    { label: "Loyalty", icon: "loyalty", href: "/loyalty" },
+    { label: "Credit Notes", icon: "credit-note", href: "/credit-notes" },
+    { label: "Purchase Returns", icon: "purchase-return", href: "/purchase-returns" },
+    { label: "Categories", icon: "categories", href: "/categories" },
     { label: "Reports", icon: "chart", href: "/reports" },
+    { label: "Audit Log", icon: "activity", href: "/audit" },
     { label: "Settings", icon: "settings", href: "/settings" },
   ],
 };

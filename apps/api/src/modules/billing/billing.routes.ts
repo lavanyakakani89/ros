@@ -1,7 +1,9 @@
+import { z } from "zod";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { BillingError, BillingService } from "./billing.service.js";
 import { createInvoiceSchema, invoiceIdParamsSchema, invoiceListQuerySchema, updateInvoiceSchema } from "./billing.schema.js";
+import { whatsappNotifyQueue } from "../../jobs/whatsapp-notify.job.js";
 
 export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new BillingService(fastify);
@@ -45,6 +47,32 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.get("/api/billing/invoices/:id/pdf", async (request, reply) => {
     const params = invoiceIdParamsSchema.parse(request.params);
     return handleBilling(reply, () => service.getInvoicePdfUrl(request.tenant, params.id));
+  });
+
+  // Share invoice via WhatsApp to customer
+  fastify.post("/api/billing/invoices/share-whatsapp", async (request, reply) => {
+    return handleBilling(reply, async () => {
+      const { customerId, pdfUrl } = z.object({ customerId: z.string().min(1), pdfUrl: z.string().url() }).parse(request.body);
+      const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
+      if (!customer) throw new BillingError("Customer not found", 404);
+      const message = `Hi ${customer.name}, your invoice from ${request.tenant.name} is ready. Download: ${pdfUrl}`;
+      await whatsappNotifyQueue.add("invoice-share", { phone: customer.phone, message });
+      return { status: "queued" };
+    });
+  });
+
+  // Customer ledger — all invoices + payments for a customer
+  fastify.get("/api/billing/customer-ledger/:customerId", async (request) => {
+    const { customerId } = z.object({ customerId: z.string().min(1) }).parse(request.params);
+    const invoices = await fastify.prisma.invoice.findMany({
+      where: { tenantId: request.tenant.id, customerId, status: { not: "CANCELLED" } },
+      include: { payments: true, items: { select: { productName: true, quantity: true, total: true } } },
+      orderBy: { invoiceDate: "desc" },
+    });
+    const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
+    const totalBilled = invoices.reduce((s, i) => s + i.grandTotal.toNumber(), 0);
+    const totalPaid = invoices.reduce((s, i) => s + i.amountPaid.toNumber(), 0);
+    return { customer, invoices, totalBilled, totalPaid, outstandingDue: totalBilled - totalPaid };
   });
 
   done();

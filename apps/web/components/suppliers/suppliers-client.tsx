@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { createAuthenticatedApiClient, type PaginatedResponse } from "@/lib/api-client";
@@ -121,7 +122,10 @@ function SupplierRow({ supplier, onSave }: Readonly<{ supplier: SupplierRecord; 
         <div className="text-xs text-slate-500">{supplier.phone}{supplier.gstNumber ? ` | GSTIN ${supplier.gstNumber}` : ""}</div>
         <div className="mt-1 text-xs text-slate-500">{supplier._count?.products ?? 0} products | {supplier._count?.purchaseOrders ?? 0} purchase orders</div>
       </div>
-      <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
+      <div className="flex items-center gap-2">
+        <Link href={`/suppliers/${supplier.id}/payments`} className="h-9 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 flex items-center">Payments</Link>
+        <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
+      </div>
     </div>
   );
 }
