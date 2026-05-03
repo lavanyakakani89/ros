@@ -151,14 +151,35 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     setShopForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateShopName(value: string) {
+    setShopForm((current) => {
+      const previousGeneratedSlug = slugify(current.tenantName);
+      const shouldAutoUpdateSlug = current.tenantSlug.trim() === "" || current.tenantSlug === previousGeneratedSlug;
+
+      return {
+        ...current,
+        tenantName: value,
+        tenantSlug: shouldAutoUpdateSlug ? slugify(value) : current.tenantSlug,
+      };
+    });
+  }
+
   function updateAdminField(field: keyof CreateAdminForm, value: string) {
     setAdminForm((current) => ({ ...current, [field]: value }));
   }
 
   async function createShop() {
     setError(null);
+    const normalizedSlug = shopForm.tenantSlug.trim().toLowerCase();
+
+    if (shops.some((shop) => shop.slug === normalizedSlug)) {
+      setError("Shop slug already exists. Use a different slug.");
+      return;
+    }
+
     const body = cleanPayload({
       ...shopForm,
+      tenantSlug: normalizedSlug,
       amountPaid: Number(shopForm.amountPaid || 0),
     });
     await apiPost("/superadmin/shops", body);
@@ -196,6 +217,9 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     event.preventDefault();
     void createAdmin().catch((err: unknown) => setError(readError(err)));
   }
+
+  const normalizedShopSlug = shopForm.tenantSlug.trim().toLowerCase();
+  const shopSlugExists = normalizedShopSlug !== "" && shops.some((shop) => shop.slug === normalizedShopSlug);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -312,8 +336,9 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               Create Shop
             </div>
             <div className="grid gap-3">
-              <TextInput label="Shop name" value={shopForm.tenantName} onChange={(value) => updateShopField("tenantName", value)} required />
+              <TextInput label="Shop name" value={shopForm.tenantName} onChange={updateShopName} required />
               <TextInput label="Shop slug" value={shopForm.tenantSlug} onChange={(value) => updateShopField("tenantSlug", value)} required />
+              {shopSlugExists ? <div className="text-xs font-medium text-red-300">This shop slug is already used.</div> : null}
               <SelectInput label="Vertical" value={shopForm.vertical} options={verticals} onChange={(value) => updateShopField("vertical", value)} />
               <TextInput label="Phone" value={shopForm.phone} onChange={(value) => updateShopField("phone", value)} required />
               <TextInput label="Owner name" value={shopForm.ownerName} onChange={(value) => updateShopField("ownerName", value)} required />
@@ -323,7 +348,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               <SelectInput label="Billing cycle" value={shopForm.billingCycle} options={cycles} onChange={(value) => updateShopField("billingCycle", value)} />
               <TextInput label="Amount paid" type="number" value={shopForm.amountPaid} onChange={(value) => updateShopField("amountPaid", value)} />
             </div>
-            <button className="mt-4 h-10 w-full rounded-md bg-emerald-500 text-sm font-semibold text-slate-950 disabled:opacity-40" type="submit" disabled={!canManage}>
+            <button className="mt-4 h-10 w-full rounded-md bg-emerald-500 text-sm font-semibold text-slate-950 disabled:opacity-40" type="submit" disabled={!canManage || shopSlugExists}>
               Create shop
             </button>
           </form>
@@ -482,6 +507,15 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 function cleanPayload(input: object) {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== "")) as Record<string, string | number>;
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
 }
 
 function readError(error: unknown): string {

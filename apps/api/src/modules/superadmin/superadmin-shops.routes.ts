@@ -185,6 +185,18 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
       const actor = getSuperAdmin(request);
       const startDate = input.startDate ?? new Date();
       const expiryDate = input.expiryDate ?? addMonths(startDate, defaultCycleMonths(input.billingCycle));
+      const existingTenant = await fastify.prisma.tenant.findUnique({
+        where: {
+          slug: input.tenantSlug,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (existingTenant) {
+        return reply.status(409).send({ error: "Shop slug already exists. Use a different slug." });
+      }
 
       const shop = await fastify.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({

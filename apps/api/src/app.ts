@@ -1,4 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { Prisma } from "@prisma/client";
+import { ZodError } from "zod";
 
 import { authPlugin } from "./plugins/auth.js";
 import { metricsPlugin } from "./plugins/metrics.js";
@@ -54,6 +56,29 @@ export async function buildServer(): Promise<FastifyInstance> {
     } catch (error) {
       done(error as Error);
     }
+  });
+
+  fastify.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.status(400).send({
+        error: "Validation failed",
+        issues: error.issues.map((issue) => ({
+          field: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return reply.status(409).send({
+        error: uniqueConstraintMessage(error),
+      });
+    }
+
+    const statusCode = error.statusCode ?? 500;
+    return reply.status(statusCode).send({
+      error: statusCode >= 500 ? "Internal server error" : error.message,
+    });
   });
 
   await fastify.register(prismaPlugin);
@@ -123,4 +148,23 @@ export async function buildServer(): Promise<FastifyInstance> {
   }
 
   return fastify;
+}
+
+function uniqueConstraintMessage(error: Prisma.PrismaClientKnownRequestError): string {
+  const rawTarget = error.meta?.target;
+  const target = Array.isArray(rawTarget) ? rawTarget.map((item) => String(item)).join(",") : "";
+
+  if (target.includes("slug")) {
+    return "Shop slug already exists. Use a different slug.";
+  }
+
+  if (target.includes("email")) {
+    return "Email already exists. Use a different email.";
+  }
+
+  if (target.includes("phone")) {
+    return "Phone number already exists. Use a different phone number.";
+  }
+
+  return "A record with these details already exists.";
 }
