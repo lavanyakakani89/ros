@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
@@ -9,7 +7,7 @@ export default function LoginPage() {
         <div className="text-xl font-semibold text-slate-950">RetailOS</div>
         <div className="mt-1 text-sm text-slate-500">Sign in to your shop</div>
         <LoginForm />
-        <Link href="/onboarding" className="mt-4 block text-sm font-medium text-emerald-700">Create a shop account</Link>
+        <div className="mt-4 text-sm text-slate-500">Contact your RetailOS administrator to create a shop account.</div>
       </section>
     </main>
   );

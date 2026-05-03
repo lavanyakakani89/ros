@@ -51,6 +51,10 @@ export class AuthService {
       throw new AuthError("Invalid email or password", 401);
     }
 
+    if (user.tenant.status === "SUSPENDED") {
+      throw new AuthError("Account suspended. Contact your RetailOS administrator to reactivate access.", 403);
+    }
+
     return {
       user: toAuthUser(user),
       tokens: await this.createTokens(user),
@@ -65,6 +69,10 @@ export class AuthService {
       throw new AuthError("Invalid refresh token", 401);
     }
 
+    if (storedToken.tenant.status === "SUSPENDED") {
+      throw new AuthError("Account suspended. Contact your RetailOS administrator to reactivate access.", 403);
+    }
+
     await this.repository.revokeRefreshToken(storedToken.id);
 
     const user = {
@@ -72,6 +80,7 @@ export class AuthService {
       tenant: {
         id: storedToken.tenantId,
         slug: "",
+        status: storedToken.tenant.status,
       },
     };
 

@@ -2,20 +2,11 @@ import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastif
 
 import { AuthError, AuthService } from "./auth.service.js";
 import type { AuthResponse, AuthTokens } from "./auth.types.js";
-import { loginSchema, logoutSchema, refreshSchema, registerSchema } from "./auth.schema.js";
+import { loginSchema, logoutSchema, refreshSchema } from "./auth.schema.js";
 import { getCookieValue } from "../../plugins/auth.js";
 
 export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const authService = new AuthService(fastify);
-
-  fastify.post("/api/auth/register", async (request, reply) => {
-    const input = registerSchema.parse(request.body);
-    return handleAuth(reply, async () => {
-      const auth = await authService.register(input);
-      setAuthCookies(reply, auth.tokens);
-      return toAuthBody(auth);
-    });
-  });
 
   fastify.post("/api/auth/login", async (request, reply) => {
     const input = loginSchema.parse(request.body);

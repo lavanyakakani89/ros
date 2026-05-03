@@ -5,7 +5,14 @@ import fp from "fastify-plugin";
 import { verifyRequestJwt } from "./auth.js";
 
 const tenantCacheTtlSeconds = 300;
-const publicRoutePrefixes = ["/health", "/api/health", "/metrics", "/api/auth/", "/api/payments/razorpay/webhook"];
+const publicRoutePrefixes = [
+  "/health",
+  "/api/health",
+  "/metrics",
+  "/api/auth/",
+  "/api/superadmin/",
+  "/api/payments/razorpay/webhook",
+];
 
 const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.addHook("preHandler", async (request, reply) => {
@@ -42,6 +49,14 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
       }
 
       await fastify.redis.set(cacheKey, JSON.stringify(tenant), "EX", tenantCacheTtlSeconds);
+    }
+
+    if (tenant.status === "SUSPENDED") {
+      return reply.status(403).send({
+        error: "Account suspended",
+        code: "TENANT_SUSPENDED",
+        message: "This shop is suspended. Contact your RetailOS administrator to reactivate access.",
+      });
     }
 
     request.tenant = tenant;

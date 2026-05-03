@@ -11,6 +11,7 @@
     "prisma:migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "prisma:verify-rls": "tsx prisma/verify-rls.ts",
     "prisma:seed": "tsx prisma/seed.ts",
+    "superadmin:seed": "tsx prisma/seed-superadmin.ts",
     "start": "node dist/apps/api/src/server.js",
     "typecheck": "tsc --noEmit",
     "test": "tsc --noEmit"

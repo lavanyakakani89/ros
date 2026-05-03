@@ -7,11 +7,16 @@ export interface UserWithTenant extends User {
   tenant: {
     id: string;
     slug: string;
+    status: string;
   };
 }
 
 export interface RefreshTokenWithUser extends RefreshToken {
   user: User;
+  tenant: {
+    id: string;
+    status: string;
+  };
 }
 
 export class AuthRepository {
@@ -44,6 +49,7 @@ export class AuthRepository {
             select: {
               id: true,
               slug: true,
+              status: true,
             },
           },
         },
@@ -65,6 +71,7 @@ export class AuthRepository {
           select: {
             id: true,
             slug: true,
+            status: true,
           },
         },
       },
@@ -88,6 +95,12 @@ export class AuthRepository {
       where: { id },
       include: {
         user: true,
+        tenant: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
       },
     });
   }

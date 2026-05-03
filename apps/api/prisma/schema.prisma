@@ -17,6 +17,7 @@ model Tenant {
   address            String?
   timezone           String              @default("Asia/Kolkata")
   currency           String              @default("INR")
+  status             TenantStatus        @default(ACTIVE)
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   users              User[]
@@ -52,8 +53,15 @@ model Tenant {
   kots               KOT[]
   kotItems           KOTItem[]
   recipes            Recipe[]
+  license            TenantLicense?
 
   @@map("tenants")
+}
+
+enum TenantStatus {
+  ACTIVE
+  WARNING
+  SUSPENDED
 }
 
 enum VerticalType {
@@ -840,4 +848,96 @@ model Recipe {
   @@unique([productId, ingredientProductId])
   @@index([tenantId, productId])
   @@map("recipes")
+}
+
+model SuperAdmin {
+  id             String              @id @default(cuid())
+  name           String
+  email          String              @unique
+  passwordHash   String              @map("password_hash")
+  role           SuperAdminRole      @default(SUPPORT)
+  isActive       Boolean             @default(true) @map("is_active")
+  createdById    String?             @map("created_by_id")
+  createdBy      SuperAdmin?         @relation("SuperAdminCreatedBy", fields: [createdById], references: [id])
+  createdAdmins  SuperAdmin[]        @relation("SuperAdminCreatedBy")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  sessions       SuperAdminSession[]
+  activityLogs   SuperAdminLog[]
+
+  @@map("super_admins")
+}
+
+enum SuperAdminRole {
+  OWNER
+  MANAGER
+  SUPPORT
+}
+
+model SuperAdminSession {
+  id           String     @id @default(cuid())
+  superAdminId String     @map("super_admin_id")
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+  tokenHash    String     @map("token_hash")
+  expiresAt    DateTime   @map("expires_at")
+  revokedAt    DateTime?  @map("revoked_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([superAdminId])
+  @@index([expiresAt])
+  @@map("super_admin_sessions")
+}
+
+model SuperAdminLog {
+  id           String     @id @default(cuid())
+  superAdminId String     @map("super_admin_id")
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id])
+  action       String
+  targetType   String?    @map("target_type")
+  targetId     String?    @map("target_id")
+  notes        String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([superAdminId])
+  @@index([targetType, targetId])
+  @@map("super_admin_logs")
+}
+
+model TenantLicense {
+  id               String       @id @default(cuid())
+  tenantId         String       @unique @map("tenant_id")
+  tenant           Tenant       @relation(fields: [tenantId], references: [id])
+  plan             LicensePlan
+  billingCycle     BillingCycle @map("billing_cycle")
+  startDate        DateTime     @map("start_date")
+  expiryDate       DateTime     @map("expiry_date")
+  amountPaid       Decimal      @map("amount_paid") @db.Decimal(10, 2)
+  currency         String       @default("INR")
+  paymentRef       String?      @map("payment_ref")
+  paymentMode      String?      @map("payment_mode")
+  notes            String?
+  createdById      String?      @map("created_by_id")
+  lastModifiedById String?      @map("last_modified_by_id")
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@index([expiryDate])
+  @@map("tenant_licenses")
+}
+
+enum LicensePlan {
+  STARTER
+  STANDARD
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum BillingCycle {
+  ONE_TIME
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
+  TWO_YEARLY
+  THREE_YEARLY
 }

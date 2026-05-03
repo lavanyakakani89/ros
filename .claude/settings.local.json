@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base main --title 'Add 20+ missing features: full POS overhaul, new modules, navigation' --body ' *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\GitHub CLI\\\\\" -ErrorAction SilentlyContinue; Get-ChildItem \"$env:LOCALAPPDATA\\\\Programs\\\\GitHub CLI\\\\\" -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Users\\\\$env:USERNAME\\\\AppData\\\\Local\\\\GitHub CLI\\\\\" -ErrorAction SilentlyContinue)",
+      "Read(//usr/bin/**)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git remote *)",
+      "Bash(git credential *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('html_url',''\\) or d.get\\('message','Error: '+str\\(d\\)\\)\\)\")",
+      "Bash(git fetch *)",
+      "Bash(git merge *)"
     ]
   }
 }

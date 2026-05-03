@@ -12,6 +12,7 @@ export class VerticalConfigService {
       tenant: {
         name: tenant.name,
         slug: tenant.slug,
+        status: tenant.status,
       },
       config: this.repository.getByVertical(tenant.vertical),
     };
