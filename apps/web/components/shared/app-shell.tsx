@@ -191,6 +191,7 @@ function NavigationLink({
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
   const Icon = getNavigationIcon(item);
   const isInventory = item.href === "/inventory";
+  const iconClass = navigationIconClass(item.href);
 
   if (mobile) {
     return (
@@ -201,8 +202,8 @@ function NavigationLink({
           active && "bg-emerald-50 text-emerald-700",
         )}
       >
-        <div className="relative">
-          <Icon className="size-4" aria-hidden="true" />
+        <div className={cn("relative flex size-8 items-center justify-center rounded-md bg-white", active && "bg-emerald-100")}>
+          <Icon className={cn("size-4", iconClass)} aria-hidden="true" />
           {isInventory && lowStockCount > 0 ? (
             <span className="absolute -right-2 -top-1.5 flex size-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
               {lowStockCount > 9 ? "9+" : lowStockCount}
@@ -222,7 +223,9 @@ function NavigationLink({
         active && "bg-emerald-50 text-emerald-700",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
+      <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-50", active && "bg-white")}>
+        <Icon className={cn("size-4", iconClass)} aria-hidden="true" />
+      </span>
       <span className="flex-1 truncate">{item.label}</span>
       {isInventory && lowStockCount > 0 ? (
         <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
@@ -231,4 +234,32 @@ function NavigationLink({
       ) : null}
     </Link>
   );
+}
+
+function navigationIconClass(href: string): string {
+  if (["/billing", "/quotations", "/coupons", "/loyalty", "/credit-notes"].includes(href)) {
+    return "text-emerald-600";
+  }
+
+  if (["/inventory", "/inventory/expiry", "/inventory/warranty", "/categories", "/purchases", "/purchase-returns", "/delivery"].includes(href)) {
+    return "text-blue-600";
+  }
+
+  if (["/customers", "/suppliers"].includes(href)) {
+    return "text-violet-600";
+  }
+
+  if (["/payments", "/expenses"].includes(href)) {
+    return "text-amber-600";
+  }
+
+  if (["/reports", "/audit", "/settings"].includes(href)) {
+    return "text-slate-600";
+  }
+
+  if (href === "/restaurant") {
+    return "text-rose-600";
+  }
+
+  return "text-emerald-600";
 }

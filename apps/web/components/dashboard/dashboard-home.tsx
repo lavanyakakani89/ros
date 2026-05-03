@@ -276,19 +276,50 @@ function AlertBlock({
 function ModuleTile({ item }: Readonly<{ item: VerticalNavigationItem }>) {
   const Icon = item.icon in iconMap ? iconMap[item.icon as keyof typeof iconMap] : Receipt;
   const highlight = item.href === "/billing";
+  const color = moduleColor(item.href);
 
   return (
     <Link
       href={item.href}
       className={cn(
-        "flex min-h-24 flex-col items-center justify-center gap-2 rounded-md border border-border bg-slate-50 px-3 py-4 text-center text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-white",
+        "flex min-h-24 flex-col items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-4 text-center text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50",
         highlight && "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50",
       )}
     >
-      <Icon className="size-5" aria-hidden="true" />
+      <span className={cn("flex size-10 items-center justify-center rounded-md", color.bg)}>
+        <Icon className={cn("size-5", color.icon)} aria-hidden="true" />
+      </span>
       <span>{item.label}</span>
     </Link>
   );
+}
+
+function moduleColor(href: string): { bg: string; icon: string } {
+  if (["/billing", "/quotations", "/coupons", "/loyalty", "/credit-notes"].includes(href)) {
+    return { bg: "bg-emerald-50", icon: "text-emerald-600" };
+  }
+
+  if (["/inventory", "/inventory/expiry", "/inventory/warranty", "/categories", "/purchases", "/purchase-returns", "/delivery"].includes(href)) {
+    return { bg: "bg-blue-50", icon: "text-blue-600" };
+  }
+
+  if (["/customers", "/suppliers"].includes(href)) {
+    return { bg: "bg-violet-50", icon: "text-violet-600" };
+  }
+
+  if (["/payments", "/expenses"].includes(href)) {
+    return { bg: "bg-amber-50", icon: "text-amber-600" };
+  }
+
+  if (["/reports", "/audit", "/settings"].includes(href)) {
+    return { bg: "bg-slate-100", icon: "text-slate-600" };
+  }
+
+  if (href === "/restaurant") {
+    return { bg: "bg-rose-50", icon: "text-rose-600" };
+  }
+
+  return { bg: "bg-emerald-50", icon: "text-emerald-600" };
 }
 
 function money(value: number) {
