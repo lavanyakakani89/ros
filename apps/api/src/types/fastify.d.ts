@@ -1,4 +1,4 @@
-import type { PrismaClient, Tenant, UserRole } from "@prisma/client";
+import type { PrismaClient, SuperAdminRole, Tenant, UserRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest as BaseFastifyRequest } from "fastify";
 import type { Client } from "minio";
 import type { Redis } from "ioredis";
@@ -15,6 +15,13 @@ declare module "fastify" {
   interface FastifyRequest {
     rawBody?: string;
     tenant: Tenant;
+    superAdmin?: {
+      id: string;
+      name: string;
+      email: string;
+      role: SuperAdminRole;
+      sessionId: string;
+    };
   }
 }
 

@@ -5,6 +5,7 @@ export interface CurrentVerticalConfigResponse {
   tenant: {
     name: string;
     slug: string;
+    status: string;
   };
   config: VerticalConfig;
 }

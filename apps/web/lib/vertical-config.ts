@@ -15,6 +15,7 @@ export interface StoredAuthSession {
 export interface StoredTenant {
   name: string;
   slug: string;
+  status?: string;
 }
 
 export function storeAuthSession(input: StoredAuthSession) {

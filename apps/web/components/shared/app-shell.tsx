@@ -2,7 +2,7 @@
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { CreditCard } from "lucide-react";
+import { AlertTriangle, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -140,6 +140,14 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             })}
           </nav>
         </header>
+        {tenant?.status === "WARNING" ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-6">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>Your RetailOS subscription needs attention. Billing continues to work, but please contact your administrator.</span>
+            </div>
+          </div>
+        ) : null}
         <main className="px-4 py-5 sm:px-6">{children}</main>
       </div>
     </div>

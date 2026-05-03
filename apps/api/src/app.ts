@@ -19,6 +19,8 @@ import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
+import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.routes.js";
+import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -51,6 +53,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(metricsPlugin);
   await fastify.register(authPlugin);
   await fastify.register(authRoutes);
+  await fastify.register(superAdminAuthRoutes);
+  await fastify.register(superAdminShopsRoutes);
 
   async function getHealth() {
     await Promise.all([fastify.prisma.$queryRaw`SELECT 1`, fastify.redis.ping()]);

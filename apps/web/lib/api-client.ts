@@ -82,6 +82,7 @@ export async function getCurrentVerticalConfig(): Promise<{
   tenant: {
     name: string;
     slug: string;
+    status: string;
   };
   config: VerticalConfig;
 }> {
@@ -98,6 +99,7 @@ export async function getCurrentVerticalConfig(): Promise<{
     tenant: {
       name: string;
       slug: string;
+      status: string;
     };
     config: VerticalConfig;
   }>;
