@@ -37,7 +37,7 @@ export async function writeAuditLog(
       action: params.action,
       entity: params.entity,
       entityId: params.entityId ?? null,
-      changes: params.changes ? (params.changes as object) : undefined,
+      changes: params.changes ?? undefined,
       ip: params.ip ?? null,
     },
   });

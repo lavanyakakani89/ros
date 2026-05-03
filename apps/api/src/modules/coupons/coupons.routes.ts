@@ -29,7 +29,18 @@ export const couponsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return handleError(reply, async () => {
       const input = createSchema.parse(request.body);
       return fastify.prisma.coupon.create({
-        data: { tenantId: request.tenant.id, ...input },
+        data: {
+          tenantId: request.tenant.id,
+          code: input.code,
+          description: input.description ?? null,
+          discountType: input.discountType,
+          discountValue: input.discountValue,
+          minOrderValue: input.minOrderValue ?? null,
+          maxDiscount: input.maxDiscount ?? null,
+          usageLimit: input.usageLimit ?? null,
+          validFrom: input.validFrom,
+          validUntil: input.validUntil,
+        },
       });
     });
   });
@@ -63,7 +74,18 @@ export const couponsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return handleError(reply, async () => {
       const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
       const input = createSchema.partial().parse(request.body);
-      return fastify.prisma.coupon.updateMany({ where: { id, tenantId: request.tenant.id }, data: input });
+      const data = {
+        ...(input.code !== undefined ? { code: input.code } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.discountType !== undefined ? { discountType: input.discountType } : {}),
+        ...(input.discountValue !== undefined ? { discountValue: input.discountValue } : {}),
+        ...(input.minOrderValue !== undefined ? { minOrderValue: input.minOrderValue } : {}),
+        ...(input.maxDiscount !== undefined ? { maxDiscount: input.maxDiscount } : {}),
+        ...(input.usageLimit !== undefined ? { usageLimit: input.usageLimit } : {}),
+        ...(input.validFrom !== undefined ? { validFrom: input.validFrom } : {}),
+        ...(input.validUntil !== undefined ? { validUntil: input.validUntil } : {}),
+      };
+      return fastify.prisma.coupon.updateMany({ where: { id, tenantId: request.tenant.id }, data });
     });
   });
 

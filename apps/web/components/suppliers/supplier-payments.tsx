@@ -48,7 +48,7 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
   if (dataQuery.isLoading) return <div className="p-6 text-sm text-slate-500">Loading…</div>;
   if (!data) return <div className="p-6 text-sm text-slate-400">Supplier not found.</div>;
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!amount) return;
     addPayment.mutate({ amount: Number(amount), mode, note: note || undefined });
@@ -73,7 +73,7 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
           <div key={stat.label} className="rounded-md border border-border bg-white p-3">
             <div className="text-xs text-slate-500">{stat.label}</div>
             <div className={`mt-1 text-lg font-bold ${stat.color}`}>
-              INR {Number(stat.value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              INR {stat.value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         ))}

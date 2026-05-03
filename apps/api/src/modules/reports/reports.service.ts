@@ -52,7 +52,7 @@ export class ReportsService {
     const products = await this.prisma.product.findMany({ where: { tenantId: tenant.id, isActive: true } });
     return {
       stockValue: products.reduce((t, p) => t + p.currentStock.toNumber() * (p.purchasePrice?.toNumber() ?? 0), 0),
-      lowStockCount: products.filter((p) => p.reorderLevel !== null && p.currentStock.lte(p.reorderLevel!)).length,
+      lowStockCount: products.filter((p) => p.reorderLevel !== null && p.currentStock.lte(p.reorderLevel)).length,
       stockByCategory: groupStockByCategory(products),
     };
   }
@@ -71,7 +71,7 @@ export class ReportsService {
       const name = item.productName;
       const qty = item.quantity.toNumber();
       const revenue = item.total.toNumber();
-      const purchasePrice = item.product?.purchasePrice?.toNumber() ?? 0;
+      const purchasePrice = item.product.purchasePrice?.toNumber() ?? 0;
       const cost = qty * purchasePrice;
       const existing = productMap.get(name) ?? { productName: name, quantitySold: 0, revenue: 0, cost: 0 };
       existing.quantitySold += qty;

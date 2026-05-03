@@ -63,15 +63,17 @@ export const purchaseReturnsRoutes: FastifyPluginCallback = (fastify, _options, 
           ...(input.notes ? { notes: input.notes } : {}),
           totalAmount,
           items: {
-            create: input.items.map((item) => ({
+            createMany: {
+              data: input.items.map((item) => ({
               tenantId: request.tenant.id,
-              productId: item.productId,
+              productId: item.productId ?? null,
               productName: item.productName,
               quantity: item.quantity,
               unit: item.unit,
               purchasePrice: item.purchasePrice,
               total: item.quantity * item.purchasePrice,
             })),
+            },
           },
         },
         include: { supplier: true, items: true },

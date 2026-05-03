@@ -138,6 +138,7 @@ CREATE TABLE "loyalty_accounts" (
   CONSTRAINT "loyalty_accounts_customer_id_fkey" FOREIGN KEY ("customer_id") REFERENCES "customers"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 CREATE UNIQUE INDEX "loyalty_accounts_tenant_id_customer_id_key" ON "loyalty_accounts"("tenant_id", "customer_id");
+CREATE UNIQUE INDEX "loyalty_accounts_customer_id_key" ON "loyalty_accounts"("customer_id");
 CREATE INDEX "loyalty_accounts_tenant_id_idx" ON "loyalty_accounts"("tenant_id");
 
 CREATE TYPE "LoyaltyTxType" AS ENUM ('EARNED','REDEEMED','EXPIRED','ADJUSTED');
@@ -302,12 +303,15 @@ CREATE INDEX "menu_modifier_groups_tenant_id_idx" ON "menu_modifier_groups"("ten
 
 CREATE TABLE "menu_modifier_options" (
   "id" TEXT NOT NULL,
+  "tenant_id" TEXT NOT NULL,
   "group_id" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "extra_price" DECIMAL(10,2) NOT NULL DEFAULT 0,
   CONSTRAINT "menu_modifier_options_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "menu_modifier_options_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "tenants"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "menu_modifier_options_group_id_fkey" FOREIGN KEY ("group_id") REFERENCES "menu_modifier_groups"("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+CREATE INDEX "menu_modifier_options_tenant_id_group_id_idx" ON "menu_modifier_options"("tenant_id", "group_id");
 
 -- KOT
 CREATE TYPE "KOTStatus" AS ENUM ('PENDING','PREPARING','READY','SERVED','CANCELLED');
@@ -389,3 +393,108 @@ CREATE INDEX "product_variants_tenant_id_barcode_idx" ON "product_variants"("ten
 ALTER TABLE "invoices" ADD COLUMN "loyalty_points_earned" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "invoices" ADD COLUMN "loyalty_points_redeemed" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "invoices" ADD COLUMN "coupon_code" TEXT;
+
+ALTER TABLE "categories" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_categories" ON "categories"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "expenses" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_expenses" ON "expenses"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "credit_notes" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_credit_notes" ON "credit_notes"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "credit_note_items" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_credit_note_items" ON "credit_note_items"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "quotations" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_quotations" ON "quotations"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "quotation_items" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_quotation_items" ON "quotation_items"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "loyalty_accounts" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_loyalty_accounts" ON "loyalty_accounts"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "loyalty_transactions" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_loyalty_transactions" ON "loyalty_transactions"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "coupons" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_coupons" ON "coupons"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "audit_logs" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_audit_logs" ON "audit_logs"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "supplier_payments" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_supplier_payments" ON "supplier_payments"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "purchase_returns" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_purchase_returns" ON "purchase_returns"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "purchase_return_items" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_purchase_return_items" ON "purchase_return_items"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "restaurant_tables" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_restaurant_tables" ON "restaurant_tables"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "menu_categories" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_menu_categories" ON "menu_categories"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "menu_modifier_groups" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_menu_modifier_groups" ON "menu_modifier_groups"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "menu_modifier_options" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_menu_modifier_options" ON "menu_modifier_options"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "kots" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_kots" ON "kots"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "kot_items" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_kot_items" ON "kot_items"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "recipes" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_recipes" ON "recipes"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));
+
+ALTER TABLE "product_variants" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "tenant_isolation_product_variants" ON "product_variants"
+  USING ("tenant_id" = current_setting('app.tenant_id', true))
+  WITH CHECK ("tenant_id" = current_setting('app.tenant_id', true));

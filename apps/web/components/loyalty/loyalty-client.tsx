@@ -31,7 +31,13 @@ export function LoyaltyClient() {
 
   const ledgerQuery = useQuery({
     queryKey: ["loyalty-ledger", selectedCustomerId],
-    queryFn: () => createAuthenticatedApiClient().get<{ account: LoyaltyAccount; transactions: LoyaltyTransaction[] }>(`/loyalty/${selectedCustomerId}/transactions`),
+    queryFn: () => {
+      if (!selectedCustomerId) {
+        throw new Error("Select a customer before loading loyalty transactions.");
+      }
+
+      return createAuthenticatedApiClient().get<{ account: LoyaltyAccount; transactions: LoyaltyTransaction[] }>(`/loyalty/${selectedCustomerId}/transactions`);
+    },
     enabled: !!selectedCustomerId,
   });
 

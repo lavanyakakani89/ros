@@ -156,7 +156,7 @@ export function ReportsDashboard() {
           {[
             { label: "Today", fn: () => { setFrom(todayStr()); setTo(todayStr()); } },
             { label: "Last 7d", fn: () => { setFrom(weekAgoStr()); setTo(todayStr()); } },
-            { label: "This month", fn: () => { const d = new Date(); setFrom(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); setTo(todayStr()); } },
+            { label: "This month", fn: () => { const d = new Date(); setFrom(`${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); setTo(todayStr()); } },
           ].map((q) => (
             <button key={q.label} onClick={q.fn} className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50">{q.label}</button>
           ))}

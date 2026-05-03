@@ -41,7 +41,7 @@ export function CreditNotesClient() {
   const creditNotes = cnQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
 
-  function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.SyntheticEvent) {
     e.preventDefault();
     const items = lines.filter((l) => l.productId);
     if (items.length === 0) return;

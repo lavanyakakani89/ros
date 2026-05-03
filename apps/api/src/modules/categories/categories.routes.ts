@@ -31,7 +31,12 @@ export const categoriesRoutes: FastifyPluginCallback = (fastify, _options, done)
   fastify.put("/api/categories/:id", async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const input = createSchema.partial().parse(request.body);
-    const result = await fastify.prisma.category.updateMany({ where: { id, tenantId: request.tenant.id }, data: input });
+    const data = {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+      ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+    };
+    const result = await fastify.prisma.category.updateMany({ where: { id, tenantId: request.tenant.id }, data });
     if (result.count === 0) return reply.status(404).send({ error: "Category not found" });
     return fastify.prisma.category.findFirst({ where: { id } });
   });

@@ -49,12 +49,12 @@ export function PosInvoicePanel() {
       ),
   });
   const products = productsQuery.data?.data ?? [];
-  const selectedCustomer = customersQuery.data?.data?.find((c) => c.id === customerId) ?? null;
+  const selectedCustomer = customersQuery.data?.data.find((c) => c.id === customerId) ?? null;
 
   const totals = useMemo(() => {
     const lineItems = lines.map((line) => {
       const taxable = Math.max(line.quantity * line.sellingPrice - line.discount, 0);
-      const gstRate = line.gstRate ?? 0;
+      const gstRate = line.gstRate;
       const lineGst = taxable * (gstRate / 100);
       return {
         subtotal: line.quantity * line.sellingPrice,
@@ -122,12 +122,14 @@ export function PosInvoicePanel() {
       setLine(existing.id, { quantity: existing.quantity + 1 });
     } else {
       addLine();
-      const newId = useBillingStore.getState().lines.at(-1)!.id;
+      const newLine = useBillingStore.getState().lines.at(-1);
+      if (!newLine) return;
+      const newId = newLine.id;
       setLine(newId, {
         productId: product.id,
         productName: product.name,
-        sellingPrice: Number(product.sellingPrice),
-        gstRate: Number(product.gstRate),
+        sellingPrice: decimalToNumber(product.sellingPrice),
+        gstRate: decimalToNumber(product.gstRate),
       });
     }
     setBarcodeInput("");
@@ -154,8 +156,8 @@ export function PosInvoicePanel() {
 
     // Credit-limit check
     if (selectedCustomer) {
-      const limit = Number(selectedCustomer.creditLimit ?? 0);
-      const outstanding = Number(selectedCustomer.outstandingDue ?? 0);
+      const limit = selectedCustomer.creditLimit ?? 0;
+      const outstanding = selectedCustomer.outstandingDue ?? 0;
       const primaryMode = useSplit ? splitEntries[0]?.mode : "CASH";
       if (primaryMode === "CREDIT" && limit > 0 && outstanding + totals.grandTotal > limit) {
         notify(`Credit limit exceeded. Outstanding: INR ${outstanding.toFixed(2)}, Limit: INR ${limit.toFixed(2)}`, "red");
@@ -293,10 +295,10 @@ export function PosInvoicePanel() {
           <input value={barcodeInput} onChange={(e) => setBarcodeInput(e.target.value)} onKeyDown={handleBarcodeKey}
             placeholder="Scan barcode / SKU + Enter" className="h-10 rounded-md border border-border px-3 text-sm font-mono" />
         </div>
-        {selectedCustomer && Number(selectedCustomer.outstandingDue ?? 0) > 0 && (
+        {selectedCustomer && (selectedCustomer.outstandingDue ?? 0) > 0 && (
           <div className="border-b border-border bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Outstanding due: INR {Number(selectedCustomer.outstandingDue).toFixed(2)}
-            {selectedCustomer.creditLimit ? ` | Credit limit: INR ${Number(selectedCustomer.creditLimit).toFixed(2)}` : ""}
+            Outstanding due: INR {(selectedCustomer.outstandingDue ?? 0).toFixed(2)}
+            {selectedCustomer.creditLimit ? ` | Credit limit: INR ${selectedCustomer.creditLimit.toFixed(2)}` : ""}
           </div>
         )}
 
@@ -317,7 +319,7 @@ export function PosInvoicePanel() {
             <tbody>
               {lines.map((line) => {
                 const taxable = Math.max(line.quantity * line.sellingPrice - line.discount, 0);
-                const lineGst = taxable * ((line.gstRate ?? 0) / 100);
+                const lineGst = taxable * (line.gstRate / 100);
                 const lineTotal = taxable + lineGst;
                 return (
                   <tr key={line.id} className="border-t border-border">
@@ -330,8 +332,8 @@ export function PosInvoicePanel() {
                           setLine(line.id, {
                             productId: e.target.value,
                             productName: product?.name ?? "",
-                            sellingPrice: product ? Number(product.sellingPrice) : 0,
-                            gstRate: product ? Number(product.gstRate) : 0,
+                            sellingPrice: product ? decimalToNumber(product.sellingPrice) : 0,
+                            gstRate: product ? decimalToNumber(product.gstRate) : 0,
                           });
                         }}
                       >
@@ -416,7 +418,7 @@ export function PosInvoicePanel() {
               </div>
             ))}
             <button className="text-sm text-emerald-700 font-medium" onClick={() => setSplitEntries((prev) => [...prev, { mode: "CASH", amount: 0 }])}>+ Add mode</button>
-            {useSplit && Math.abs(splitTotal() - totals.grandTotal) > 0.01 && (
+            {Math.abs(splitTotal() - totals.grandTotal) > 0.01 && (
               <div className="text-xs text-amber-600">Split total: INR {splitTotal().toFixed(2)} | Remaining: INR {(totals.grandTotal - splitTotal()).toFixed(2)}</div>
             )}
           </div>
@@ -452,4 +454,8 @@ export function PosInvoicePanel() {
       </aside>
     </section>
   );
+}
+
+function decimalToNumber(value: string | number): number {
+  return typeof value === "number" ? value : Number(value);
 }

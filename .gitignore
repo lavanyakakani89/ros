@@ -13,6 +13,7 @@ pnpm-debug.log*
 .deploy/
 whatsapp-session/
 *.session
+.claude/worktrees/
 apps/web/public/sw.js
 apps/web/public/workbox-*.js
 apps/web/public/fallback-*.js

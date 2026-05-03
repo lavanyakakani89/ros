@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { PaymentMode } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class CreditNoteError extends Error {
@@ -50,7 +49,10 @@ export const creditNotesRoutes: FastifyPluginCallback = (fastify, _options, done
       }
 
       const calcItems = input.items.map((item) => {
-        const p = productById.get(item.productId)!;
+        const p = productById.get(item.productId);
+        if (!p) {
+          throw new CreditNoteError("One or more products not found", 400);
+        }
         const qty = item.quantity;
         const taxable = Math.max(p.sellingPrice.toNumber() * qty - item.discount, 0);
         const gstRate = p.gstRate.toNumber();
@@ -67,7 +69,6 @@ export const creditNotesRoutes: FastifyPluginCallback = (fastify, _options, done
 
       const counter = await fastify.prisma.$transaction(async (tx) => {
         const now = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-        const key = `CN-${request.tenant.id}-${now}`;
         const existing = await tx.invoiceCounter.upsert({
           where: { tenantId_date: { tenantId: request.tenant.id, date: `CN-${now}` } },
           create: { tenantId: request.tenant.id, date: `CN-${now}`, nextSeq: 2 },

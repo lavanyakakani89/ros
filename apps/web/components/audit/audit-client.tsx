@@ -24,7 +24,7 @@ export function AuditClient() {
 
   const logsQuery = useQuery({
     queryKey: ["audit-logs", entity, page],
-    queryFn: () => createAuthenticatedApiClient().get<{ data: AuditLog[]; total: number; limit: number }>(`/audit-logs?page=${page}&limit=50${entity ? `&entity=${entity}` : ""}`),
+    queryFn: () => createAuthenticatedApiClient().get<{ data: AuditLog[]; total: number; limit: number }>(`/audit-logs?page=${String(page)}&limit=50${entity ? `&entity=${entity}` : ""}`),
   });
 
   const logs = logsQuery.data?.data ?? [];

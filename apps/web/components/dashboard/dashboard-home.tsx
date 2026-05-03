@@ -127,7 +127,7 @@ export function DashboardHome() {
                   <div key={day.date} className="flex items-center gap-3">
                     <span className="w-16 text-xs text-slate-500">{day.date.slice(5)}</span>
                     <div className="flex-1 rounded-full bg-slate-100 h-2">
-                      <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${pct}%` }} />
+                      <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${String(pct)}%` }} />
                     </div>
                     <span className="w-24 text-right text-xs font-medium text-slate-700">{money(day.sales)}</span>
                     <span className="w-12 text-right text-xs text-slate-400">{day.invoices} inv</span>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { InventoryError, InventoryService } from "./inventory.service.js";
@@ -97,11 +98,24 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
       let updated = 0;
       for (const row of rows) {
         const existing = row.sku ? await fastify.prisma.product.findFirst({ where: { tenantId: request.tenant.id, sku: row.sku } }) : null;
+        const data = {
+          name: row.name,
+          sku: row.sku ?? null,
+          barcode: row.barcode ?? null,
+          unit: row.unit,
+          mrp: row.mrp,
+          sellingPrice: row.sellingPrice,
+          purchasePrice: row.purchasePrice ?? null,
+          gstRate: row.gstRate,
+          hsnCode: row.hsnCode ?? null,
+          currentStock: row.currentStock,
+          reorderLevel: row.reorderLevel ?? null,
+        };
         if (existing) {
-          await fastify.prisma.product.update({ where: { id: existing.id }, data: { ...row } });
+          await fastify.prisma.product.update({ where: { id: existing.id }, data });
           updated++;
         } else {
-          await fastify.prisma.product.create({ data: { tenantId: request.tenant.id, ...row } });
+          await fastify.prisma.product.create({ data: { tenantId: request.tenant.id, ...data } });
           created++;
         }
       }
@@ -130,7 +144,18 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
       attributes: z.record(z.string()).optional(),
     }).parse(request.body);
     return handleInventory(reply, () => Promise.resolve(fastify.prisma.productVariant.create({
-      data: { tenantId: request.tenant.id, productId: params.id, ...input },
+      data: {
+        tenantId: request.tenant.id,
+        productId: params.id,
+        name: input.name,
+        sku: input.sku ?? null,
+        barcode: input.barcode ?? null,
+        sellingPrice: input.sellingPrice,
+        purchasePrice: input.purchasePrice ?? null,
+        mrp: input.mrp,
+        currentStock: input.currentStock,
+        attributes: input.attributes ?? Prisma.JsonNull,
+      },
     })));
   });
 

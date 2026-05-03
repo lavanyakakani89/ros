@@ -43,7 +43,7 @@ export function CategoriesClient() {
   const categories = categoriesQuery.data ?? [];
   const rootCategories = categories.filter((c) => !c.parentId);
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     createCategory.mutate({ name, description: description || undefined, parentId: parentId || undefined });
@@ -97,7 +97,7 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
 
   return (
     <>
-      <div className="flex items-center justify-between px-4 py-3" style={{ paddingLeft: `${16 + depth * 24}px` }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ paddingLeft: `${String(16 + depth * 24)}px` }}>
         <div className="flex items-center gap-2">
           {depth > 0 && <ChevronRight className="size-3 text-slate-400" />}
           <div>

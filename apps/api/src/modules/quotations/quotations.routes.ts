@@ -29,7 +29,7 @@ function calcItems(tenantId: string, quotationId: string, items: z.infer<typeof 
     const taxable = Math.max(item.sellingPrice * item.quantity - item.discount, 0);
     const gst = taxable * (item.gstRate / 100);
     const total = taxable + gst;
-    return { tenantId, quotationId, productId: item.productId, productName: item.productName, quantity: item.quantity, unit: item.unit, sellingPrice: item.sellingPrice, discount: item.discount, gstRate: item.gstRate, total };
+    return { tenantId, quotationId, productId: item.productId ?? null, productName: item.productName, quantity: item.quantity, unit: item.unit, sellingPrice: item.sellingPrice, discount: item.discount, gstRate: item.gstRate, total };
   });
 }
 
@@ -117,7 +117,7 @@ export const quotationsRoutes: FastifyPluginCallback = (fastify, _options, done)
   fastify.put("/api/quotations/:id/status", async (request, reply) => {
     return handleError(reply, async () => {
       const { id } = idParams.parse(request.params);
-      const { status } = z.object({ status: z.enum(["SENT", "ACCEPTED", "REJECTED", "CANCELLED", "CONVERTED"]) }).parse(request.body);
+      const { status } = z.object({ status: z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "CONVERTED", "EXPIRED"]) }).parse(request.body);
       return fastify.prisma.quotation.updateMany({ where: { id, tenantId: request.tenant.id }, data: { status } });
     });
   });

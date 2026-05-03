@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class RestaurantError extends Error {
@@ -57,7 +58,14 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
 
   fastify.post("/api/restaurant/tables", async (request) => {
     const input = tableSchema.parse(request.body);
-    return fastify.prisma.restaurantTable.create({ data: { tenantId: request.tenant.id, ...input } });
+    return fastify.prisma.restaurantTable.create({
+      data: {
+        tenantId: request.tenant.id,
+        number: input.number,
+        capacity: input.capacity,
+        section: input.section ?? null,
+      },
+    });
   });
 
   fastify.put("/api/restaurant/tables/:id/status", async (request, reply) => {
@@ -106,15 +114,17 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
         ...(input.tableId ? { tableId: input.tableId } : {}),
         ...(input.customerId ? { customerId: input.customerId } : {}),
         items: {
-          create: input.items.map((item) => ({
+          createMany: {
+            data: input.items.map((item) => ({
             tenantId: request.tenant.id,
-            productId: item.productId,
+            productId: item.productId ?? null,
             productName: item.productName,
             quantity: item.quantity,
             unit: item.unit,
-            notes: item.notes,
-            modifiers: item.modifiers ? JSON.stringify(item.modifiers) : undefined,
+            notes: item.notes ?? null,
+            modifiers: item.modifiers ?? Prisma.JsonNull,
           })),
+          },
         },
       },
       include: { items: true, table: true },
@@ -193,7 +203,13 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
         name: input.name,
         required: input.required,
         multiSelect: input.multiSelect,
-        options: { create: input.options },
+        options: {
+          create: input.options.map((option) => ({
+            tenantId: request.tenant.id,
+            name: option.name,
+            extraPrice: option.extraPrice,
+          })),
+        },
       },
       include: { options: true },
     });

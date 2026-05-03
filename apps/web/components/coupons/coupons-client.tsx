@@ -37,7 +37,7 @@ export function CouponsClient() {
 
   const coupons = couponsQuery.data ?? [];
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!form.code || !form.discountValue) return;
     createCoupon.mutate({
@@ -89,9 +89,9 @@ export function CouponsClient() {
                   <div>
                     <div className="font-mono text-sm font-bold text-slate-900">{coupon.code}</div>
                     <div className="text-xs text-slate-500">
-                      {coupon.discountType === "FLAT" ? `INR ${Number(coupon.discountValue).toFixed(0)} off` : `${Number(coupon.discountValue)}% off`}
+                      {coupon.discountType === "FLAT" ? `INR ${Number(coupon.discountValue).toFixed(0)} off` : `${String(Number(coupon.discountValue))}% off`}
                       {coupon.minOrderValue ? ` · Min INR ${Number(coupon.minOrderValue).toFixed(0)}` : ""}
-                      {coupon.usageLimit ? ` · ${coupon.usedCount}/${coupon.usageLimit} used` : ` · ${coupon.usedCount} used`}
+                      {coupon.usageLimit ? ` · ${String(coupon.usedCount)}/${String(coupon.usageLimit)} used` : ` · ${String(coupon.usedCount)} used`}
                       {" · Expires "}{new Date(coupon.validUntil).toLocaleDateString("en-IN")}
                     </div>
                   </div>

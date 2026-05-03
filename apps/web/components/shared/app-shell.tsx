@@ -62,7 +62,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     async function fetchLowStock() {
       try {
         const data = await createAuthenticatedApiClient().get<{ lowStockCount: number }>("/reports/inventory");
-        setLowStockCount(data.lowStockCount ?? 0);
+        setLowStockCount(data.lowStockCount);
       } catch {
         // non-critical
       }

@@ -44,7 +44,11 @@ export const expensesRoutes: FastifyPluginCallback = (fastify, _options, done) =
       data: {
         tenantId: request.tenant.id,
         createdBy: request.user.userId,
-        ...input,
+        category: input.category,
+        description: input.description,
+        amount: input.amount,
+        paidAt: input.paidAt,
+        notes: input.notes ?? null,
       },
     });
   });

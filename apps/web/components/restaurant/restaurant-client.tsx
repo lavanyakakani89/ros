@@ -95,7 +95,7 @@ export function RestaurantClient() {
     { id: "menu", label: "Menu Categories", icon: UtensilsCrossed },
   ];
 
-  function handleKotSubmit(e: React.FormEvent) {
+  function handleKotSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     const items = kotLines.filter((l) => l.productName.trim());
     if (items.length === 0) return;
@@ -169,7 +169,7 @@ export function RestaurantClient() {
           <div className="space-y-3">
             {["PENDING", "PREPARING", "READY"].map((statusGroup) => (
               <div key={statusGroup}>
-                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md inline-block ${KOT_STATUS_COLORS[statusGroup]}`}>{statusGroup}</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide px-2 py-1 rounded-md inline-block ${KOT_STATUS_COLORS[statusGroup] ?? ""}`}>{statusGroup}</div>
                 <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                   {kots.filter((k) => k.status === statusGroup).map((kot) => (
                     <div key={kot.id} className="rounded-md border border-border bg-white p-3">

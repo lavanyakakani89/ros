@@ -52,7 +52,7 @@ export function PurchaseReturnsClient() {
   const suppliers = suppliersQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     const items = lines.filter((l) => l.productName.trim() || l.productId);
     if (items.length === 0) return;

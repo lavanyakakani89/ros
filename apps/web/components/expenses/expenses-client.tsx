@@ -40,7 +40,7 @@ export function ExpensesClient() {
   const expenses = expensesQuery.data?.data ?? [];
   const summary = expensesQuery.data?.summary;
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!form.description.trim() || !form.amount) return;
     createExpense.mutate({ category: form.category, description: form.description, amount: Number(form.amount), notes: form.notes || undefined });
@@ -57,8 +57,8 @@ export function ExpensesClient() {
 
       {summary && (
         <StatStrip items={[
-          { label: "Total expenses", value: `INR ${Number(summary.total).toFixed(2)}`, tone: "amber" },
-          ...Object.entries(summary.byCategory).slice(0, 4).map(([cat, amt]) => ({ label: cat, value: `INR ${Number(amt).toFixed(2)}`, tone: "slate" as const })),
+          { label: "Total expenses", value: `INR ${summary.total.toFixed(2)}`, tone: "amber" },
+          ...Object.entries(summary.byCategory).slice(0, 4).map(([cat, amt]) => ({ label: cat, value: `INR ${amt.toFixed(2)}`, tone: "slate" as const })),
         ]} />
       )}
 

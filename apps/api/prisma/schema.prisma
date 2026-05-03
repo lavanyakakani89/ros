@@ -47,9 +47,11 @@ model Tenant {
   auditLogs          AuditLog[]
   supplierPayments   SupplierPayment[]
   purchaseReturns    PurchaseReturn[]
+  purchaseReturnItems PurchaseReturnItem[]
   restaurantTables   RestaurantTable[]
   menuCategories     MenuCategory[]
   menuModifierGroups MenuModifierGroup[]
+  menuModifierOptions MenuModifierOption[]
   kots               KOT[]
   kotItems           KOTItem[]
   recipes            Recipe[]
@@ -582,7 +584,7 @@ model LoyaltyAccount {
   id           String               @id @default(cuid())
   tenantId     String               @map("tenant_id")
   tenant       Tenant               @relation(fields: [tenantId], references: [id])
-  customerId   String               @map("customer_id")
+  customerId   String               @unique @map("customer_id")
   customer     Customer             @relation(fields: [customerId], references: [id])
   points       Int                  @default(0)
   createdAt    DateTime             @default(now()) @map("created_at")
@@ -779,11 +781,14 @@ model MenuModifierGroup {
 
 model MenuModifierOption {
   id         String            @id @default(cuid())
+  tenantId   String            @map("tenant_id")
+  tenant     Tenant            @relation(fields: [tenantId], references: [id])
   groupId    String            @map("group_id")
   group      MenuModifierGroup @relation(fields: [groupId], references: [id])
   name       String
   extraPrice Decimal           @default(0) @map("extra_price") @db.Decimal(10, 2)
 
+  @@index([tenantId, groupId])
   @@map("menu_modifier_options")
 }
 
