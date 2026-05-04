@@ -85,23 +85,38 @@ jobs:
 
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'root' }}
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/retailos' }}
-      HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL || 'https://ros.sivsanoils.in/api/health' }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
 
     steps:
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          test -n "$DEPLOY_HOST"
-          test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_PATH"
-          test -n "$DEPLOY_SSH_KEY"
+          set -Eeuo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST:-66.42.79.12}"
+          DEPLOY_USER="${DEPLOY_USER:-root}"
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/retailos}"
+          HEALTH_URL="${HEALTH_URL:-https://ros.sivsanoils.in/api/health}"
+
+          if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, to the repository secret named DEPLOY_SSH_KEY."
+            exit 1
+          fi
+
+          {
+            echo "DEPLOY_HOST=$DEPLOY_HOST"
+            echo "DEPLOY_USER=$DEPLOY_USER"
+            echo "DEPLOY_PATH=$DEPLOY_PATH"
+            echo "HEALTH_URL=$HEALTH_URL"
+          } >> "$GITHUB_ENV"
+
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
+          ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy latest main on server
         run: |
