@@ -2,11 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { getStoredTenant } from "@/lib/vertical-config";
 
 type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend";
 
@@ -63,12 +64,21 @@ export function ReportsDashboard() {
   const [tab, setTab] = useState<Tab>(initialTab);
   const [from, setFrom] = useState(weekAgoStr());
   const [to, setTo] = useState(todayStr());
+  const [gstEnabled, setGstEnabled] = useState(true);
+
+  useEffect(() => {
+    const enabled = getStoredTenant()?.gstEnabled !== false;
+    setGstEnabled(enabled);
+    if (!enabled && tab === "gstr") {
+      setTab("sales");
+    }
+  }, [tab]);
 
   const summaryQuery = useQuery({
     queryKey: ["reports-summary", from, to],
     queryFn: () =>
       createAuthenticatedApiClient().get<ReportSummary>(`/reports/summary?from=${from}&to=${to}`),
-    enabled: tab === "sales" || tab === "gstr",
+    enabled: tab === "sales" || (gstEnabled && tab === "gstr"),
   });
   const inventoryQuery = useQuery({
     queryKey: ["reports-inventory"],
@@ -102,7 +112,7 @@ export function ReportsDashboard() {
     { id: "sales", label: "Sales" },
     { id: "inventory", label: "Inventory" },
     { id: "pnl", label: "P&L" },
-    { id: "gstr", label: "GSTR Export" },
+    ...(gstEnabled ? [{ id: "gstr" as const, label: "GSTR Export" }] : []),
     { id: "dayend", label: "Day-End" },
   ];
 
@@ -168,7 +178,7 @@ export function ReportsDashboard() {
         <>
           <StatStrip items={[
             { label: "Gross sales", value: money(summary?.grossSales ?? 0), tone: "emerald" },
-            { label: "GST collected", value: money(summary?.totalGst ?? 0), tone: "blue" },
+            ...(gstEnabled ? [{ label: "GST collected", value: money(summary?.totalGst ?? 0), tone: "blue" as const }] : []),
             { label: "Invoices", value: String(summary?.invoiceCount ?? 0), tone: "slate" },
             { label: "Avg bill", value: money(summary?.averageBillValue ?? 0), tone: "amber" },
             { label: "Collected", value: money(summary?.paid ?? 0), tone: "emerald" },
@@ -197,8 +207,14 @@ export function ReportsDashboard() {
             <div className="rounded-md border border-border bg-white p-4 xl:col-span-2">
               <div className="grid gap-4 md:grid-cols-3">
                 <ReportList title="Fast-moving items" items={(summary?.movingItems ?? []).slice(0, 8).map((i) => `${i.productName} — ${String(i.quantitySold)} units`)} />
-                <ReportList title="GST by rate" items={(summary?.gstByRate ?? []).map((i) => `${String(i.gstRate)}% → ${money(i.totalGst)}`)} />
-                <ReportList title="HSN summary" items={(summary?.hsnSummary ?? []).slice(0, 8).map((i) => `${i.hsnCode} — ${money(i.totalSales)}`)} />
+                {gstEnabled ? (
+                  <>
+                    <ReportList title="GST by rate" items={(summary?.gstByRate ?? []).map((i) => `${String(i.gstRate)}% -> ${money(i.totalGst)}`)} />
+                    <ReportList title="HSN summary" items={(summary?.hsnSummary ?? []).slice(0, 8).map((i) => `${i.hsnCode} - ${money(i.totalSales)}`)} />
+                  </>
+                ) : (
+                  <ReportList title="Non-GST sales" items={["GST reports are hidden because GST is disabled for this shop."]} />
+                )}
               </div>
             </div>
           </div>

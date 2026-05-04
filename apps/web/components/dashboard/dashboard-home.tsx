@@ -8,6 +8,7 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Bell,
+  Clock3,
   IndianRupee,
   Package,
   Plus,
@@ -22,6 +23,7 @@ import { useEffect, useState } from "react";
 import { iconMap } from "@/components/shared/icon-map";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { dashboardModuleGroups } from "@/lib/navigation-groups";
+import { getPendingInvoiceCounts } from "@/lib/offline-queue";
 import { getStoredTenant, getStoredVerticalConfig, type StoredTenant } from "@/lib/vertical-config";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +51,24 @@ interface PnlSummary {
   grossMarginPct: number;
 }
 
+interface DeliveryRecord {
+  id: string;
+  status: "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
+  customer?: {
+    name?: string;
+  };
+}
+
+interface AuditLogRecord {
+  id: string;
+  action: string;
+  entity: string;
+  createdAt: string;
+  user?: {
+    name?: string;
+  } | null;
+}
+
 const quickActions = [
   { href: "/billing", label: "New invoice", icon: Plus, primary: true },
   { href: "/purchases", label: "Receive stock", icon: ArrowDownToLine, primary: false },
@@ -59,16 +79,25 @@ const quickActions = [
 export function DashboardHome() {
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
   const [tenant, setTenant] = useState<StoredTenant | null>(null);
+  const [offlineInvoices, setOfflineInvoices] = useState({ pending: 0, syncing: 0, failed: 0 });
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
 
   useEffect(() => {
     setVerticalConfig(getStoredVerticalConfig() ?? pharmacyConfig);
     setTenant(getStoredTenant());
+    getPendingInvoiceCounts()
+      .then(setOfflineInvoices)
+      .catch(() => setOfflineInvoices({ pending: 0, syncing: 0, failed: 0 }));
   }, []);
 
-  const salesQuery = useQuery({
-    queryKey: ["dashboard-sales"],
+  const todaySalesQuery = useQuery({
+    queryKey: ["dashboard-sales-today", today],
+    queryFn: () =>
+      createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?from=${today}&to=${today}`),
+  });
+  const weekSalesQuery = useQuery({
+    queryKey: ["dashboard-sales-week", weekAgo, today],
     queryFn: () =>
       createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?from=${weekAgo}&to=${today}`),
   });
@@ -81,19 +110,34 @@ export function DashboardHome() {
     queryFn: () =>
       createAuthenticatedApiClient().get<PnlSummary>(`/reports/pnl?from=${weekAgo}&to=${today}`),
   });
+  const deliveriesQuery = useQuery({
+    queryKey: ["dashboard-deliveries"],
+    queryFn: () => createAuthenticatedApiClient().get<DeliveryRecord[]>("/delivery"),
+  });
+  const auditQuery = useQuery({
+    queryKey: ["dashboard-audit"],
+    queryFn: () => createAuthenticatedApiClient().get<{ data: AuditLogRecord[] }>("/audit-logs?limit=8"),
+  });
 
-  const s = salesQuery.data;
+  const todaySales = todaySalesQuery.data;
+  const s = weekSalesQuery.data;
   const inv = inventoryQuery.data;
   const pnl = pnlQuery.data;
+  const deliveries = deliveriesQuery.data ?? [];
+  const pendingDeliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
+  const failedDeliveryCount = deliveries.filter((delivery) => delivery.status === "FAILED").length;
+  const auditLogs = auditQuery.data?.data ?? [];
   const tenantName = tenant?.name ?? "RetailOS";
   const moduleGroups = dashboardModuleGroups(verticalConfig.navigation);
   const maxSales = Math.max(...(s?.dailySales ?? []).map((day) => day.sales), 1);
 
   const kpis = [
-    { label: "Today's sales", value: money(s?.netSales ?? 0), change: "Last 7 days net", icon: IndianRupee, tone: "emerald" },
-    { label: "Invoices", value: String(s?.invoiceCount ?? 0), change: "Bills in range", icon: Receipt, tone: "blue" },
+    { label: "Today's sales", value: money(todaySales?.netSales ?? 0), change: `${String(todaySales?.invoiceCount ?? 0)} bills today`, icon: IndianRupee, tone: "emerald" },
+    { label: "7-day sales", value: money(s?.netSales ?? 0), change: `${String(s?.invoiceCount ?? 0)} bills in range`, icon: Receipt, tone: "blue" },
     { label: "Outstanding dues", value: money(s?.due ?? 0), change: "Customer credit", icon: AlertTriangle, tone: "amber" },
     { label: "Low stock items", value: String(inv?.lowStockCount ?? 0), change: "Needs reorder", icon: Package, tone: "red" },
+    { label: "Open deliveries", value: String(pendingDeliveryCount), change: failedDeliveryCount > 0 ? `${String(failedDeliveryCount)} failed` : "Pending or assigned", icon: Clock3, tone: "blue" },
+    { label: "Offline invoices", value: String(offlineInvoices.pending + offlineInvoices.syncing + offlineInvoices.failed), change: offlineInvoices.failed > 0 ? `${String(offlineInvoices.failed)} failed sync` : "Queued locally", icon: Bell, tone: offlineInvoices.failed > 0 ? "red" : "slate" },
     { label: "Gross profit", value: money(pnl?.grossProfit ?? 0), change: `${pnl ? pnl.grossMarginPct.toFixed(1) : "0.0"}% margin`, icon: TrendingUp, tone: "violet" },
     { label: "Stock value", value: money(inv?.stockValue ?? 0), change: "Inventory holding", icon: Package, tone: "slate" },
   ] as const;
@@ -126,6 +170,15 @@ export function DashboardHome() {
           detail="Follow up customer dues and record collections."
           href="/payments"
         />
+        {pendingDeliveryCount > 0 ? (
+          <AlertBlock
+            tone="blue"
+            icon={Clock3}
+            title={`${String(pendingDeliveryCount)} deliveries need action`}
+            detail="Assign riders or update delivery status from the delivery board."
+            href="/delivery"
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -190,6 +243,48 @@ export function DashboardHome() {
                     <div className="text-sm font-medium">{money(item.totalSales)}</div>
                     <div className="text-xs text-slate-400">{item.quantitySold} units</div>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <div className="rounded-md border border-border bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-950">Open deliveries</div>
+            <Link href="/delivery" className="text-xs font-medium text-emerald-700 hover:underline">Open board</Link>
+          </div>
+          {deliveries.length === 0 ? (
+            <p className="text-sm text-slate-400">No delivery orders yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {deliveries.slice(0, 8).map((delivery) => (
+                <div key={delivery.id} className="flex items-center justify-between py-2">
+                  <span className="truncate text-sm text-slate-700">{delivery.customer?.name ?? "Walk-in customer"}</span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", deliveryStatusClass(delivery.status))}>
+                    {delivery.status.replaceAll("_", " ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-md border border-border bg-white p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-slate-950">Recent activity</div>
+            <Link href="/audit" className="text-xs font-medium text-emerald-700 hover:underline">View audit</Link>
+          </div>
+          {auditLogs.length === 0 ? (
+            <p className="text-sm text-slate-400">No audit activity yet.</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="py-2">
+                  <div className="text-sm font-medium text-slate-800">{readableAction(log.action)} {log.entity.toLowerCase()}</div>
+                  <div className="text-xs text-slate-400">{log.user?.name ?? "System"} | {formatDateTime(log.createdAt)}</div>
                 </div>
               ))}
             </div>
@@ -324,6 +419,35 @@ function moduleColor(href: string): { bg: string; icon: string } {
 
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function deliveryStatusClass(status: DeliveryRecord["status"]): string {
+  if (status === "DELIVERED") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "FAILED" || status === "CANCELLED") {
+    return "bg-red-50 text-red-700";
+  }
+
+  if (status === "OUT_FOR_DELIVERY") {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  return "bg-amber-50 text-amber-700";
+}
+
+function readableAction(action: string): string {
+  return action.replaceAll("_", " ").toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function formatToday(): string {

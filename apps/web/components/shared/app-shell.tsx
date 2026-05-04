@@ -28,7 +28,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [tenant, setTenant] = useState<StoredTenant | null>(null);
   const [session, setSession] = useState<StoredAuthSession | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
-  const [lowStockCount, setLowStockCount] = useState(0);
+  const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
@@ -60,17 +61,44 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       }
     }
 
-    async function fetchLowStock() {
+    if (typeof navigator !== "undefined") {
+      setOnline(navigator.onLine);
+    }
+
+    function handleOnlineState() {
+      setOnline(navigator.onLine);
+    }
+
+    window.addEventListener("online", handleOnlineState);
+    window.addEventListener("offline", handleOnlineState);
+
+    async function fetchBadges() {
       try {
-        const data = await createAuthenticatedApiClient().get<{ lowStockCount: number }>("/reports/inventory");
-        setLowStockCount(data.lowStockCount);
+        const api = createAuthenticatedApiClient();
+        const [inventory, deliveries, invoices] = await Promise.all([
+          api.get<{ lowStockCount: number }>("/reports/inventory"),
+          api.get<Array<{ status: string }>>("/delivery"),
+          api.get<{ data: Array<{ amountDue?: string | number; status?: string }> }>("/billing/invoices?limit=100"),
+        ]);
+        const deliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
+        const outstandingCount = invoices.data.filter((invoice) => Number(invoice.amountDue ?? 0) > 0 || invoice.status === "PARTIAL").length;
+        setBadgeCounts({
+          "/inventory": inventory.lowStockCount,
+          "/delivery": deliveryCount,
+          "/payments": outstandingCount,
+        });
       } catch {
         // non-critical
       }
     }
 
     void verifySession();
-    void fetchLowStock();
+    void fetchBadges();
+
+    return () => {
+      window.removeEventListener("online", handleOnlineState);
+      window.removeEventListener("offline", handleOnlineState);
+    };
   }, [router]);
 
   if (checkingSession) {
@@ -97,18 +125,19 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <div>
             <div className="text-sm font-semibold">RetailOS</div>
             <div className="text-xs text-slate-500">{tenantName}</div>
+            <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>
         </div>
         <nav className="px-3 py-4" aria-label="Main navigation">
           {dashboard ? (
-            <NavigationLink item={dashboard} pathname={pathname} lowStockCount={lowStockCount} />
+            <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} />
           ) : null}
           {navGroups.map((group) => (
             <div key={group.label} className="mt-4 border-t border-border pt-3">
               <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{group.label}</div>
               <div className="space-y-1">
                 {group.items.map((item) => (
-                  <NavigationLink key={item.href} item={item} pathname={pathname} lowStockCount={lowStockCount} />
+                  <NavigationLink key={item.href} item={item} pathname={pathname} badgeCount={badgeCounts[item.href] ?? 0} />
                 ))}
               </div>
             </div>
@@ -124,13 +153,20 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               <div className="text-xs text-slate-500">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"} | ₹</div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden rounded-md border border-border px-3 py-1.5 text-xs text-slate-600 sm:block">Online</div>
+              <div
+                className="hidden size-2.5 rounded-full sm:block"
+                title={online ? "Online" : "Offline"}
+                aria-label={online ? "Online" : "Offline"}
+                role="status"
+              >
+                <span className={cn("block size-2.5 rounded-full", online ? "bg-emerald-500" : "bg-red-500")} />
+              </div>
               <div className="flex size-9 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">{initials}</div>
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto border-t border-border px-2 py-2 lg:hidden" aria-label="Main navigation">
             {dashboard ? (
-              <NavigationLink item={dashboard} pathname={pathname} lowStockCount={lowStockCount} mobile />
+              <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} mobile />
             ) : null}
             {navGroups.map((group) => (
               <div key={group.label} className="flex shrink-0 items-stretch gap-1 rounded-md border border-border bg-slate-50 p-1">
@@ -138,7 +174,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                   {group.label}
                 </div>
                 {group.items.map((item) => (
-                  <NavigationLink key={item.href} item={item} pathname={pathname} lowStockCount={lowStockCount} mobile />
+                  <NavigationLink key={item.href} item={item} pathname={pathname} badgeCount={badgeCounts[item.href] ?? 0} mobile />
                 ))}
               </div>
             ))}
@@ -180,17 +216,16 @@ function getNavigationIcon(item: VerticalNavigationItem) {
 function NavigationLink({
   item,
   pathname,
-  lowStockCount,
+  badgeCount,
   mobile = false,
 }: Readonly<{
   item: VerticalNavigationItem;
   pathname: string;
-  lowStockCount: number;
+  badgeCount: number;
   mobile?: boolean;
 }>) {
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
   const Icon = getNavigationIcon(item);
-  const isInventory = item.href === "/inventory";
   const iconClass = navigationIconClass(item.href);
 
   if (mobile) {
@@ -204,9 +239,9 @@ function NavigationLink({
       >
         <div className={cn("relative flex size-8 items-center justify-center rounded-md bg-white", active && "bg-emerald-100")}>
           <Icon className={cn("size-4", iconClass)} aria-hidden="true" />
-          {isInventory && lowStockCount > 0 ? (
+          {badgeCount > 0 ? (
             <span className="absolute -right-2 -top-1.5 flex size-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
-              {lowStockCount > 9 ? "9+" : lowStockCount}
+              {badgeCount > 9 ? "9+" : badgeCount}
             </span>
           ) : null}
         </div>
@@ -227,9 +262,9 @@ function NavigationLink({
         <Icon className={cn("size-4", iconClass)} aria-hidden="true" />
       </span>
       <span className="flex-1 truncate">{item.label}</span>
-      {isInventory && lowStockCount > 0 ? (
+      {badgeCount > 0 ? (
         <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-          {lowStockCount > 99 ? "99+" : lowStockCount}
+          {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       ) : null}
     </Link>

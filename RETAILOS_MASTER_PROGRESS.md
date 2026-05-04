@@ -6,7 +6,7 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
 
 ## Current Deploy
 
-- Latest deployed commit: `13914ce`
+- Latest deployed commit: `9d44048`
 - Live URL: `https://ros.sivsanoils.in`
 - Last verified: API health and web login page after deploy
 
@@ -15,8 +15,8 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
 - [x] Section 0 - Critical bugs
   - Docker Chromium dependencies, workers, WhatsApp singleton, offline billing queue, Razorpay webhook, sidebar grouping verified/fixed.
 - [~] Section 1 - Platform-wide changes
-  - Done: GST tenant flag/toggle, GST-aware billing/product UI, ESLint root, prom-client metrics, role removed from localStorage.
-  - Pending: MinIO public file domain, PWA PNG/iOS icons, full remaining currency sweep, GST-aware PDFs/reports/dashboard cards.
+  - Done: GST tenant flag/toggle, GST-aware billing/product UI, ESLint root, prom-client metrics, role removed from localStorage, PWA PNG/iOS icons, MinIO file-domain proxy, report GST tab hidden for non-GST tenants.
+  - Pending: full remaining currency sweep, GST-aware PDFs.
 - [~] Section 2 - Keyboard shortcuts
   - Done: POS `Ctrl+1/2/3/4`, `Ctrl+H`, `Ctrl+N`, `Ctrl+P`, visible button badges and shortcut strip.
   - Pending: complete Escape behavior across every searchable dropdown.
@@ -66,8 +66,8 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
   - Existing expense API/UI present.
   - Pending: receipt upload, recurring expenses, analytics/P&L integration.
 - [~] Section 18 - Reports
-  - Existing reports module present.
-  - Pending: remove all fake data, complete live report endpoints/charts/exports.
+  - Done: live summary/inventory/P&L/day-end reports, GST exports hidden when GST is disabled.
+  - Pending: complete all report endpoints/charts/exports and acceptance tests.
 - [~] Section 19 - Settings
   - Existing tenant/user/password/printer/template basics present; GST toggle added.
   - Pending: logo upload, notification settings, billing/delivery/loyalty defaults, richer template editor.
@@ -81,19 +81,22 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
   - Existing template/printer pipeline present.
   - Pending: full Monaco editor, versioning, all template sizes and browser Bluetooth/USB polish.
 - [~] Section 23 - Dashboard
-  - Existing dashboard present.
-  - Pending: live stats across all cards, activity feed, sparklines, top products.
+  - Done: live today sales, 7-day sales, inventory, P&L, open deliveries, offline queue count, recent audit activity, top products.
+  - Pending: sparklines and remaining role/vertical-specific widgets.
 - [~] Section 24 - Navigation/sidebar
-  - Existing grouped navigation present.
-  - Pending: all badge counts, mobile collapse/expand, GST status in sidebar header.
+  - Done: grouped navigation, colored icons, low-stock badge, delivery badge, outstanding-payment badge, real online/offline dot, GST status in sidebar header.
+  - Pending: mobile collapse/expand polish and remaining module-specific badges.
 - [~] Section 25 - Missing backend API routes summary
   - Many listed routes already exist.
   - Pending: remaining endpoints and route-level acceptance tests.
 
-## Next Batch
+## Current Batch
 
-- [ ] Add PWA PNG/iOS icons.
-- [ ] Add MinIO file-domain proxy support.
-- [ ] Add invoice-history filters, pagination, status colors, and local print action.
-- [ ] Add POS MRP guard and stock-block-at-confirm.
+- [x] Add PWA PNG/iOS icons.
+- [x] Add MinIO file-domain proxy support.
+- [x] Add invoice-history filters, pagination, status colors, and local print action.
+- [x] Add POS MRP guard and stock-block-at-confirm.
+- [x] Add dashboard live delivery/offline/audit signals.
+- [x] Add navigation delivery/payment badge counts and real online/offline dot.
+- [x] Hide GST report/export UI for non-GST tenants.
 - [ ] Verify, push, deploy.
