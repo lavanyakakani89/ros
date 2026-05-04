@@ -75,7 +75,7 @@ export function InvoiceHistory() {
   }
 
   return (
-    <section className="rounded-md border border-border bg-white">
+    <section className="flex max-h-[72vh] min-h-0 flex-col rounded-md border border-border bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div className="text-sm font-semibold text-slate-950">Invoice history</div>
         <div className="flex flex-wrap gap-2">
@@ -89,9 +89,9 @@ export function InvoiceHistory() {
         </div>
       </div>
       {error ? <div className="m-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
-      <div className="overflow-x-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[860px] text-sm">
-          <thead className="bg-slate-50 text-left text-xs text-slate-500">
+          <thead className="sticky top-0 z-[1] bg-slate-50 text-left text-xs text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
             <tr>
               <th className="px-4 py-2 font-medium">Invoice</th>
               <th className="px-4 py-2 font-medium">Customer</th>
@@ -136,7 +136,7 @@ export function InvoiceHistory() {
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-slate-600">
+      <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-white px-4 py-3 text-sm text-slate-600">
         <span>{total} invoices</span>
         <div className="flex items-center gap-2">
           <button className="h-8 rounded-md border border-border px-3 disabled:opacity-50" disabled={page <= 1} onClick={() => setPage((value) => Math.max(value - 1, 1))}>Prev</button>
