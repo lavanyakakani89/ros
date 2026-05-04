@@ -1,5 +1,5 @@
 import { PaperSize, Prisma, RenderType } from "@prisma/client";
-import type { FastifyPluginCallback, FastifyReply } from "fastify";
+import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 
 import { buildEscposText, getEffectiveTemplate } from "../printer/printer.service.js";
@@ -242,5 +242,5 @@ function templateUpdateData(input: z.infer<typeof templateUpdateSchema>): Prisma
 }
 
 function jsonForWrite(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  return value == null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+  return value == null ? Prisma.JsonNull : value;
 }

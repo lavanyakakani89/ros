@@ -48,7 +48,7 @@ export async function getEffectiveTemplate(fastify: FastifyInstance, tenant: Ten
     return tenantDefault;
   }
 
-  const paperSize = defaultTemplateByVertical[tenant.vertical] ?? PaperSize.A4;
+  const paperSize = defaultTemplateByVertical[tenant.vertical];
   return fastify.prisma.invoiceTemplate.findFirst({
     where: {
       tenantId: null,
@@ -165,7 +165,7 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
 }
 
 export function buildEscposText(lines: string[], paperSize: PaperSize): { bytes: Buffer; text: string } {
-  const columns = paperColumns[paperSize] ?? 42;
+  const columns = paperColumns[paperSize];
   const text = `${lines.map((line) => fit(line, columns)).join("\n")}\n\n\n`;
   const reset = Buffer.from([0x1b, 0x40]);
   const cut = Buffer.from([0x1d, 0x56, 0x00]);
@@ -206,28 +206,21 @@ async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | nul
     await sendTcp(printer.networkIp, printer.networkPort, bytes);
     return {
       status: "printed",
-      message: `Sent to ${printer.networkIp}:${printer.networkPort}`,
+      message: `Sent to ${printer.networkIp}:${String(printer.networkPort)}`,
     };
   }
 
-  if (printer.connectionType === PrinterConn.USB_PRINTNODE) {
-    if (!printer.printNodeApiKey || !printer.printNodePrinterId) {
-      return {
-        status: "failed",
-        message: "PrintNode API key and printer id are required.",
-      };
-    }
-
-    await sendPrintNode(printer.printNodeApiKey, printer.printNodePrinterId, bytes);
+  if (!printer.printNodeApiKey || !printer.printNodePrinterId) {
     return {
-      status: "queued",
-      message: "Queued in PrintNode.",
+      status: "failed",
+      message: "PrintNode API key and printer id are required.",
     };
   }
 
+  await sendPrintNode(printer.printNodeApiKey, printer.printNodePrinterId, bytes);
   return {
-    status: "failed",
-    message: "Unsupported printer connection.",
+    status: "queued",
+    message: "Queued in PrintNode.",
   };
 }
 
@@ -272,7 +265,7 @@ async function sendPrintNode(apiKey: string, printerId: string, bytes: Buffer): 
   });
 
   if (!response.ok) {
-    throw new Error(`PrintNode rejected job (${response.status})`);
+    throw new Error(`PrintNode rejected job (${String(response.status)})`);
   }
 }
 
@@ -296,7 +289,7 @@ function getColumns(template: InvoiceTemplate): number {
     }
   }
 
-  return paperColumns[template.paperSize] ?? 42;
+  return paperColumns[template.paperSize];
 }
 
 function money(value: { toNumber: () => number }): string {

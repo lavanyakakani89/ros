@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bluetooth, Cable, Network, Printer, Save, Usb } from "lucide-react";
+import { Bluetooth, Network, Printer, Save, Usb } from "lucide-react";
 import { useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
@@ -168,7 +168,8 @@ function TextInput({ name, label, defaultValue, type = "text" }: Readonly<{ name
 }
 
 function formString(form: FormData, key: string): string {
-  return String(form.get(key) ?? "").trim();
+  const value = form.get(key);
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function modeHelp(value: PrinterConn): string {

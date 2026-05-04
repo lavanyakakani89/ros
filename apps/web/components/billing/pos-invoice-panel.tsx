@@ -435,8 +435,8 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       const pdfViewUrl = apiUrl(`/billing/invoices/${created.id}/pdf/view`);
       setLastBill({
         id: created.id,
-        invoiceNumber: confirmed.invoiceNumber ?? created.invoiceNumber,
-        grandTotal: Number(confirmed.grandTotal ?? created.grandTotal),
+        invoiceNumber: confirmed.invoiceNumber,
+        grandTotal: Number(confirmed.grandTotal),
         subtotal: billSnapshot.subtotal,
         lineDiscount: billSnapshot.lineDiscount,
         billLevelDiscount: billSnapshot.billLevelDiscount,
@@ -537,7 +537,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
           <div className="flex flex-wrap items-center gap-2">
             <span
               className="inline-flex size-3 rounded-full"
-              title={`${online ? "Online" : "Offline billing active"} | pending ${queueCounts.pending}, syncing ${queueCounts.syncing}, failed ${queueCounts.failed}`}
+              title={`${online ? "Online" : "Offline billing active"} | pending ${String(queueCounts.pending)}, syncing ${String(queueCounts.syncing)}, failed ${String(queueCounts.failed)}`}
             >
               <span className={`size-3 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`} />
             </span>
@@ -784,7 +784,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         {useSplit ? (
           <div className="mt-2 grid gap-2">
             {splitEntries.map((entry, index) => (
-              <div key={`${entry.mode}-${index}`} className="flex items-center gap-2">
+              <div key={`${entry.mode}-${String(index)}`} className="flex items-center gap-2">
                 <select value={entry.mode} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, mode: event.target.value as PaymentMode } : item))} className="h-9 flex-1 rounded-md border border-border px-2 text-sm">
                   {PAYMENT_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
                 </select>
@@ -891,7 +891,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
                   </thead>
                   <tbody>
                     {lastBill.lines.map((line, index) => (
-                      <tr key={`${line.productName}-${index}`} className="border-b border-border">
+                      <tr key={`${line.productName}-${String(index)}`} className="border-b border-border">
                         <td className="px-2 py-2">{line.productName}</td>
                         <td className="px-2 py-2 text-right">{line.quantity}</td>
                         <td className="px-2 py-2 text-right">₹{line.sellingPrice.toFixed(2)}</td>

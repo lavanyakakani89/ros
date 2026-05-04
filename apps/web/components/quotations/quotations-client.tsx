@@ -313,7 +313,7 @@ export function QuotationsClient() {
                     </tr>
                   ) : null}
                   {lines.map((line, index) => (
-                    <tr key={`${line.productId ?? line.productName}-${index}`} className="border-t border-border">
+                    <tr key={`${line.productId ?? line.productName}-${String(index)}`} className="border-t border-border">
                       <td className="px-3 py-2">
                         <div className="font-medium text-slate-900">{line.productName}</div>
                         <div className="text-xs text-slate-500">{line.unit} <StockBadge stock={line.stock} reorderLevel={line.reorderLevel} /></div>

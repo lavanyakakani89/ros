@@ -253,7 +253,8 @@ function Textarea({ name, label, defaultValue, wide }: Readonly<{ name: string; 
 }
 
 function formString(form: FormData, key: string): string {
-  return String(form.get(key) ?? "").trim();
+  const value = form.get(key);
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function parseJson(value: string): unknown {

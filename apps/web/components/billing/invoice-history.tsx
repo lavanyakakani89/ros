@@ -214,7 +214,7 @@ function InvoiceDetailPanel({
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Line items</div>
           <div className="mt-2 divide-y divide-border rounded-md border border-border bg-white">
             {(invoice.items ?? []).length > 0 ? (invoice.items ?? []).map((item, index) => (
-              <div key={`${item.productName}-${index}`} className="flex justify-between gap-3 p-3 text-sm">
+              <div key={`${item.productName}-${String(index)}`} className="flex justify-between gap-3 p-3 text-sm">
                 <span className="min-w-0">
                   <span className="block truncate font-medium text-slate-800">{item.productName}</span>
                   <span className="text-xs text-slate-400">Qty {Number(item.quantity).toLocaleString("en-IN")}</span>

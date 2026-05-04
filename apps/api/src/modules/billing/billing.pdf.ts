@@ -15,7 +15,7 @@ export async function generateGstInvoicePdf(input: {
   template?: InvoiceTemplate | null;
 }): Promise<string> {
   const compiledTemplate = Handlebars.compile(input.template?.htmlSource ?? getTemplate());
-  const gstEnabled = input.tenant.gstEnabled !== false;
+  const gstEnabled = input.tenant.gstEnabled;
   const html = compiledTemplate({
     invoice: input.invoice,
     tenant: input.tenant,

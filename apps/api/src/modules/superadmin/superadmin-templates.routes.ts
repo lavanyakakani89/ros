@@ -193,5 +193,5 @@ function systemTemplateUpdateData(input: z.infer<typeof systemTemplateUpdateSche
 }
 
 function jsonForWrite(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  return value == null ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
+  return value == null ? Prisma.JsonNull : value;
 }

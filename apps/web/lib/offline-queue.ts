@@ -24,18 +24,20 @@ export const offlineDB = new OfflineDB();
 
 export type OfflineInvoicePayload =
   | object
-  | {
-      invoice: object;
-      delivery?: {
-        customerId: string;
-        deliveryAddress: string;
-        scheduledAt?: string;
-        notes?: string;
-      };
-      autoPay?: {
-        mode: string;
-      };
-    };
+  | OfflineInvoiceEnvelope;
+
+interface OfflineInvoiceEnvelope {
+  invoice: object;
+  delivery?: {
+    customerId: string;
+    deliveryAddress: string;
+    scheduledAt?: string;
+    notes?: string;
+  };
+  autoPay?: {
+    mode: string;
+  };
+}
 
 export async function queueInvoice(payload: OfflineInvoicePayload, tenantId: string) {
   await offlineDB.pendingInvoices.add({
@@ -96,32 +98,14 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
   }
 }
 
-function readEnvelope(payload: OfflineInvoicePayload): {
-  invoice: object;
-  delivery?: {
-    customerId: string;
-    deliveryAddress: string;
-    scheduledAt?: string;
-    notes?: string;
-  };
-  autoPay?: {
-    mode: string;
-  };
-} {
-  if (payload && typeof payload === "object" && "invoice" in payload && typeof payload.invoice === "object" && payload.invoice) {
-    return payload as {
-      invoice: object;
-      delivery?: {
-        customerId: string;
-        deliveryAddress: string;
-        scheduledAt?: string;
-        notes?: string;
-      };
-      autoPay?: {
-        mode: string;
-      };
-    };
+function readEnvelope(payload: OfflineInvoicePayload): OfflineInvoiceEnvelope {
+  if (isOfflineInvoiceEnvelope(payload)) {
+    return payload;
   }
 
   return { invoice: payload };
+}
+
+function isOfflineInvoiceEnvelope(payload: OfflineInvoicePayload): payload is OfflineInvoiceEnvelope {
+  return "invoice" in payload && typeof payload.invoice === "object";
 }

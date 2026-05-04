@@ -196,7 +196,7 @@ async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry =
   if (response.status === 401 && retry) {
     try {
       await refreshAuthSession();
-      return fetchWithCookieAuth(path, init, false);
+      return await fetchWithCookieAuth(path, init, false);
     } catch {
       clearBrowserSession();
       throw new Error("Session expired. Please sign in again.");
