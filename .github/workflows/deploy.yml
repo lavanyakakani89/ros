@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy Production
 
 on:
   push:
@@ -14,63 +14,113 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy to Hetzner
+  verify:
+    name: Verify build before deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
 
     env:
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/retailos' }}
+      DATABASE_URL: postgresql://retailos:password@localhost:5432/retailos
+      REDIS_URL: redis://:password@localhost:6379
+      JWT_SECRET: ci-only-jwt-secret
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_APP_NAME: RetailOS
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: retailos
+          POSTGRES_USER: retailos
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailos -d retailos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @retailos/api prisma:generate
+
+      - name: Apply migrations to CI database
+        run: pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Verify RLS policies
+        run: pnpm --filter @retailos/api prisma:verify-rls
+
+      - name: Lint, typecheck, and test
+        run: pnpm check
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Validate production compose
+        run: docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: verify
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER || 'root' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH || '/opt/retailos' }}
+      HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL || 'https://ros.sivsanoils.in/api/health' }}
+
+    steps:
       - name: Configure SSH
         env:
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          test -n "$HETZNER_HOST"
-          test -n "$HETZNER_SSH_KEY"
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          test -n "$DEPLOY_SSH_KEY"
           mkdir -p ~/.ssh
-          printf '%s\n' "$HETZNER_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$HETZNER_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Prepare release directory
-        env:
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
-        run: ssh "$HETZNER_USER@$HETZNER_HOST" "mkdir -p '$DEPLOY_PATH'"
-
-      - name: Upload release
-        env:
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+      - name: Deploy latest main on server
         run: |
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude '.env' \
-            --exclude '.env.*' \
-            --exclude 'node_modules' \
-            --exclude '**/node_modules' \
-            --exclude '**/.next' \
-            --exclude '**/dist' \
-            ./ "$HETZNER_USER@$HETZNER_HOST:$DEPLOY_PATH/"
-
-      - name: Build and restart services
-        env:
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_USER: ${{ secrets.HETZNER_USER }}
-        run: |
-          ssh "$HETZNER_USER@$HETZNER_HOST" "
-            set -e
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+            set -Eeuo pipefail
             cd '$DEPLOY_PATH'
-            test -f .env.production
-            docker compose --env-file .env.production -f infra/docker-compose.prod.yml build
-            docker compose --env-file .env.production -f infra/docker-compose.prod.yml up -d postgres redis minio
-            docker compose --env-file .env.production -f infra/docker-compose.prod.yml run --rm api pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
-            docker compose --env-file .env.production -f infra/docker-compose.prod.yml up -d
-            docker compose --env-file .env.production -f infra/docker-compose.prod.yml ps
+            DEPLOY_REF='origin/main' bash infra/deploy-production.sh
           "
+
+      - name: Health check
+        run: |
+          for attempt in {1..30}; do
+            if curl -fsS "$HEALTH_URL"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed: $HEALTH_URL" >&2
+          exit 1
