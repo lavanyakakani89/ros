@@ -15,8 +15,8 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
 - [x] Section 0 - Critical bugs
   - Docker Chromium dependencies, workers, WhatsApp singleton, offline billing queue, Razorpay webhook, sidebar grouping verified/fixed.
 - [~] Section 1 - Platform-wide changes
-  - Done: GST tenant flag/toggle, GST-aware billing/product UI, ESLint root, prom-client metrics, role removed from localStorage, PWA PNG/iOS icons, MinIO file-domain proxy, report GST tab hidden for non-GST tenants.
-  - Pending: full remaining currency sweep, GST-aware PDFs.
+  - Done: GST tenant flag/toggle, GST-aware billing/product UI, ESLint root, prom-client metrics, role removed from localStorage, PWA PNG/iOS icons, MinIO file-domain proxy, report GST tab hidden for non-GST tenants, GST-aware PDFs, visible INR sweep.
+  - Pending: deeper GST edge-case tests across every template variant.
 - [~] Section 2 - Keyboard shortcuts
   - Done: POS `Ctrl+1/2/3/4`, `Ctrl+H`, `Ctrl+N`, `Ctrl+P`, visible button badges and shortcut strip.
   - Pending: complete Escape behavior across every searchable dropdown.
@@ -39,7 +39,7 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
   - Existing CRUD/search/ledger basics present.
   - Pending: statement, outstanding list, broadcast, import, segmentation.
 - [~] Section 9 - Inventory
-  - Existing product CRUD/batches/stock basics present.
+  - Done: product CRUD/batches/stock basics, non-GST inventory list/edit hides GST fields.
   - Pending: stock history detail, stock count, import, valuation movements.
 - [~] Section 10 - Categories
   - Existing category screen/API present.
@@ -78,7 +78,7 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
   - Existing login/dashboard/shop/template basics present.
   - Pending: full license/admin/audit/template/version workflows.
 - [~] Section 22 - Invoice templates and thermal printer
-  - Existing template/printer pipeline present.
+  - Done: template/printer pipeline present, default PDF template hides GST columns/totals when GST is disabled.
   - Pending: full Monaco editor, versioning, all template sizes and browser Bluetooth/USB polish.
 - [~] Section 23 - Dashboard
   - Done: live today sales, 7-day sales, inventory, P&L, open deliveries, offline queue count, recent audit activity, top products.
@@ -99,4 +99,6 @@ Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pe
 - [x] Add dashboard live delivery/offline/audit signals.
 - [x] Add navigation delivery/payment badge counts and real online/offline dot.
 - [x] Hide GST report/export UI for non-GST tenants.
+- [x] Hide GST columns/totals in default invoice PDF for non-GST tenants.
+- [x] Hide GST labels and edit field in inventory for non-GST tenants.
 - [ ] Verify, push, deploy.

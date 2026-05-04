@@ -8,7 +8,7 @@ import { ProductFieldForm } from "@/components/inventory/product-field-form";
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, listProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface ProductBatch {
   id: string;
@@ -111,6 +111,7 @@ function ProductList({ products, loading, error }: Readonly<{ products: ProductR
 function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
   const [editing, setEditing] = useState(false);
   const [showBatches, setShowBatches] = useState(false);
+  const gstEnabled = getStoredTenant()?.gstEnabled !== false;
   const batchesQuery = useQuery({
     queryKey: ["product-batches", product.id],
     queryFn: () => createAuthenticatedApiClient().get<ProductBatch[]>(`/inventory/products/${product.id}/batches`),
@@ -128,7 +129,7 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
       mrp: Number(form.get("mrp")),
       sellingPrice: Number(form.get("sellingPrice")),
       purchasePrice: Number(form.get("purchasePrice") || 0),
-      gstRate: Number(form.get("gstRate")),
+      gstRate: gstEnabled ? Number(form.get("gstRate")) : 0,
       reorderLevel: Number(form.get("reorderLevel") || 0),
     });
     setEditing(false);
@@ -155,7 +156,7 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
         <TextInput name="mrp" label="MRP" type="number" defaultValue={String(product.mrp)} required />
         <TextInput name="sellingPrice" label="Selling price" type="number" defaultValue={String(product.sellingPrice)} required />
         <TextInput name="purchasePrice" label="Purchase price" type="number" defaultValue={String(product.purchasePrice ?? "")} />
-        <TextInput name="gstRate" label="GST %" type="number" defaultValue={String(product.gstRate)} required />
+        {gstEnabled ? <TextInput name="gstRate" label="GST %" type="number" defaultValue={String(product.gstRate)} required /> : null}
         <TextInput name="reorderLevel" label="Reorder level" type="number" defaultValue={String(product.reorderLevel ?? "")} />
         <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2">Save changes</button>
       </form>
@@ -167,7 +168,7 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-slate-950">{product.name}</div>
-          <div className="text-xs text-slate-500">{product.unit} | GST {product.gstRate}%{product.sku ? ` | SKU ${product.sku}` : ""}</div>
+          <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
           <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}</div>
         </div>
         <div className="flex gap-2">

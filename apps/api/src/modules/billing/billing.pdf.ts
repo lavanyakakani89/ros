@@ -15,9 +15,12 @@ export async function generateGstInvoicePdf(input: {
   template?: InvoiceTemplate | null;
 }): Promise<string> {
   const compiledTemplate = Handlebars.compile(input.template?.htmlSource ?? getTemplate());
+  const gstEnabled = input.tenant.gstEnabled !== false;
   const html = compiledTemplate({
     invoice: input.invoice,
     tenant: input.tenant,
+    gstEnabled,
+    invoiceTitle: gstEnabled ? "GST Invoice" : "Sales Invoice",
     invoiceDate: input.invoice.invoiceDate.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
     items: input.invoice.items.map((item) => ({
       ...item,
@@ -25,15 +28,15 @@ export async function generateGstInvoicePdf(input: {
       mrp: money(item.mrp),
       sellingPrice: money(item.sellingPrice),
       discount: money(item.discount),
-      gstRate: item.gstRate.toString(),
-      cgst: money(item.cgst),
-      sgst: money(item.sgst),
+      gstRate: gstEnabled ? item.gstRate.toString() : "",
+      cgst: gstEnabled ? money(item.cgst) : "",
+      sgst: gstEnabled ? money(item.sgst) : "",
       total: money(item.total),
     })),
     subtotal: money(input.invoice.subtotal),
     totalDiscount: money(input.invoice.totalDiscount),
-    totalCgst: money(input.invoice.totalCgst),
-    totalSgst: money(input.invoice.totalSgst),
+    totalCgst: gstEnabled ? money(input.invoice.totalCgst) : "",
+    totalSgst: gstEnabled ? money(input.invoice.totalSgst) : "",
     grandTotal: money(input.invoice.grandTotal),
     amountPaid: money(input.invoice.amountPaid),
     amountDue: money(input.invoice.amountDue),
@@ -98,10 +101,10 @@ function getTemplate(): string {
         <div class="tenant">{{tenant.name}}</div>
         <div class="muted">{{tenant.address}}</div>
         <div class="muted">Phone: {{tenant.phone}}</div>
-        <div class="muted">GSTIN: {{tenant.gstNumber}}</div>
+        {{#if gstEnabled}}<div class="muted">GSTIN: {{tenant.gstNumber}}</div>{{/if}}
       </div>
       <div>
-        <div class="title">GST Invoice</div>
+        <div class="title">{{invoiceTitle}}</div>
         <div class="muted">Invoice: {{invoice.invoiceNumber}}</div>
         <div class="muted">Date: {{invoiceDate}}</div>
         <div class="muted">Generated: {{generatedAt}}</div>
@@ -121,9 +124,9 @@ function getTemplate(): string {
           <th>Unit</th>
           <th class="num">Rate</th>
           <th class="num">Discount</th>
-          <th class="num">GST %</th>
-          <th class="num">CGST</th>
-          <th class="num">SGST</th>
+          {{#if gstEnabled}}<th class="num">GST %</th>{{/if}}
+          {{#if gstEnabled}}<th class="num">CGST</th>{{/if}}
+          {{#if gstEnabled}}<th class="num">SGST</th>{{/if}}
           <th class="num">Total</th>
         </tr>
       </thead>
@@ -135,9 +138,9 @@ function getTemplate(): string {
             <td>{{unit}}</td>
             <td class="num">{{sellingPrice}}</td>
             <td class="num">{{discount}}</td>
-            <td class="num">{{gstRate}}</td>
-            <td class="num">{{cgst}}</td>
-            <td class="num">{{sgst}}</td>
+            {{#if ../gstEnabled}}<td class="num">{{gstRate}}</td>{{/if}}
+            {{#if ../gstEnabled}}<td class="num">{{cgst}}</td>{{/if}}
+            {{#if ../gstEnabled}}<td class="num">{{sgst}}</td>{{/if}}
             <td class="num">{{total}}</td>
           </tr>
         {{/each}}
@@ -147,8 +150,8 @@ function getTemplate(): string {
     <section class="totals">
       <div><span>Subtotal</span><span>₹{{subtotal}}</span></div>
       <div><span>Discount</span><span>₹{{totalDiscount}}</span></div>
-      <div><span>CGST</span><span>₹{{totalCgst}}</span></div>
-      <div><span>SGST</span><span>₹{{totalSgst}}</span></div>
+      {{#if gstEnabled}}<div><span>CGST</span><span>₹{{totalCgst}}</span></div>{{/if}}
+      {{#if gstEnabled}}<div><span>SGST</span><span>₹{{totalSgst}}</span></div>{{/if}}
       <div class="grand"><span>Grand total</span><span>₹{{grandTotal}}</span></div>
       <div><span>Paid</span><span>₹{{amountPaid}}</span></div>
       <div><span>Due</span><span>₹{{amountDue}}</span></div>
