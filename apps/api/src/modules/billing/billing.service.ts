@@ -26,7 +26,7 @@ export class BillingService {
   }
 
   async createInvoice(tenant: Tenant, input: CreateInvoiceInput) {
-    const calculated = await this.calculateInvoice(tenant.id, input.items);
+    const calculated = await this.calculateInvoice(tenant.id, input.items, input.billDiscount);
 
     return this.repository.createInvoice({
       tenantId: tenant.id,
@@ -54,6 +54,7 @@ export class BillingService {
     const existing = await this.getInvoice(tenant, invoiceId);
     const merged: CreateInvoiceInput = {
       paymentMode: input.paymentMode ?? existing.paymentMode,
+      billDiscount: input.billDiscount ?? 0,
       items:
         input.items ??
         existing.items.map((item) => ({
@@ -73,7 +74,7 @@ export class BillingService {
       ...(input.notes !== undefined ? { notes: input.notes } : existing.notes ? { notes: existing.notes } : {}),
     };
 
-    const calculated = await this.calculateInvoice(tenant.id, merged.items);
+    const calculated = await this.calculateInvoice(tenant.id, merged.items, merged.billDiscount);
     const invoice = await this.repository.replaceDraftInvoice({
       tenantId: tenant.id,
       invoiceId,
@@ -156,7 +157,7 @@ export class BillingService {
     });
   }
 
-  private async calculateInvoice(tenantId: string, items: InvoiceItemInput[]) {
+  private async calculateInvoice(tenantId: string, items: InvoiceItemInput[], billDiscount = 0) {
     const productIds = [...new Set(items.map((item) => item.productId))];
     const products = await this.repository.findProducts(tenantId, productIds);
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -166,7 +167,7 @@ export class BillingService {
     }
 
     const invoiceItems = items.map((item) => createInvoiceItem(tenantId, item, productById.get(item.productId)));
-    const totals = invoiceItems.reduce<InvoiceTotals>(
+    const itemTotals = invoiceItems.reduce<InvoiceTotals>(
       (accumulator, item) => ({
         subtotal: roundMoney(accumulator.subtotal + Number(item.sellingPrice) * Number(item.quantity)),
         totalDiscount: roundMoney(accumulator.totalDiscount + Number(item.discount)),
@@ -182,6 +183,12 @@ export class BillingService {
         grandTotal: 0,
       },
     );
+    const cappedBillDiscount = Math.min(roundMoney(billDiscount), itemTotals.grandTotal);
+    const totals = {
+      ...itemTotals,
+      totalDiscount: roundMoney(itemTotals.totalDiscount + cappedBillDiscount),
+      grandTotal: roundMoney(itemTotals.grandTotal - cappedBillDiscount),
+    };
 
     return {
       totals,
@@ -202,7 +209,9 @@ function createInvoiceItem(
 
   const quantity = input.quantity;
   const sellingPrice = product.sellingPrice.toNumber();
-  const taxable = Math.max(sellingPrice * quantity - (input.discount ?? 0), 0);
+  const gross = sellingPrice * quantity;
+  const discount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
+  const taxable = Math.max(gross - discount, 0);
   const gstRate = product.gstRate.toNumber();
   const totalGst = taxable * (gstRate / 100);
   const cgst = roundMoney(totalGst / 2);
@@ -217,7 +226,7 @@ function createInvoiceItem(
     unit: product.unit,
     mrp: product.mrp,
     sellingPrice: product.sellingPrice,
-    discount: input.discount ?? 0,
+    discount,
     gstRate: product.gstRate,
     cgst,
     sgst,

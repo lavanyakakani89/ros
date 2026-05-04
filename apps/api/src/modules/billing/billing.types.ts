@@ -4,6 +4,7 @@ export interface InvoiceItemInput {
   productId: string;
   quantity: number;
   discount?: number | undefined;
+  discountPercent?: number | undefined;
   batchNumber?: string | undefined;
   expiryDate?: Date | undefined;
 }
@@ -12,6 +13,7 @@ export interface CreateInvoiceInput {
   customerId?: string | undefined;
   dueDate?: Date | undefined;
   paymentMode: PaymentMode;
+  billDiscount: number;
   verticalData?: Record<string, unknown> | undefined;
   notes?: string | undefined;
   items: InvoiceItemInput[];

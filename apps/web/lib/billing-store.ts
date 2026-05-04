@@ -22,7 +22,7 @@ interface BillingState {
   lines: PosLine[];
   heldBills: HeldBill[];
   setLine: (id: string, patch: Partial<PosLine>) => void;
-  addLine: () => void;
+  addLine: () => string;
   removeLine: (id: string) => void;
   reset: () => void;
   holdBill: (customerId: string, label?: string) => void;
@@ -56,21 +56,24 @@ function saveHeldBills(bills: HeldBill[]): void {
 }
 
 export const useBillingStore = create<BillingState>((set, get) => ({
-  lines: [createEmptyLine()],
+  lines: [],
   heldBills: loadHeldBills(),
   setLine: (id, patch) =>
     set((state) => ({
       lines: state.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)),
     })),
-  addLine: () =>
+  addLine: () => {
+    const line = createEmptyLine();
     set((state) => ({
-      lines: [...state.lines, createEmptyLine()],
-    })),
+      lines: [...state.lines, line],
+    }));
+    return line.id;
+  },
   removeLine: (id) =>
     set((state) => ({
       lines: state.lines.filter((line) => line.id !== id),
     })),
-  reset: () => set({ lines: [createEmptyLine()] }),
+  reset: () => set({ lines: [] }),
   holdBill: (customerId, label) => {
     const { lines, heldBills } = get();
     const held: HeldBill = {
@@ -82,7 +85,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     };
     const updated = [...heldBills, held];
     saveHeldBills(updated);
-    set({ heldBills: updated, lines: [createEmptyLine()] });
+    set({ heldBills: updated, lines: [] });
   },
   restoreHeld: (id) => {
     const { heldBills } = get();
@@ -90,7 +93,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     if (!bill) return;
     const updated = heldBills.filter((b) => b.id !== id);
     saveHeldBills(updated);
-    set({ heldBills: updated, lines: bill.lines.length > 0 ? bill.lines : [createEmptyLine()] });
+    set({ heldBills: updated, lines: bill.lines });
   },
   deleteHeld: (id) => {
     const updated = get().heldBills.filter((b) => b.id !== id);
