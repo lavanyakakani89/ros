@@ -1,5 +1,7 @@
 import type { TenantVertical, VerticalConfig } from "@retailos/shared";
 
+import { clearStoredSession } from "@/lib/vertical-config";
+
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "development" ? "http://localhost:3001/api" : "/api");
 
@@ -97,6 +99,10 @@ export async function getCurrentVerticalConfig(): Promise<{
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearBrowserSession();
+    }
+
     throw new Error(await readApiError(response));
   }
 
@@ -188,15 +194,32 @@ async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry =
   });
 
   if (response.status === 401 && retry) {
-    await refreshAuthSession();
-    return fetchWithCookieAuth(path, init, false);
+    try {
+      await refreshAuthSession();
+      return fetchWithCookieAuth(path, init, false);
+    } catch {
+      clearBrowserSession();
+      throw new Error("Session expired. Please sign in again.");
+    }
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearBrowserSession();
+    }
+
     throw new Error(await readApiError(response));
   }
 
   return response;
+}
+
+function clearBrowserSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  clearStoredSession();
 }
 
 async function readApiError(response: Response): Promise<string> {

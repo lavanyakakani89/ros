@@ -25,7 +25,7 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
       const auth = await authService.refresh(input);
       setAuthCookies(reply, auth.tokens);
       return toAuthBody(auth);
-    });
+    }, { clearCookiesOnAuthError: true });
   });
 
   fastify.post("/api/auth/logout", async (request, reply) => {
@@ -41,11 +41,19 @@ export const authRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   done();
 };
 
-async function handleAuth<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {
+async function handleAuth<T>(
+  reply: FastifyReply,
+  handler: () => Promise<T>,
+  options: { clearCookiesOnAuthError?: boolean } = {},
+): Promise<T | undefined> {
   try {
     return await handler();
   } catch (error) {
     if (error instanceof AuthError) {
+      if (options.clearCookiesOnAuthError) {
+        clearAuthCookies(reply);
+      }
+
       return reply.status(error.statusCode).send({ error: error.message });
     }
 

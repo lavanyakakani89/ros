@@ -35,6 +35,12 @@ export function getStoredAuthSession(): StoredAuthSession | null {
   return raw ? (JSON.parse(raw) as StoredAuthSession) : null;
 }
 
+export function clearStoredSession() {
+  window.localStorage.removeItem(authStorageKey);
+  window.localStorage.removeItem(verticalConfigStorageKey);
+  window.localStorage.removeItem(tenantStorageKey);
+}
+
 export function storeTenant(tenant: StoredTenant) {
   window.localStorage.setItem(tenantStorageKey, JSON.stringify(tenant));
 }
