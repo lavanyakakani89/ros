@@ -87,6 +87,8 @@ export async function getCurrentVerticalConfig(): Promise<{
     name: string;
     slug: string;
     status: string;
+    gstEnabled: boolean;
+    gstNumber?: string | null;
   };
   config: VerticalConfig;
 }> {
@@ -104,6 +106,8 @@ export async function getCurrentVerticalConfig(): Promise<{
       name: string;
       slug: string;
       status: string;
+      gstEnabled: boolean;
+      gstNumber?: string | null;
     };
     config: VerticalConfig;
   }>;

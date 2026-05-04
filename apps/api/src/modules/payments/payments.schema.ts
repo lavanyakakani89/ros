@@ -19,6 +19,7 @@ export const paymentListQuerySchema = z.object({
 export const razorpayOrderSchema = z.object({
   amount: decimalSchema.positive(),
   receipt: z.string().trim().min(1).optional(),
+  invoiceId: z.string().trim().min(1).optional(),
 });
 
 export const razorpayVerifySchema = z.object({

@@ -1,5 +1,9 @@
 import js from "@eslint/js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import tseslint from "typescript-eslint";
+
+const tsconfigRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 export default [
   js.configs.recommended,
@@ -8,7 +12,7 @@ export default [
     languageOptions: {
       parserOptions: {
         projectService: true,
-        tsconfigRootDir: process.cwd()
+        tsconfigRootDir
       }
     },
     rules: {

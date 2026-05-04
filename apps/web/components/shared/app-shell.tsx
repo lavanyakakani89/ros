@@ -121,7 +121,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <div className="flex h-16 items-center justify-between px-4 sm:px-6">
             <div>
               <div className="text-sm font-semibold text-slate-900">{tenantName}</div>
-              <div className="text-xs text-slate-500">{verticalConfig.displayName} | GST enabled | INR</div>
+              <div className="text-xs text-slate-500">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"} | ₹</div>
             </div>
             <div className="flex items-center gap-2">
               <div className="hidden rounded-md border border-border px-3 py-1.5 text-xs text-slate-600 sm:block">Online</div>

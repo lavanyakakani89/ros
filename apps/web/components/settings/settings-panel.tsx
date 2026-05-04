@@ -3,17 +3,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Printer, Save, UserPlus } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
 
 interface SettingsResponse {
   tenant: {
     name: string;
     phone: string;
+    slug?: string;
+    status?: string;
     gstNumber?: string | null;
+    gstEnabled?: boolean;
     address?: string | null;
     vertical: string;
   };
@@ -32,14 +35,25 @@ interface UserRecord {
 export function SettingsPanel() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
+  const [gstEnabled, setGstEnabled] = useState(true);
   const settingsQuery = useQuery({
     queryKey: ["settings-current"],
     queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
   });
   const updateTenant = useMutation({
-    mutationFn: (payload: object) => createAuthenticatedApiClient().put("/settings/tenant", payload),
-    onSuccess: async () => {
+    mutationFn: (payload: object) => createAuthenticatedApiClient().put<SettingsResponse["tenant"]>("/settings/tenant", payload),
+    onSuccess: async (tenant) => {
       setMessage("Shop details saved.");
+      const storedTenant = getStoredTenant();
+      const nextTenant: StoredTenant = {
+        name: tenant.name,
+        slug: tenant.slug ?? storedTenant?.slug ?? "",
+      };
+      const status = tenant.status ?? storedTenant?.status;
+      if (status) nextTenant.status = status;
+      if (tenant.gstEnabled !== undefined) nextTenant.gstEnabled = tenant.gstEnabled;
+      if (tenant.gstNumber !== undefined) nextTenant.gstNumber = tenant.gstNumber;
+      storeTenant(nextTenant);
       await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
     },
   });
@@ -60,6 +74,12 @@ export function SettingsPanel() {
   const settings = settingsQuery.data;
   const error = settingsQuery.error ?? updateTenant.error ?? createUser.error ?? updateUser.error;
 
+  useEffect(() => {
+    if (settings?.tenant.gstEnabled !== undefined) {
+      setGstEnabled(settings.tenant.gstEnabled);
+    }
+  }, [settings?.tenant.gstEnabled]);
+
   function handleTenantSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -67,7 +87,8 @@ export function SettingsPanel() {
     updateTenant.mutate({
       name: formString(form, "name"),
       phone: formString(form, "phone"),
-      gstNumber: formString(form, "gstNumber") || null,
+      gstEnabled,
+      gstNumber: gstEnabled ? formString(form, "gstNumber") || null : null,
       address: formString(form, "address") || null,
     });
   }
@@ -123,7 +144,11 @@ export function SettingsPanel() {
         <form className="grid gap-3 md:grid-cols-2" onSubmit={handleTenantSubmit}>
           <TextInput name="name" label="Shop name" defaultValue={settings?.tenant.name ?? ""} required />
           <TextInput name="phone" label="Phone" defaultValue={settings?.tenant.phone ?? ""} required />
-          <TextInput name="gstNumber" label="GSTIN" defaultValue={settings?.tenant.gstNumber ?? ""} />
+          <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700 md:col-span-2">
+            <input type="checkbox" checked={gstEnabled} onChange={(event) => setGstEnabled(event.target.checked)} className="size-4 accent-emerald-600" />
+            GST registered shop
+          </label>
+          {gstEnabled ? <TextInput name="gstNumber" label="GSTIN" defaultValue={settings?.tenant.gstNumber ?? ""} /> : null}
           <TextInput name="address" label="Address" defaultValue={settings?.tenant.address ?? ""} />
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={updateTenant.isPending}>
             <Save className="size-4" aria-hidden="true" />

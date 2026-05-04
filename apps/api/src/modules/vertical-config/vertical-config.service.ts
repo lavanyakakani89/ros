@@ -13,6 +13,8 @@ export class VerticalConfigService {
         name: tenant.name,
         slug: tenant.slug,
         status: tenant.status,
+        gstEnabled: tenant.gstEnabled,
+        gstNumber: tenant.gstNumber,
       },
       config: this.repository.getByVertical(tenant.vertical),
     };

@@ -18,7 +18,7 @@ export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
   fastify.post("/api/payments/razorpay/order", async (request, reply) => {
     const input = razorpayOrderSchema.parse(request.body);
-    return handlePayments(reply, () => service.createRazorpayOrder(input));
+    return handlePayments(reply, () => service.createRazorpayOrder(request.tenant, input));
   });
 
   fastify.post("/api/payments/razorpay/verify", async (request, reply) => {
@@ -34,7 +34,7 @@ export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) =
       event: request.body,
     };
 
-    return handlePayments(reply, () => Promise.resolve(service.verifyRazorpayWebhook(input)));
+    return handlePayments(reply, () => service.handleRazorpayWebhook(input));
   });
 
   done();

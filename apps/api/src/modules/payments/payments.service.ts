@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 
-import type { Tenant, UserRole } from "@prisma/client";
+import { PaymentMode, type Tenant, type UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import Razorpay from "razorpay";
 
@@ -50,7 +50,7 @@ export class PaymentsService {
     return this.repository.listPayments(tenant.id, query);
   }
 
-  async createRazorpayOrder(input: RazorpayOrderInput) {
+  async createRazorpayOrder(tenant: Tenant, input: RazorpayOrderInput) {
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
@@ -67,6 +67,10 @@ export class PaymentsService {
       amount: Math.round(input.amount * 100),
       currency: "INR",
       ...(input.receipt ? { receipt: input.receipt } : {}),
+      notes: {
+        tenantId: tenant.id,
+        ...(input.invoiceId ? { invoiceId: input.invoiceId } : {}),
+      },
     });
   }
 
@@ -86,7 +90,7 @@ export class PaymentsService {
     };
   }
 
-  verifyRazorpayWebhook(input: RazorpayWebhookInput) {
+  async handleRazorpayWebhook(input: RazorpayWebhookInput) {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
     if (!webhookSecret) {
@@ -102,9 +106,46 @@ export class PaymentsService {
       throw new PaymentsError("Invalid Razorpay webhook signature", 400);
     }
 
+    const eventName = readEventName(input.event);
+    if (eventName !== "payment.captured") {
+      return {
+        received: true,
+        event: eventName,
+      };
+    }
+
+    const payment = readRazorpayPayment(input.event);
+    if (!payment?.id || !payment.invoiceId || !payment.tenantId || !payment.amount) {
+      throw new PaymentsError("Razorpay webhook missing invoice payment metadata", 400);
+    }
+
+    await this.repository.setTenantContext(payment.tenantId);
+    const existingPayment = await this.repository.findByRazorpayId(payment.tenantId, payment.id);
+    if (existingPayment) {
+      return {
+        received: true,
+        event: eventName,
+        duplicate: true,
+      };
+    }
+
+    const result = await this.repository.recordPayment(payment.tenantId, "razorpay-webhook", {
+      invoiceId: payment.invoiceId,
+      amount: payment.amount,
+      mode: mapRazorpayMethod(payment.method),
+      referenceNumber: payment.referenceNumber,
+      razorpayId: payment.id,
+    });
+
+    if (!result) {
+      throw new PaymentsError("Confirmed invoice not found for Razorpay payment", 404);
+    }
+
     return {
       received: true,
-      event: readEventName(input.event),
+      event: eventName,
+      payment: result.payment,
+      invoice: result.invoice,
     };
   }
 }
@@ -116,4 +157,49 @@ function readEventName(event: unknown): string | undefined {
 
   const eventName = event.event;
   return typeof eventName === "string" ? eventName : undefined;
+}
+
+function readRazorpayPayment(event: unknown): { id?: string; tenantId?: string; invoiceId?: string; amount?: number; method?: string; referenceNumber?: string } | undefined {
+  const eventRecord = asRecord(event);
+  const payload = asRecord(eventRecord?.payload);
+  const paymentContainer = asRecord(payload?.payment);
+  const entity = asRecord(paymentContainer?.entity);
+  if (!entity) {
+    return undefined;
+  }
+
+  const notes = asRecord(entity.notes);
+  const amountPaise = typeof entity.amount === "number" ? entity.amount : Number(entity.amount);
+  const id = typeof entity.id === "string" ? entity.id : undefined;
+  const method = typeof entity.method === "string" ? entity.method : undefined;
+  const tenantId = readString(notes, "tenantId") ?? readString(notes, "tenant_id");
+  const invoiceId = readString(notes, "invoiceId") ?? readString(notes, "invoice_id");
+  const referenceNumber = typeof entity.acquirer_data === "object" && entity.acquirer_data !== null
+    ? Object.values(entity.acquirer_data as Record<string, unknown>).find((value): value is string => typeof value === "string")
+    : id;
+
+  return {
+    ...(id ? { id } : {}),
+    ...(tenantId ? { tenantId } : {}),
+    ...(invoiceId ? { invoiceId } : {}),
+    ...(Number.isFinite(amountPaise) ? { amount: amountPaise / 100 } : {}),
+    ...(method ? { method } : {}),
+    ...(referenceNumber ? { referenceNumber } : {}),
+  };
+}
+
+function mapRazorpayMethod(method: string | undefined): PaymentMode {
+  if (method === "card") return PaymentMode.CARD;
+  if (method === "netbanking") return PaymentMode.NETBANKING;
+  if (method === "upi") return PaymentMode.UPI;
+  return PaymentMode.UPI;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function readString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
 }

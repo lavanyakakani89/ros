@@ -5,6 +5,19 @@ import type { PaymentListQuery, RecordPaymentInput } from "./payments.types.js";
 export class PaymentsRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  setTenantContext(tenantId: string) {
+    return this.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, FALSE)`;
+  }
+
+  findByRazorpayId(tenantId: string, razorpayId: string) {
+    return this.prisma.payment.findFirst({
+      where: {
+        tenantId,
+        razorpayId,
+      },
+    });
+  }
+
   async recordPayment(tenantId: string, createdBy: string, input: RecordPaymentInput) {
     return this.prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findFirst({

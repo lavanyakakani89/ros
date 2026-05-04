@@ -6,26 +6,33 @@ import { Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createProduct, type ProductPayload } from "@/lib/api-client";
-import { getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => void }>) {
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [gstEnabled, setGstEnabled] = useState(true);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
     if (storedConfig) {
       setVerticalConfig(storedConfig);
     }
+    setGstEnabled(getStoredTenant()?.gstEnabled ?? true);
   }, []);
 
+  const activeProductFields = useMemo(
+    () => verticalConfig.productFields.filter((field) => gstEnabled || !["gstRate", "hsnCode"].includes(field.key)),
+    [gstEnabled, verticalConfig.productFields],
+  );
+
   const groupedFields = useMemo(() => {
-    const base = verticalConfig.productFields.filter((field) => !field.vertical);
-    const vertical = verticalConfig.productFields.filter((field) => field.vertical);
+    const base = activeProductFields.filter((field) => !field.vertical);
+    const vertical = activeProductFields.filter((field) => field.vertical);
     return { base, vertical };
-  }, [verticalConfig.productFields]);
+  }, [activeProductFields]);
 
   async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,7 +44,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
     const form = new FormData(formElement);
 
     try {
-      await createProduct(toProductPayload(form, verticalConfig.productFields));
+      await createProduct(toProductPayload(form, activeProductFields, gstEnabled));
       formElement.reset();
       setStatus("Product saved.");
       onCreated?.();
@@ -113,7 +120,7 @@ function DynamicField({ field }: Readonly<{ field: VerticalField }>) {
   );
 }
 
-function toProductPayload(form: FormData, fields: readonly VerticalField[]): ProductPayload {
+function toProductPayload(form: FormData, fields: readonly VerticalField[], gstEnabled: boolean): ProductPayload {
   const payload: Partial<ProductPayload> = {
     currentStock: 0,
   };
@@ -145,7 +152,7 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[]): Pro
     unit: requireString(payload.unit, "Unit is required"),
     mrp: requireNumber(payload.mrp, "MRP is required"),
     sellingPrice: requireNumber(payload.sellingPrice, "Selling price is required"),
-    gstRate: requireNumber(payload.gstRate, "GST rate is required"),
+    gstRate: gstEnabled ? requireNumber(payload.gstRate, "GST rate is required") : 0,
     currentStock: payload.currentStock ?? 0,
     ...(payload.sku ? { sku: payload.sku } : {}),
     ...(payload.barcode ? { barcode: payload.barcode } : {}),

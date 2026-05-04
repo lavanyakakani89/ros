@@ -16,6 +16,7 @@ export interface PaymentListQuery {
 export interface RazorpayOrderInput {
   amount: number;
   receipt?: string | undefined;
+  invoiceId?: string | undefined;
 }
 
 export interface RazorpayVerifyInput {

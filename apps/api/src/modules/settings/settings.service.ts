@@ -46,6 +46,7 @@ export class SettingsService {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.gstNumber !== undefined ? { gstNumber: input.gstNumber } : {}),
+        ...(input.gstEnabled !== undefined ? { gstEnabled: input.gstEnabled } : {}),
         ...(input.address !== undefined ? { address: input.address } : {}),
       },
     });

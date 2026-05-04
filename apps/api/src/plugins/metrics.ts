@@ -1,103 +1,67 @@
-import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
+import { collectDefaultMetrics, Counter, Gauge, Histogram, Registry } from "prom-client";
 
-interface HttpMetric {
-  count: number;
-  totalSeconds: number;
-  maxSeconds: number;
-}
-
+const registry = new Registry();
 const requestStarts = new WeakMap<FastifyRequest, bigint>();
-const httpMetrics = new Map<string, HttpMetric>();
+
+collectDefaultMetrics({
+  prefix: "retailos_",
+  register: registry,
+});
+
+const httpRequestsTotal = new Counter({
+  name: "retailos_http_requests_total",
+  help: "Total HTTP requests by method, route, and status.",
+  labelNames: ["method", "route", "status"] as const,
+  registers: [registry],
+});
+
+const httpRequestDurationSeconds = new Histogram({
+  name: "retailos_http_request_duration_seconds",
+  help: "HTTP request duration by method, route, and status.",
+  labelNames: ["method", "route", "status"] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [registry],
+});
+
+const processUptimeSeconds = new Gauge({
+  name: "retailos_process_uptime_seconds",
+  help: "API process uptime in seconds.",
+  registers: [registry],
+});
 
 const metricsPluginCallback: FastifyPluginCallback = (fastify, _options, done) => {
-  fastify.addHook("onRequest", (request, _reply, done) => {
+  fastify.addHook("onRequest", (request, _reply, hookDone) => {
     requestStarts.set(request, process.hrtime.bigint());
-    done();
+    hookDone();
   });
 
-  fastify.addHook("onResponse", (request, reply, done) => {
-    recordHttpMetric(request, reply);
-    done();
+  fastify.addHook("onResponse", (request, reply, hookDone) => {
+    const start = requestStarts.get(request);
+    requestStarts.delete(request);
+
+    if (start) {
+      const labels = {
+        method: request.method,
+        route: request.routeOptions.url ?? request.url.split("?")[0] ?? "unknown",
+        status: String(reply.statusCode),
+      };
+      const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
+      httpRequestsTotal.inc(labels);
+      httpRequestDurationSeconds.observe(labels, durationSeconds);
+    }
+
+    hookDone();
   });
 
-  fastify.get("/metrics", (_request, reply) => {
-    reply.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-    return renderMetrics();
+  fastify.get("/metrics", async (_request, reply) => {
+    processUptimeSeconds.set(process.uptime());
+    reply.header("Content-Type", registry.contentType);
+    return registry.metrics();
   });
 
   done();
 };
 
 export const metricsPlugin = fp(metricsPluginCallback);
-
-function recordHttpMetric(request: FastifyRequest, reply: FastifyReply): void {
-  const start = requestStarts.get(request);
-  if (!start) {
-    return;
-  }
-
-  requestStarts.delete(request);
-  const durationSeconds = Number(process.hrtime.bigint() - start) / 1_000_000_000;
-  const route = request.routeOptions.url ?? request.url.split("?")[0] ?? "unknown";
-  const key = `${request.method} ${route} ${String(reply.statusCode)}`;
-  const current = httpMetrics.get(key) ?? { count: 0, totalSeconds: 0, maxSeconds: 0 };
-
-  httpMetrics.set(key, {
-    count: current.count + 1,
-    totalSeconds: current.totalSeconds + durationSeconds,
-    maxSeconds: Math.max(current.maxSeconds, durationSeconds),
-  });
-}
-
-function renderMetrics(): string {
-  const lines = [
-    "# HELP retailos_process_uptime_seconds API process uptime in seconds.",
-    "# TYPE retailos_process_uptime_seconds gauge",
-    `retailos_process_uptime_seconds ${process.uptime().toFixed(3)}`,
-    "# HELP retailos_http_requests_total Total HTTP requests by method, route, and status.",
-    "# TYPE retailos_http_requests_total counter",
-  ];
-
-  for (const [key, metric] of httpMetrics) {
-    const [method, route, status] = key.split(" ");
-    const labels = formatLabels({ method, route, status });
-    lines.push(`retailos_http_requests_total${labels} ${String(metric.count)}`);
-  }
-
-  lines.push(
-    "# HELP retailos_http_request_duration_seconds_sum Total HTTP request duration by method, route, and status.",
-    "# TYPE retailos_http_request_duration_seconds_sum counter",
-  );
-
-  for (const [key, metric] of httpMetrics) {
-    const [method, route, status] = key.split(" ");
-    const labels = formatLabels({ method, route, status });
-    lines.push(`retailos_http_request_duration_seconds_sum${labels} ${metric.totalSeconds.toFixed(6)}`);
-  }
-
-  lines.push(
-    "# HELP retailos_http_request_duration_seconds_max Slowest observed HTTP request duration by method, route, and status.",
-    "# TYPE retailos_http_request_duration_seconds_max gauge",
-  );
-
-  for (const [key, metric] of httpMetrics) {
-    const [method, route, status] = key.split(" ");
-    const labels = formatLabels({ method, route, status });
-    lines.push(`retailos_http_request_duration_seconds_max${labels} ${metric.maxSeconds.toFixed(6)}`);
-  }
-
-  return `${lines.join("\n")}\n`;
-}
-
-function formatLabels(labels: Record<string, string | undefined>): string {
-  const entries = Object.entries(labels)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    .map(([key, value]) => `${key}="${escapeLabel(value)}"`);
-
-  return `{${entries.join(",")}}`;
-}
-
-function escapeLabel(value: string): string {
-  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n");
-}

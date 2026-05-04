@@ -8,7 +8,6 @@ export interface StoredAuthSession {
   user?: {
     name?: string;
     email?: string;
-    role?: string;
   };
 }
 
@@ -16,10 +15,14 @@ export interface StoredTenant {
   name: string;
   slug: string;
   status?: string;
+  gstEnabled?: boolean;
+  gstNumber?: string | null;
 }
 
 export function storeAuthSession(input: StoredAuthSession) {
-  window.localStorage.setItem(authStorageKey, JSON.stringify(input));
+  window.localStorage.setItem(authStorageKey, JSON.stringify({
+    user: input.user ? { name: input.user.name, email: input.user.email } : undefined,
+  }));
 }
 
 export function hasStoredAuthSession(): boolean {

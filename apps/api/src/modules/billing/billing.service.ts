@@ -26,7 +26,7 @@ export class BillingService {
   }
 
   async createInvoice(tenant: Tenant, input: CreateInvoiceInput) {
-    const calculated = await this.calculateInvoice(tenant.id, input.items, input.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, input.items, input.billDiscount);
 
     return this.repository.createInvoice({
       tenantId: tenant.id,
@@ -74,7 +74,7 @@ export class BillingService {
       ...(input.notes !== undefined ? { notes: input.notes } : existing.notes ? { notes: existing.notes } : {}),
     };
 
-    const calculated = await this.calculateInvoice(tenant.id, merged.items, merged.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount);
     const invoice = await this.repository.replaceDraftInvoice({
       tenantId: tenant.id,
       invoiceId,
@@ -157,17 +157,24 @@ export class BillingService {
     });
   }
 
-  private async calculateInvoice(tenantId: string, items: InvoiceItemInput[], billDiscount = 0) {
+  private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0) {
     const productIds = [...new Set(items.map((item) => item.productId))];
-    const products = await this.repository.findProducts(tenantId, productIds);
+    const products = await this.repository.findProducts(tenant.id, productIds);
     const productById = new Map(products.map((product) => [product.id, product]));
 
     if (products.length !== productIds.length) {
       throw new BillingError("One or more products were not found", 400);
     }
 
-    const invoiceItems = items.map((item) => createInvoiceItem(tenantId, item, productById.get(item.productId)));
-    const itemTotals = invoiceItems.reduce<InvoiceTotals>(
+    const lineTaxableBases = items.map((item) => getTaxableBaseBeforeBillDiscount(item, productById.get(item.productId)));
+    const totalTaxableBase = lineTaxableBases.reduce((sum, value) => sum + value, 0);
+    const cappedBillDiscount = Math.min(roundMoney(billDiscount), totalTaxableBase);
+    const invoiceItems = items.map((item, index) => {
+      const lineTaxableBase = lineTaxableBases[index] ?? 0;
+      const billDiscountShare = totalTaxableBase > 0 ? roundMoney(cappedBillDiscount * (lineTaxableBase / totalTaxableBase)) : 0;
+      return createInvoiceItem(tenant, item, productById.get(item.productId), billDiscountShare);
+    });
+    const totals = invoiceItems.reduce<InvoiceTotals>(
       (accumulator, item) => ({
         subtotal: roundMoney(accumulator.subtotal + Number(item.sellingPrice) * Number(item.quantity)),
         totalDiscount: roundMoney(accumulator.totalDiscount + Number(item.discount)),
@@ -183,12 +190,6 @@ export class BillingService {
         grandTotal: 0,
       },
     );
-    const cappedBillDiscount = Math.min(roundMoney(billDiscount), itemTotals.grandTotal);
-    const totals = {
-      ...itemTotals,
-      totalDiscount: roundMoney(itemTotals.totalDiscount + cappedBillDiscount),
-      grandTotal: roundMoney(itemTotals.grandTotal - cappedBillDiscount),
-    };
 
     return {
       totals,
@@ -199,9 +200,10 @@ export class BillingService {
 }
 
 function createInvoiceItem(
-  tenantId: string,
+  tenant: Tenant,
   input: InvoiceItemInput,
   product: Product | undefined,
+  billDiscountShare: number,
 ): Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput {
   if (!product) {
     throw new BillingError("Product not found", 400);
@@ -210,16 +212,17 @@ function createInvoiceItem(
   const quantity = input.quantity;
   const sellingPrice = product.sellingPrice.toNumber();
   const gross = sellingPrice * quantity;
-  const discount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
+  const lineDiscount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
+  const discount = roundMoney(lineDiscount + billDiscountShare);
   const taxable = Math.max(gross - discount, 0);
-  const gstRate = product.gstRate.toNumber();
-  const totalGst = taxable * (gstRate / 100);
+  const gstRate = tenant.gstEnabled ? product.gstRate.toNumber() : 0;
+  const totalGst = tenant.gstEnabled ? taxable * (gstRate / 100) : 0;
   const cgst = roundMoney(totalGst / 2);
   const sgst = roundMoney(totalGst / 2);
   const total = roundMoney(taxable + cgst + sgst);
 
   return {
-    tenantId,
+    tenantId: tenant.id,
     productId: input.productId,
     productName: product.name,
     quantity,
@@ -227,13 +230,23 @@ function createInvoiceItem(
     mrp: product.mrp,
     sellingPrice: product.sellingPrice,
     discount,
-    gstRate: product.gstRate,
+    gstRate,
     cgst,
     sgst,
     total,
     ...(input.batchNumber ? { batchNumber: input.batchNumber } : {}),
     ...(input.expiryDate ? { expiryDate: input.expiryDate } : {}),
   };
+}
+
+function getTaxableBaseBeforeBillDiscount(input: InvoiceItemInput, product: Product | undefined): number {
+  if (!product) {
+    throw new BillingError("Product not found", 400);
+  }
+
+  const gross = product.sellingPrice.toNumber() * input.quantity;
+  const lineDiscount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
+  return Math.max(gross - lineDiscount, 0);
 }
 
 function roundMoney(value: number): number {

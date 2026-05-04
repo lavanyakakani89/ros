@@ -13,6 +13,7 @@ model Tenant {
   slug               String              @unique
   vertical           VerticalType
   gstNumber          String?             @map("gst_number")
+  gstEnabled         Boolean             @default(true) @map("gst_enabled")
   phone              String
   address            String?
   timezone           String              @default("Asia/Kolkata")

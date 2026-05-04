@@ -5,6 +5,7 @@ export const updateTenantSchema = z.object({
   name: z.string().trim().min(2).optional(),
   phone: z.string().trim().min(10).max(16).optional(),
   gstNumber: z.string().trim().min(15).max(15).nullable().optional(),
+  gstEnabled: z.boolean().optional(),
   address: z.string().trim().min(3).nullable().optional(),
 });
 

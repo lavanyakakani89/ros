@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 
 import { DeliveryRepository } from "./delivery.repository.js";
 import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
+import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 
 export class DeliveryError extends Error {
   constructor(
@@ -15,13 +16,14 @@ export class DeliveryError extends Error {
 
 export class DeliveryService {
   private readonly repository: DeliveryRepository;
+  private readonly verticalConfigRepository = new VerticalConfigRepository();
 
   constructor(fastify: FastifyInstance) {
     this.repository = new DeliveryRepository(fastify.prisma);
   }
 
   async createDelivery(tenant: Tenant, input: CreateDeliveryInput) {
-    if (!deliveryEnabled(tenant.vertical)) {
+    if (!this.verticalConfigRepository.getByVertical(tenant.vertical).modules.delivery) {
       throw new DeliveryError("Delivery module is not enabled for this tenant", 403);
     }
 
@@ -58,8 +60,4 @@ export class DeliveryService {
   listAgentDeliveries(tenant: Tenant, userId: string) {
     return this.repository.listAgentDeliveries(tenant.id, userId);
   }
-}
-
-function deliveryEnabled(vertical: Tenant["vertical"]): boolean {
-  return vertical !== "FASHION";
 }

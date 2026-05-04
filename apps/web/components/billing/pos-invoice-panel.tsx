@@ -1,20 +1,20 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus } from "lucide-react";
+import { BookMarked, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, listProducts, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import { useBillingStore } from "@/lib/billing-store";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
-import { hasStoredAuthSession } from "@/lib/vertical-config";
+import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
 
 const PAYMENT_SHORTCUTS = [
-  { mode: "CASH", key: "F2", label: "Cash" },
-  { mode: "UPI", key: "F4", label: "UPI" },
-  { mode: "CARD", key: "F8", label: "Card" },
-  { mode: "CREDIT", key: "F9", label: "Credit" },
+  { mode: "CASH", key: "1", displayKey: "Ctrl+1", label: "Cash" },
+  { mode: "UPI", key: "2", displayKey: "Ctrl+2", label: "UPI" },
+  { mode: "CARD", key: "3", displayKey: "Ctrl+3", label: "Card" },
+  { mode: "CREDIT", key: "4", displayKey: "Ctrl+4", label: "Credit" },
 ] as const;
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
@@ -37,7 +37,21 @@ interface LastBill {
   id: string;
   invoiceNumber: string;
   grandTotal: number;
+  subtotal: number;
+  lineDiscount: number;
+  billLevelDiscount: number;
+  cgst: number;
+  sgst: number;
   paymentMode: PaymentMode;
+  customer: CustomerRecord | null;
+  lines: Array<{
+    productName: string;
+    quantity: number;
+    sellingPrice: number;
+    discount: number;
+    gstRate: number;
+    total: number;
+  }>;
   pdfViewUrl: string;
 }
 
@@ -46,19 +60,22 @@ export function PosInvoicePanel() {
   const { lines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
   const [online, setOnline] = useState(true);
+  const [gstEnabled, setGstEnabled] = useState(true);
   const [queueCounts, setQueueCounts] = useState({ pending: 0, syncing: 0, failed: 0 });
   const [status, setStatus] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<"green" | "red">("green");
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+  const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
-  const [selectedProductId, setSelectedProductId] = useState("");
   const [billDiscount, setBillDiscount] = useState(0);
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
   const [useSplit, setUseSplit] = useState(false);
+  const [selectedPaymentMode, setSelectedPaymentMode] = useState<PaymentMode>("CASH");
+  const [amountReceived, setAmountReceived] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
   const [couponInput, setCouponInput] = useState("");
@@ -85,32 +102,56 @@ export function PosInvoicePanel() {
   });
   const products = productsQuery.data?.data ?? [];
   const customerResults = customersQuery.data?.data ?? [];
+  const productResults = useMemo(() => {
+    const term = barcodeInput.trim().toLowerCase();
+    if (!term) return [];
+    return products
+      .filter((product) =>
+        [product.name, product.sku, product.barcode]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term)),
+      )
+      .slice(0, 6);
+  }, [barcodeInput, products]);
 
   const totals = useMemo(() => {
     const itemTotals = lines.map((line) => {
       const gross = line.quantity * line.sellingPrice;
-      const discountAmount = Math.min(gross, Math.round(gross * (line.discount / 100) * 100) / 100);
+      const discountAmount = Math.min(gross, roundMoney(gross * (line.discount / 100)));
       const taxable = Math.max(gross - discountAmount, 0);
-      const gst = taxable * (line.gstRate / 100);
       return {
         gross,
         discountAmount,
-        cgst: Math.round((gst / 2) * 100) / 100,
-        sgst: Math.round((gst / 2) * 100) / 100,
-        total: Math.round((taxable + gst) * 100) / 100,
+        taxable,
+        gstRate: line.gstRate,
       };
     });
     const subtotal = itemTotals.reduce((sum, item) => sum + item.gross, 0);
     const lineDiscount = itemTotals.reduce((sum, item) => sum + item.discountAmount, 0);
-    const billLevelDiscount = Math.max(billDiscount, 0) + couponDiscount + loyaltyRedeem;
-    const cgst = itemTotals.reduce((sum, item) => sum + item.cgst, 0);
-    const sgst = itemTotals.reduce((sum, item) => sum + item.sgst, 0);
-    const preBillDiscountTotal = itemTotals.reduce((sum, item) => sum + item.total, 0);
-    const grandTotal = Math.max(preBillDiscountTotal - billLevelDiscount, 0);
+    const totalTaxable = itemTotals.reduce((sum, item) => sum + item.taxable, 0);
+    const billLevelDiscount = Math.min(Math.max(billDiscount, 0) + couponDiscount + loyaltyRedeem, totalTaxable);
+    const taxTotals = itemTotals.reduce(
+      (accumulator, item) => {
+        const share = totalTaxable > 0 ? roundMoney(billLevelDiscount * (item.taxable / totalTaxable)) : 0;
+        const taxableAfterBillDiscount = Math.max(item.taxable - share, 0);
+        const gst = gstEnabled ? taxableAfterBillDiscount * (item.gstRate / 100) : 0;
+        return {
+          cgst: roundMoney(accumulator.cgst + gst / 2),
+          sgst: roundMoney(accumulator.sgst + gst / 2),
+          grandTotal: roundMoney(accumulator.grandTotal + taxableAfterBillDiscount + gst),
+        };
+      },
+      { cgst: 0, sgst: 0, grandTotal: 0 },
+    );
+    const cgst = taxTotals.cgst;
+    const sgst = taxTotals.sgst;
+    const grandTotal = taxTotals.grandTotal;
     return { subtotal, lineDiscount, billLevelDiscount, discount: lineDiscount + billLevelDiscount, cgst, sgst, grandTotal };
-  }, [lines, billDiscount, couponDiscount, loyaltyRedeem]);
+  }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled]);
+  const changeDue = selectedPaymentMode === "CASH" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
 
   useEffect(() => {
+    setGstEnabled(getStoredTenant()?.gstEnabled ?? true);
     barcodeRef.current?.focus();
   }, []);
 
@@ -153,10 +194,26 @@ export function PosInvoicePanel() {
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
-      const shortcut = PAYMENT_SHORTCUTS.find((item) => item.key === event.key);
-      if (!shortcut) return;
-      event.preventDefault();
-      void confirmInvoice(shortcut.mode);
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      const key = event.key.toLowerCase();
+      const shortcut = PAYMENT_SHORTCUTS.find((item) => item.key === key);
+      if (shortcut) {
+        event.preventDefault();
+        void confirmInvoice(shortcut.mode);
+        return;
+      }
+      if (key === "h") {
+        event.preventDefault();
+        holdBill(selectedCustomer?.id ?? "");
+      }
+      if (key === "n") {
+        event.preventDefault();
+        clearBill();
+      }
+      if (key === "p" && lastBill) {
+        event.preventDefault();
+        window.print();
+      }
     }
 
     window.addEventListener("keydown", handleShortcut);
@@ -192,7 +249,7 @@ export function PosInvoicePanel() {
         productId: product.id,
         productName: product.name,
         sellingPrice: decimalToNumber(product.sellingPrice),
-        gstRate: decimalToNumber(product.gstRate),
+        gstRate: gstEnabled ? decimalToNumber(product.gstRate) : 0,
         quantity: 1,
         discount: 0,
       });
@@ -204,7 +261,10 @@ export function PosInvoicePanel() {
   function handleBarcodeKey(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter" || !barcodeInput.trim()) return;
     const code = barcodeInput.trim();
-    const product = products.find((item) => item.barcode === code || item.sku === code);
+    const codeLower = code.toLowerCase();
+    const product =
+      products.find((item) => item.barcode === code || item.sku === code) ??
+      products.find((item) => item.name.toLowerCase().includes(codeLower));
     if (!product) {
       notify(`No product found for ${code}`, "red");
       setBarcodeInput("");
@@ -213,17 +273,6 @@ export function PosInvoicePanel() {
 
     insertProduct(product);
     setBarcodeInput("");
-  }
-
-  function addSelectedProduct() {
-    const product = products.find((item) => item.id === selectedProductId);
-    if (!product) {
-      notify("Select a product to add.", "red");
-      return;
-    }
-
-    insertProduct(product);
-    setSelectedProductId("");
   }
 
   async function createCustomerInline() {
@@ -240,6 +289,7 @@ export function PosInvoicePanel() {
       });
       setSelectedCustomer(customer);
       setCustomerSearch(`${customer.name} ${customer.phone}`);
+      setShowNewCustomerForm(false);
       setNewCustomerName("");
       setNewCustomerPhone("");
       setNewCustomerAddress("");
@@ -259,7 +309,7 @@ export function PosInvoicePanel() {
       });
       setCouponDiscount(result.discount);
       setAppliedCoupon(couponInput.trim());
-      notify(`Coupon applied: INR ${result.discount.toFixed(2)} off`);
+      notify(`Coupon applied: ₹${result.discount.toFixed(2)} off`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Invalid coupon", "red");
     }
@@ -272,7 +322,8 @@ export function PosInvoicePanel() {
       return;
     }
 
-    const paymentMode = paymentModeOverride ?? (useSplit ? splitEntries[0]?.mode ?? "CASH" : "CASH");
+    const paymentMode = paymentModeOverride ?? (useSplit ? splitEntries[0]?.mode ?? "CASH" : selectedPaymentMode);
+    setSelectedPaymentMode(paymentMode);
     const customerId = selectedCustomer?.id;
     const deliveryPayload = deliveryRequired && selectedCustomer
       ? {
@@ -291,12 +342,17 @@ export function PosInvoicePanel() {
       const limit = selectedCustomer.creditLimit ?? 0;
       const outstanding = selectedCustomer.outstandingDue ?? 0;
       if (paymentMode === "CREDIT" && limit > 0 && outstanding + totals.grandTotal > limit) {
-        notify(`Credit limit exceeded. Outstanding INR ${outstanding.toFixed(2)}, limit INR ${limit.toFixed(2)}`, "red");
+        notify(`Credit limit exceeded. Outstanding ₹${outstanding.toFixed(2)}, limit ₹${limit.toFixed(2)}`, "red");
         return;
       }
     }
 
-    const billLevelDiscount = Math.min(totals.billLevelDiscount, totals.subtotal + totals.cgst + totals.sgst);
+    if (!useSplit && paymentMode === "CASH" && amountReceived > 0 && amountReceived + 0.01 < totals.grandTotal) {
+      notify("Cash received is less than the bill total.", "red");
+      return;
+    }
+
+    const billLevelDiscount = Math.min(totals.billLevelDiscount, totals.subtotal);
     const invoicePayload = {
       paymentMode,
       billDiscount: billLevelDiscount,
@@ -314,6 +370,7 @@ export function PosInvoicePanel() {
 
     setIsSubmitting(true);
     setLastBill(null);
+    const billSnapshot = createBillPreviewSnapshot(activeLines, totals, paymentMode, selectedCustomer);
 
     try {
       if (!online || !hasStoredAuthSession()) {
@@ -371,11 +428,17 @@ export function PosInvoicePanel() {
         id: created.id,
         invoiceNumber: confirmed.invoiceNumber ?? created.invoiceNumber,
         grandTotal: Number(confirmed.grandTotal ?? created.grandTotal),
+        subtotal: billSnapshot.subtotal,
+        lineDiscount: billSnapshot.lineDiscount,
+        billLevelDiscount: billSnapshot.billLevelDiscount,
+        cgst: billSnapshot.cgst,
+        sgst: billSnapshot.sgst,
         paymentMode,
+        customer: billSnapshot.customer,
+        lines: billSnapshot.lines,
         pdfViewUrl,
       });
       notify("Invoice confirmed. Bill is ready to print.");
-      clearBill();
     } catch (error) {
       notify(error instanceof Error ? error.message : "Unable to create invoice.", "red");
     } finally {
@@ -384,7 +447,7 @@ export function PosInvoicePanel() {
   }
 
   async function shareWhatsApp() {
-    if (!lastBill || !selectedCustomer) return;
+    if (!lastBill?.customer) return;
     try {
       await createAuthenticatedApiClient().post(`/billing/invoices/${lastBill.id}/share`, { channel: "whatsapp" });
       notify("Invoice sent via WhatsApp.");
@@ -415,11 +478,43 @@ export function PosInvoicePanel() {
     setDeliveryNotes("");
     setSplitEntries([{ mode: "CASH", amount: 0 }]);
     setUseSplit(false);
+    setAmountReceived(0);
+    setSelectedPaymentMode("CASH");
     barcodeRef.current?.focus();
+  }
+
+  function dismissBillPreview() {
+    setLastBill(null);
+    clearBill();
   }
 
   function splitTotal(): number {
     return splitEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  }
+
+  function createBillPreviewSnapshot(
+    activeLines: typeof lines,
+    billTotals: typeof totals,
+    paymentMode: PaymentMode,
+    customer: CustomerRecord | null,
+  ): Omit<LastBill, "id" | "invoiceNumber" | "grandTotal" | "pdfViewUrl"> {
+    return {
+      subtotal: billTotals.subtotal,
+      lineDiscount: billTotals.lineDiscount,
+      billLevelDiscount: billTotals.billLevelDiscount,
+      cgst: billTotals.cgst,
+      sgst: billTotals.sgst,
+      paymentMode,
+      customer,
+      lines: activeLines.map((line) => ({
+        productName: line.productName,
+        quantity: line.quantity,
+        sellingPrice: line.sellingPrice,
+        discount: line.discount,
+        gstRate: line.gstRate,
+        total: lineTotal(line, gstEnabled),
+      })),
+    };
   }
 
   return (
@@ -431,20 +526,25 @@ export function PosInvoicePanel() {
             POS invoice
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-md border px-2 py-1 text-xs ${online ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>
-              {online ? "Online" : "Offline billing active"}
+            <span
+              className="inline-flex size-3 rounded-full"
+              title={`${online ? "Online" : "Offline billing active"} | pending ${queueCounts.pending}, syncing ${queueCounts.syncing}, failed ${queueCounts.failed}`}
+            >
+              <span className={`size-3 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`} />
             </span>
             <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void syncNow()}>
               <RefreshCcw className="size-4" aria-hidden="true" />
               Sync
             </button>
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => setShowHeld((value) => !value)}>
-              <BookMarked className="size-4" aria-hidden="true" />
-              Held ({heldBills.length})
-            </button>
+            {heldBills.length > 0 ? (
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => setShowHeld((value) => !value)}>
+                <BookMarked className="size-4" aria-hidden="true" />
+                Held ({heldBills.length})
+              </button>
+            ) : null}
             <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700" onClick={() => holdBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0}>
               <Pause className="size-4" aria-hidden="true" />
-              Hold
+              Hold <span className="text-xs text-amber-600">Ctrl+H</span>
             </button>
           </div>
         </div>
@@ -464,12 +564,21 @@ export function PosInvoicePanel() {
           </div>
         ) : null}
 
-        <div className="grid gap-3 border-b border-border p-3 lg:grid-cols-[1fr_1fr_1.1fr]">
-          <div>
+        <div className="grid gap-3 border-b border-border p-3 lg:grid-cols-[1fr_1.1fr]">
+          <div className="relative">
             <label className="text-xs font-medium text-slate-500">Customer search</label>
             <div className="mt-1 flex h-10 items-center gap-2 rounded-md border border-border px-3">
               <Search className="size-4 text-slate-400" aria-hidden="true" />
-              <input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Name or phone" className="min-w-0 flex-1 text-sm outline-none" />
+              <input
+                value={customerSearch}
+                onChange={(event) => {
+                  setCustomerSearch(event.target.value);
+                  setSelectedCustomer(null);
+                  setShowNewCustomerForm(false);
+                }}
+                placeholder="Name or phone"
+                className="min-w-0 flex-1 text-sm outline-none"
+              />
             </div>
             <div className="mt-2 grid gap-1">
               {selectedCustomer ? (
@@ -485,41 +594,64 @@ export function PosInvoicePanel() {
                     </button>
                   ))
                 : null}
+              {customerSearch && !selectedCustomer && !showNewCustomerForm ? (
+                <button className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-left text-xs font-semibold text-emerald-800" onClick={() => {
+                  setShowNewCustomerForm(true);
+                  setNewCustomerName(customerSearch.replace(/\d/g, "").trim());
+                  setNewCustomerPhone(customerSearch.replace(/\D/g, "").slice(0, 15));
+                }}>
+                  <UserPlus className="size-3.5" aria-hidden="true" />
+                  New customer
+                </button>
+              ) : null}
             </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-medium text-slate-500">Add customer here</label>
-            <div className="mt-1 grid gap-2">
+            {showNewCustomerForm ? (
+              <div className="mt-2 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                  Add customer
+                  <button className="text-slate-500" onClick={() => setShowNewCustomerForm(false)}>
+                    <X className="size-4" aria-hidden="true" />
+                  </button>
+                </div>
               <input value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} placeholder="Customer name" className="h-9 rounded-md border border-border px-3 text-sm" />
               <input value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} placeholder="Phone number" className="h-9 rounded-md border border-border px-3 text-sm" />
               <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address (optional)" className="h-9 rounded-md border border-border px-3 text-sm" />
               <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-medium text-emerald-800" onClick={() => void createCustomerInline()}>
                 <UserPlus className="size-4" aria-hidden="true" />
-                Add customer
+                Save customer
               </button>
-            </div>
+              </div>
+            ) : null}
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-slate-500">Scan barcode</label>
-            <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder="Scan barcode / SKU + Enter" className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
-            <div className="mt-2 flex gap-2">
-              <select value={selectedProductId} onChange={(event) => setSelectedProductId(event.target.value)} className="h-10 min-w-0 flex-1 rounded-md border border-border px-3 text-sm">
-                <option value="">{productsQuery.isLoading ? "Loading products..." : "Select product"}</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>{product.name}</option>
-                ))}
-              </select>
-              <button className="h-10 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={addSelectedProduct}>Add item</button>
-            </div>
+          <div className="relative">
+            <label className="text-xs font-medium text-slate-500">Product search / barcode</label>
+            <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder="Scan barcode, SKU, or type product name + Enter" className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
+            {barcodeInput.trim() ? (
+              <div className="mt-2 grid gap-1">
+                {productResults.length > 0 ? productResults.map((product) => (
+                  <button
+                    key={product.id}
+                    className="rounded-md border border-slate-200 px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      insertProduct(product);
+                      setBarcodeInput("");
+                    }}
+                  >
+                    {product.name} <span className="text-slate-400">| Stock {decimalToNumber(product.currentStock).toFixed(3)}</span>
+                  </button>
+                )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
+              </div>
+            ) : (
+              <div className="mt-2 text-xs text-slate-500">{productsQuery.isLoading ? "Loading products..." : "Scan or search to add products."}</div>
+            )}
           </div>
         </div>
 
         {selectedCustomer && (selectedCustomer.outstandingDue ?? 0) > 0 ? (
           <div className="border-b border-border bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Outstanding due: INR {(selectedCustomer.outstandingDue ?? 0).toFixed(2)}
-            {selectedCustomer.creditLimit ? ` | Credit limit: INR ${selectedCustomer.creditLimit.toFixed(2)}` : ""}
+            Outstanding due: ₹{(selectedCustomer.outstandingDue ?? 0).toFixed(2)}
+            {selectedCustomer.creditLimit ? ` | Credit limit: ₹${selectedCustomer.creditLimit.toFixed(2)}` : ""}
           </div>
         ) : null}
 
@@ -531,7 +663,7 @@ export function PosInvoicePanel() {
                 <th className="px-3 py-3 font-medium">Qty</th>
                 <th className="px-3 py-3 font-medium">Rate</th>
                 <th className="px-3 py-3 font-medium">Discount %</th>
-                <th className="px-3 py-3 font-medium">GST%</th>
+                {gstEnabled ? <th className="px-3 py-3 font-medium">GST%</th> : null}
                 <th className="px-3 py-3 text-right font-medium">Total</th>
                 <th className="px-3 py-3" />
               </tr>
@@ -539,23 +671,26 @@ export function PosInvoicePanel() {
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">Scan a barcode or select a product to start billing.</td>
+                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">Scan a barcode or search a product to start billing.</td>
                 </tr>
               ) : null}
               {lines.map((line) => {
-                const gross = line.quantity * line.sellingPrice;
-                const discountAmount = Math.min(gross, gross * (line.discount / 100));
-                const taxable = Math.max(gross - discountAmount, 0);
-                const lineGst = taxable * (line.gstRate / 100);
-                const lineTotal = taxable + lineGst;
+                const product = products.find((item) => item.id === line.productId);
+                const stock = product ? decimalToNumber(product.currentStock) : null;
+                const reorderLevel = product?.reorderLevel ? decimalToNumber(product.reorderLevel) : null;
+                const stockTone = stock !== null && reorderLevel !== null && stock <= reorderLevel ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600";
+                const total = lineTotal(line, gstEnabled);
                 return (
                   <tr key={line.id} className="border-t border-border">
-                    <td className="px-3 py-2 font-medium text-slate-900">{line.productName}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-900">{line.productName}</div>
+                      {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
+                    </td>
                     <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: Number(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
-                    <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td>
-                    <td className="px-3 py-2 text-right font-semibold">INR {lineTotal.toFixed(2)}</td>
+                    {gstEnabled ? <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td> : null}
+                    <td className="px-3 py-2 text-right font-semibold">₹{total.toFixed(2)}</td>
                     <td className="px-3 py-2 text-right">
                       <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeLine(line.id)}>
                         <Trash2 className="size-4" aria-hidden="true" />
@@ -598,9 +733,9 @@ export function PosInvoicePanel() {
           <SummaryRow label="Subtotal" value={totals.subtotal} />
           <SummaryRow label="Line discount" value={-totals.lineDiscount} />
           <SummaryRow label="Bill discount" value={-totals.billLevelDiscount} />
-          <SummaryRow label="CGST" value={totals.cgst} />
-          <SummaryRow label="SGST" value={totals.sgst} />
-          <div className="flex justify-between border-t border-border pt-3 text-base font-bold"><span>Grand total</span><span>INR {totals.grandTotal.toFixed(2)}</span></div>
+          {gstEnabled ? <SummaryRow label="CGST" value={totals.cgst} /> : null}
+          {gstEnabled ? <SummaryRow label="SGST" value={totals.sgst} /> : null}
+          <div className="flex justify-between border-t border-border pt-3 text-base font-bold"><span>Grand total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
         </div>
 
         <label className="mt-4 block text-sm font-medium text-slate-700">
@@ -612,7 +747,7 @@ export function PosInvoicePanel() {
           <input value={couponInput} onChange={(event) => setCouponInput(event.target.value)} placeholder="Coupon code" className="h-9 flex-1 rounded-md border border-border px-3 text-sm" />
           <button className="h-9 rounded-md border border-border px-3 text-sm font-medium" onClick={() => void applyCoupon()}>Apply</button>
         </div>
-        {appliedCoupon ? <div className="mt-1 text-xs text-emerald-700">{appliedCoupon} applied (-INR {couponDiscount.toFixed(2)})</div> : null}
+        {appliedCoupon ? <div className="mt-1 text-xs text-emerald-700">{appliedCoupon} applied (-₹{couponDiscount.toFixed(2)})</div> : null}
 
         {loyaltyBalance !== null ? (
           <div className="mt-3 rounded-md border border-border p-2">
@@ -641,7 +776,25 @@ export function PosInvoicePanel() {
             ))}
             <button className="text-left text-sm font-medium text-emerald-700" onClick={() => setSplitEntries((current) => [...current, { mode: "CASH", amount: 0 }])}>Add payment mode</button>
             {Math.abs(splitTotal() - totals.grandTotal) > 0.01 ? (
-              <div className="text-xs text-amber-600">Split total INR {splitTotal().toFixed(2)} | Remaining INR {(totals.grandTotal - splitTotal()).toFixed(2)}</div>
+              <div className="text-xs text-amber-600">Split total ₹{splitTotal().toFixed(2)} | Remaining ₹{(totals.grandTotal - splitTotal()).toFixed(2)}</div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!useSplit ? (
+          <div className="mt-4 grid gap-2 rounded-md border border-border bg-slate-50 p-3">
+            <div className="text-xs font-semibold text-slate-600">Selected payment: {selectedPaymentMode}</div>
+            <label className="block text-sm font-medium text-slate-700">
+              Cash received
+              <input type="number" min="0" value={amountReceived} onChange={(event) => {
+                setSelectedPaymentMode("CASH");
+                setAmountReceived(Number(event.target.value));
+              }} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" />
+            </label>
+            {amountReceived > 0 ? (
+              <div className={`text-xs font-semibold ${changeDue >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                {changeDue >= 0 ? "Change" : "Short"} ₹{Math.abs(changeDue).toFixed(2)}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -650,13 +803,14 @@ export function PosInvoicePanel() {
           {PAYMENT_SHORTCUTS.map((shortcut) => (
             <button key={shortcut.mode} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 disabled:opacity-50" onClick={() => void confirmInvoice(shortcut.mode)} disabled={isSubmitting || lines.length === 0}>
               <span className="block">{shortcut.label}</span>
-              <span className="text-xs font-medium text-emerald-700">{shortcut.key}</span>
+              <span className="text-xs font-medium text-emerald-700">{shortcut.displayKey}</span>
             </button>
           ))}
         </div>
 
         <div className="mt-4 rounded-md border border-border bg-slate-50 p-2 text-xs text-slate-600">
           Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
+          <div className="mt-1">Shortcuts: Ctrl+H hold | Ctrl+N new bill | Ctrl+P print preview</div>
         </div>
 
         {status ? (
@@ -666,24 +820,10 @@ export function PosInvoicePanel() {
         {lastBill ? (
           <section className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
             <div className="text-sm font-semibold text-emerald-950">Bill ready</div>
-            <div className="mt-1 text-xs text-emerald-800">{lastBill.invoiceNumber} | {lastBill.paymentMode} | INR {lastBill.grandTotal.toFixed(2)}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <a className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-300 bg-white px-3 text-sm font-medium text-emerald-900" href={lastBill.pdfViewUrl} target="_blank">
-                <Printer className="size-4" aria-hidden="true" />
-                Open bill
-              </a>
-              <button className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-medium text-amber-900" onClick={() => void printThermalInvoice()}>
-                <Printer className="size-4" aria-hidden="true" />
-                Thermal
-              </button>
-              {selectedCustomer ? (
-                <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => void shareWhatsApp()}>
-                  <MessageCircle className="size-4" aria-hidden="true" />
-                  WA
-                </button>
-              ) : null}
-            </div>
-            <iframe className="mt-3 h-80 w-full rounded-md border border-emerald-200 bg-white" src={lastBill.pdfViewUrl} title="Invoice PDF" />
+            <div className="mt-1 text-xs text-emerald-800">{lastBill.invoiceNumber} | {lastBill.paymentMode} | ₹{lastBill.grandTotal.toFixed(2)}</div>
+            <button className="mt-3 h-9 w-full rounded-md border border-emerald-300 bg-white text-sm font-medium text-emerald-900" onClick={() => window.print()}>
+              Print preview
+            </button>
           </section>
         ) : null}
 
@@ -694,18 +834,113 @@ export function PosInvoicePanel() {
           </div>
         ) : null}
       </aside>
+
+      {lastBill ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 print:static print:bg-white print:p-0">
+          <section className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-md border border-border bg-white shadow-xl print:max-h-none print:max-w-none print:border-0 print:shadow-none">
+            <div className="flex items-start justify-between gap-4 border-b border-border p-4 print:hidden">
+              <div>
+                <div className="text-sm font-semibold text-slate-950">Invoice preview</div>
+                <div className="text-xs text-slate-500">{lastBill.invoiceNumber} | {lastBill.paymentMode}</div>
+              </div>
+              <button className="inline-flex size-9 items-center justify-center rounded-md hover:bg-slate-100" onClick={dismissBillPreview}>
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-lg font-bold text-slate-950">RetailOS Invoice</div>
+                  <div className="text-sm text-slate-500">{lastBill.invoiceNumber}</div>
+                  {lastBill.customer ? <div className="mt-2 text-sm text-slate-700">{lastBill.customer.name} | {lastBill.customer.phone}</div> : null}
+                </div>
+                <div className="text-right">
+                  <div className="text-xs uppercase text-slate-500">Grand total</div>
+                  <div className="text-2xl font-bold text-slate-950">₹{lastBill.grandTotal.toFixed(2)}</div>
+                </div>
+              </div>
+              <div className="mt-5 overflow-x-auto">
+                <table className="w-full min-w-[620px] text-sm">
+                  <thead className="border-y border-border bg-slate-50 text-left text-xs text-slate-500">
+                    <tr>
+                      <th className="px-2 py-2 font-medium">Product</th>
+                      <th className="px-2 py-2 text-right font-medium">Qty</th>
+                      <th className="px-2 py-2 text-right font-medium">Rate</th>
+                      <th className="px-2 py-2 text-right font-medium">Disc %</th>
+                      {gstEnabled ? <th className="px-2 py-2 text-right font-medium">GST</th> : null}
+                      <th className="px-2 py-2 text-right font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lastBill.lines.map((line, index) => (
+                      <tr key={`${line.productName}-${index}`} className="border-b border-border">
+                        <td className="px-2 py-2">{line.productName}</td>
+                        <td className="px-2 py-2 text-right">{line.quantity}</td>
+                        <td className="px-2 py-2 text-right">₹{line.sellingPrice.toFixed(2)}</td>
+                        <td className="px-2 py-2 text-right">{line.discount}%</td>
+                        {gstEnabled ? <td className="px-2 py-2 text-right">{line.gstRate}%</td> : null}
+                        <td className="px-2 py-2 text-right font-semibold">₹{line.total.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="ml-auto mt-5 grid max-w-sm gap-2 text-sm">
+                <SummaryRow label="Subtotal" value={lastBill.subtotal} />
+                <SummaryRow label="Line discount" value={-lastBill.lineDiscount} />
+                <SummaryRow label="Bill discount" value={-lastBill.billLevelDiscount} />
+                {gstEnabled ? <SummaryRow label="CGST" value={lastBill.cgst} /> : null}
+                {gstEnabled ? <SummaryRow label="SGST" value={lastBill.sgst} /> : null}
+                <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span>₹{lastBill.grandTotal.toFixed(2)}</span></div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 border-t border-border p-4 print:hidden">
+              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => window.print()}>
+                <Printer className="size-4" aria-hidden="true" />
+                Print
+              </button>
+              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-medium text-amber-900" onClick={() => void printThermalInvoice()}>
+                <Printer className="size-4" aria-hidden="true" />
+                Thermal
+              </button>
+              <a className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-900" href={lastBill.pdfViewUrl} target="_blank">
+                PDF
+              </a>
+              {lastBill.customer ? (
+                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => void shareWhatsApp()}>
+                  <MessageCircle className="size-4" aria-hidden="true" />
+                  WA
+                </button>
+              ) : null}
+              <button className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={dismissBillPreview}>New bill</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function SummaryRow({ label, value }: Readonly<{ label: string; value: number }>) {
-  const prefix = value < 0 ? "-INR " : "INR ";
+  const prefix = value < 0 ? "-₹" : "₹";
   return (
     <div className="flex justify-between">
       <span className="text-slate-500">{label}</span>
       <span>{prefix}{Math.abs(value).toFixed(2)}</span>
     </div>
   );
+}
+
+function lineTotal(line: { quantity: number; sellingPrice: number; discount: number; gstRate: number }, gstEnabled = true): number {
+  const gross = line.quantity * line.sellingPrice;
+  const discountAmount = Math.min(gross, gross * (line.discount / 100));
+  const taxable = Math.max(gross - discountAmount, 0);
+  const gst = gstEnabled ? taxable * (line.gstRate / 100) : 0;
+  return roundMoney(taxable + gst);
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function decimalToNumber(value: string | number): number {
