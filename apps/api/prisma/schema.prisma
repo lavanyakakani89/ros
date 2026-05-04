@@ -56,6 +56,8 @@ model Tenant {
   kotItems           KOTItem[]
   recipes            Recipe[]
   license            TenantLicense?
+  invoiceTemplates   InvoiceTemplate[]
+  printerConfig      PrinterConfig?
 
   @@map("tenants")
 }
@@ -341,6 +343,73 @@ enum PaymentMode {
   CARD
   CREDIT
   NETBANKING
+}
+
+enum PaperSize {
+  THERMAL_2
+  THERMAL_3
+  THERMAL_4
+  A5
+  A4
+}
+
+enum RenderType {
+  ESC_POS
+  HTML_PDF
+}
+
+enum PrinterConn {
+  USB_PRINTNODE
+  NETWORK
+  BLUETOOTH
+  NONE
+}
+
+model InvoiceTemplate {
+  id           String         @id @default(cuid())
+  tenantId     String?        @map("tenant_id")
+  tenant       Tenant?        @relation(fields: [tenantId], references: [id])
+  name         String
+  description  String?
+  paperSize    PaperSize      @map("paper_size")
+  renderType   RenderType     @map("render_type")
+  htmlSource   String?        @map("html_source")
+  escposConfig Json?          @map("escpos_config")
+  uiConfig     Json?          @map("ui_config")
+  isSystem     Boolean        @default(false) @map("is_system")
+  isDefault    Boolean        @default(false) @map("is_default")
+  isLocked     Boolean        @default(false) @map("is_locked")
+  clonedFromId String?        @map("cloned_from_id")
+  clonedFrom   InvoiceTemplate? @relation("TemplateClone", fields: [clonedFromId], references: [id])
+  clones       InvoiceTemplate[] @relation("TemplateClone")
+  version      Int            @default(1)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isDefault])
+  @@index([paperSize, renderType])
+  @@map("invoice_templates")
+}
+
+model PrinterConfig {
+  id               String      @id @default(cuid())
+  tenantId         String      @unique @map("tenant_id")
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  connectionType   PrinterConn @default(NONE) @map("connection_type")
+  paperSize        PaperSize   @default(THERMAL_3) @map("paper_size")
+  networkIp        String?     @map("network_ip")
+  networkPort      Int?        @map("network_port")
+  printNodeApiKey  String?     @map("print_node_api_key")
+  printNodePrinterId String?   @map("print_node_printer_id")
+  bluetoothDeviceId String?    @map("bluetooth_device_id")
+  bluetoothDeviceName String?  @map("bluetooth_device_name")
+  isActive         Boolean     @default(true) @map("is_active")
+  lastTestedAt     DateTime?   @map("last_tested_at")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@map("printer_configs")
 }
 
 model Payment {

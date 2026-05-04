@@ -5,6 +5,7 @@ import { BillingRepository, type InvoiceTotals } from "./billing.repository.js";
 import type { CreateInvoiceInput, InvoiceItemInput, InvoiceListQuery, UpdateInvoiceInput } from "./billing.types.js";
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
+import { getEffectiveTemplate, printInvoiceForTenant } from "../printer/printer.service.js";
 
 export class BillingError extends Error {
   constructor(
@@ -116,11 +117,13 @@ export class BillingService {
 
   async generateInvoicePdf(tenant: Tenant, invoiceId: string) {
     const invoice = await this.getInvoice(tenant, invoiceId);
+    const template = await getEffectiveTemplate(this.fastify, tenant);
     const objectName = await generateGstInvoicePdf({
       invoice,
       tenant,
       minio: this.fastify.minio,
       bucket: this.fastify.minioBucket,
+      template: template?.renderType === "HTML_PDF" ? template : null,
     });
 
     await this.repository.updateInvoicePdfUrl(tenant.id, invoiceId, objectName);
@@ -142,6 +145,15 @@ export class BillingService {
       objectName: invoice.pdfUrl,
       downloadUrl: await this.fastify.minio.presignedGetObject(this.fastify.minioBucket, invoice.pdfUrl, 60 * 10),
     };
+  }
+
+  async printInvoice(tenant: Tenant, invoiceId: string) {
+    const invoice = await this.getInvoice(tenant, invoiceId);
+    return printInvoiceForTenant({
+      fastify: this.fastify,
+      tenant,
+      invoice,
+    });
   }
 
   private async calculateInvoice(tenantId: string, items: InvoiceItemInput[]) {

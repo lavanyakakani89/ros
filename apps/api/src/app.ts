@@ -23,6 +23,7 @@ import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
+import { printerRoutes } from "./modules/printer/printer.routes.js";
 import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes.js";
 import { purchaseReturnsRoutes } from "./modules/purchase-returns/purchase-returns.routes.js";
 import { quotationsRoutes } from "./modules/quotations/quotations.routes.js";
@@ -32,6 +33,8 @@ import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.routes.js";
 import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.routes.js";
+import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
+import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -89,6 +92,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(authRoutes);
   await fastify.register(superAdminAuthRoutes);
   await fastify.register(superAdminShopsRoutes);
+  await fastify.register(superAdminTemplatesRoutes);
 
   async function getHealth() {
     await Promise.all([fastify.prisma.$queryRaw`SELECT 1`, fastify.redis.ping()]);
@@ -119,6 +123,8 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(purchaseReturnsRoutes);
   await fastify.register(inventoryRoutes);
   await fastify.register(billingRoutes);
+  await fastify.register(templatesRoutes);
+  await fastify.register(printerRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(deliveryRoutes);
   await fastify.register(reportsRoutes);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save, UserPlus } from "lucide-react";
+import { FileText, Printer, Save, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
@@ -94,6 +95,26 @@ export function SettingsPanel() {
     <div className="space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
       {message ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}
+      <section className="grid gap-3 md:grid-cols-2">
+        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/templates">
+          <span className="flex size-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+            <FileText className="size-5" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block font-semibold text-slate-950">Invoice templates</span>
+            <span className="text-xs text-slate-500">Thermal, A5, A4, and shop default templates.</span>
+          </span>
+        </Link>
+        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/printer">
+          <span className="flex size-10 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+            <Printer className="size-5" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block font-semibold text-slate-950">Printer setup</span>
+            <span className="text-xs text-slate-500">Network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
+          </span>
+        </Link>
+      </section>
       <section className="rounded-md border border-border bg-white p-4">
         <div className="mb-3">
           <div className="text-sm font-semibold text-slate-950">Shop details</div>

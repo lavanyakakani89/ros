@@ -26,6 +26,7 @@ export function PosInvoicePanel() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [lastInvoiceId, setLastInvoiceId] = useState<string | null>(null);
   const [barcodeInput, setBarcodeInput] = useState("");
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
   const [useSplit, setUseSplit] = useState(false);
@@ -153,6 +154,8 @@ export function PosInvoicePanel() {
   async function confirmInvoice() {
     const activeLines = lines.filter((l) => l.productId);
     if (activeLines.length === 0) { notify("Add at least one product.", "red"); return; }
+    setPdfUrl(null);
+    setLastInvoiceId(null);
 
     // Credit-limit check
     if (selectedCustomer) {
@@ -212,6 +215,7 @@ export function PosInvoicePanel() {
 
       const pdf = await createAuthenticatedApiClient().post<{ downloadUrl: string }>(`/billing/invoices/${invoice.id}/pdf`, {});
       setPdfUrl(pdf.downloadUrl);
+      setLastInvoiceId(invoice.id);
       notify("Invoice confirmed.");
       reset();
       setCouponDiscount(0); setAppliedCoupon(""); setCouponInput(""); setLoyaltyRedeem(0); setNotes("");
@@ -222,15 +226,29 @@ export function PosInvoicePanel() {
   }
 
   async function shareWhatsApp() {
-    if (!pdfUrl || !customerId) return;
+    if (!customerId) return;
     try {
-      await createAuthenticatedApiClient().post("/billing/invoices/share-whatsapp", {
-        customerId,
-        pdfUrl,
-      });
+      if (lastInvoiceId) {
+        await createAuthenticatedApiClient().post(`/billing/invoices/${lastInvoiceId}/share`, { channel: "whatsapp" });
+      } else if (pdfUrl) {
+        await createAuthenticatedApiClient().post("/billing/invoices/share-whatsapp", {
+          customerId,
+          pdfUrl,
+        });
+      }
       notify("Invoice sent via WhatsApp.");
     } catch {
       notify("WhatsApp share failed.", "red");
+    }
+  }
+
+  async function printThermalInvoice() {
+    if (!lastInvoiceId) return;
+    try {
+      const result = await createAuthenticatedApiClient().post<{ status: string; message: string }>(`/billing/invoices/${lastInvoiceId}/print`, {});
+      notify(result.message || `Printer status: ${result.status}`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Thermal print failed.", "red");
     }
   }
 
@@ -435,10 +453,15 @@ export function PosInvoicePanel() {
 
         {/* PDF + WhatsApp */}
         {pdfUrl && (
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <a className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-border text-sm font-medium text-slate-700" href={pdfUrl} target="_blank">
-              <Printer className="size-4" aria-hidden="true" />Print
+              <Printer className="size-4" aria-hidden="true" />PDF
             </a>
+            {lastInvoiceId && (
+              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-medium text-amber-800" onClick={() => void printThermalInvoice()}>
+                <Printer className="size-4" aria-hidden="true" />Thermal
+              </button>
+            )}
             {customerId && (
               <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => void shareWhatsApp()}>
                 <MessageCircle className="size-4" aria-hidden="true" />WA

@@ -49,6 +49,38 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return handleBilling(reply, () => service.getInvoicePdfUrl(request.tenant, params.id));
   });
 
+  fastify.post("/api/billing/invoices/:id/print", async (request, reply) => {
+    const params = invoiceIdParamsSchema.parse(request.params);
+    return handleBilling(reply, () => service.printInvoice(request.tenant, params.id));
+  });
+
+  fastify.post("/api/billing/invoices/:id/share", async (request, reply) => {
+    const params = invoiceIdParamsSchema.parse(request.params);
+    return handleBilling(reply, async () => {
+      const input = z.object({ channel: z.enum(["whatsapp", "pdf"]).default("whatsapp") }).parse(request.body ?? {});
+      const invoice = await service.getInvoice(request.tenant, params.id);
+      const customer = invoice.customerId
+        ? await fastify.prisma.customer.findFirst({ where: { id: invoice.customerId, tenantId: request.tenant.id } })
+        : null;
+
+      if (input.channel === "pdf") {
+        return service.generateInvoicePdf(request.tenant, params.id);
+      }
+
+      if (!customer) {
+        throw new BillingError("Invoice does not have a customer to share with", 400);
+      }
+
+      const pdf = invoice.pdfUrl
+        ? await service.getInvoicePdfUrl(request.tenant, params.id)
+        : await service.generateInvoicePdf(request.tenant, params.id);
+      const message = `Hi ${customer.name}, your invoice ${invoice.invoiceNumber} from ${request.tenant.name} is ready. Download: ${pdf.downloadUrl}`;
+
+      await whatsappNotifyQueue.add("invoice-share", { phone: customer.phone, message });
+      return { status: "queued", channel: input.channel };
+    });
+  });
+
   // Share invoice via WhatsApp to customer
   fastify.post("/api/billing/invoices/share-whatsapp", async (request, reply) => {
     return handleBilling(reply, async () => {

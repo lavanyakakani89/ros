@@ -2,7 +2,7 @@
 
 import type { SyntheticEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, LogOut, PlusCircle, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, FileText, LogOut, PlusCircle, RefreshCw, Save, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 const apiBaseUrl =
@@ -12,6 +12,8 @@ const verticals = ["PHARMACY", "GROCERY", "FASHION", "HARDWARE", "ELECTRONICS", 
 const plans = ["STARTER", "STANDARD", "PROFESSIONAL", "ENTERPRISE"] as const;
 const cycles = ["ONE_TIME", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "TWO_YEARLY", "THREE_YEARLY"] as const;
 const adminRoles = ["OWNER", "MANAGER", "SUPPORT"] as const;
+const paperSizes = ["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"] as const;
+const renderTypes = ["ESC_POS", "HTML_PDF"] as const;
 
 export interface SuperAdminIdentity {
   id: string;
@@ -60,6 +62,18 @@ interface AdminRecord {
   createdAt: string;
 }
 
+interface SystemTemplateRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  paperSize: string;
+  renderType: string;
+  version: number;
+  htmlSource?: string | null;
+  escposConfig?: unknown;
+  uiConfig?: unknown;
+}
+
 interface CreateShopForm {
   tenantName: string;
   tenantSlug: string;
@@ -84,6 +98,17 @@ interface CreateAdminForm {
   email: string;
   password: string;
   role: string;
+}
+
+interface TemplateForm {
+  id: string;
+  name: string;
+  description: string;
+  paperSize: string;
+  renderType: string;
+  htmlSource: string;
+  escposConfig: string;
+  uiConfig: string;
 }
 
 const emptyShopForm: CreateShopForm = {
@@ -112,13 +137,26 @@ const emptyAdminForm: CreateAdminForm = {
   role: "SUPPORT",
 };
 
+const emptyTemplateForm: TemplateForm = {
+  id: "",
+  name: "",
+  description: "",
+  paperSize: "THERMAL_3",
+  renderType: "ESC_POS",
+  htmlSource: "",
+  escposConfig: "{}",
+  uiConfig: "{}",
+};
+
 export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity }>) {
   const router = useRouter();
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [shops, setShops] = useState<ShopRecord[]>([]);
   const [admins, setAdmins] = useState<AdminRecord[]>([]);
+  const [templates, setTemplates] = useState<SystemTemplateRecord[]>([]);
   const [shopForm, setShopForm] = useState<CreateShopForm>(emptyShopForm);
   const [adminForm, setAdminForm] = useState<CreateAdminForm>(emptyAdminForm);
+  const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplateForm);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -128,15 +166,17 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
 
   const loadData = useCallback(async () => {
     setError(null);
-    const [dashboardBody, shopsBody, adminsBody] = await Promise.all([
+    const [dashboardBody, shopsBody, adminsBody, templatesBody] = await Promise.all([
       apiGet<{ metrics: DashboardMetrics }>("/superadmin/dashboard"),
       apiGet<{ shops: ShopRecord[] }>("/superadmin/shops?limit=100"),
       apiGet<{ admins: AdminRecord[] }>("/superadmin/admins"),
+      apiGet<{ templates: SystemTemplateRecord[] }>("/superadmin/templates"),
     ]);
 
     setMetrics(dashboardBody.metrics);
     setShops(shopsBody.shops);
     setAdmins(adminsBody.admins);
+    setTemplates(templatesBody.templates);
     setLoading(false);
   }, []);
 
@@ -168,6 +208,23 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     setAdminForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateTemplateField(field: keyof TemplateForm, value: string) {
+    setTemplateForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectTemplate(template: SystemTemplateRecord) {
+    setTemplateForm({
+      id: template.id,
+      name: template.name,
+      description: template.description ?? "",
+      paperSize: template.paperSize,
+      renderType: template.renderType,
+      htmlSource: template.htmlSource ?? "",
+      escposConfig: prettyJson(template.escposConfig),
+      uiConfig: prettyJson(template.uiConfig),
+    });
+  }
+
   async function createShop() {
     setError(null);
     const normalizedSlug = shopForm.tenantSlug.trim().toLowerCase();
@@ -196,11 +253,46 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     await loadData();
   }
 
+  async function saveTemplate() {
+    setError(null);
+    const payload = {
+      name: templateForm.name,
+      description: templateForm.description || null,
+      paperSize: templateForm.paperSize,
+      renderType: templateForm.renderType,
+      htmlSource: templateForm.htmlSource || null,
+      escposConfig: parseJson(templateForm.escposConfig),
+      uiConfig: parseJson(templateForm.uiConfig),
+    };
+
+    if (templateForm.id) {
+      await apiPut(`/superadmin/templates/${templateForm.id}`, payload);
+      setNotice("System template updated");
+    } else {
+      await apiPost("/superadmin/templates", payload);
+      setNotice("System template created");
+    }
+
+    setTemplateForm(emptyTemplateForm);
+    await loadData();
+  }
+
   async function changeShopStatus(shop: ShopRecord, action: "warning" | "suspend" | "reactivate") {
     setError(null);
     await apiPatch(`/superadmin/shops/${shop.id}/${action}`);
     setNotice(`${shop.name} updated`);
     await loadData();
+  }
+
+  async function pushSelectedTemplate(shop: ShopRecord) {
+    if (!templateForm.id) {
+      setError("Select a system template before pushing it to a shop.");
+      return;
+    }
+
+    setError(null);
+    await apiPost(`/superadmin/templates/${templateForm.id}/push/${shop.id}`, {});
+    setNotice(`Template pushed to ${shop.name}`);
   }
 
   async function logout() {
@@ -216,6 +308,11 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   function onCreateAdmin(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     void createAdmin().catch((err: unknown) => setError(readError(err)));
+  }
+
+  function onSaveTemplate(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void saveTemplate().catch((err: unknown) => setError(readError(err)));
   }
 
   const normalizedShopSlug = shopForm.tenantSlug.trim().toLowerCase();
@@ -321,6 +418,14 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             <CheckCircle2 className="size-3" aria-hidden="true" />
                             Active
                           </button>
+                          <button
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-sky-700 px-2 text-xs text-sky-200 disabled:opacity-40"
+                            disabled={!canManage || !templateForm.id}
+                            onClick={() => void pushSelectedTemplate(shop).catch((err: unknown) => setError(readError(err)))}
+                          >
+                            <FileText className="size-3" aria-hidden="true" />
+                            Push template
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -351,6 +456,58 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
             <button className="mt-4 h-10 w-full rounded-md bg-emerald-500 text-sm font-semibold text-slate-950 disabled:opacity-40" type="submit" disabled={!canManage || shopSlugExists}>
               Create shop
             </button>
+          </form>
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
+          <div className="rounded-md border border-slate-800 bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div>
+                <div className="font-semibold">Invoice Templates</div>
+                <div className="text-sm text-slate-400">System defaults for shop cloning and fallback selection</div>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {templates.map((template) => (
+                <button key={template.id} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-slate-800" onClick={() => selectTemplate(template)}>
+                  <div>
+                    <div className="flex items-center gap-2 font-medium">
+                      <FileText className="size-4 text-sky-300" aria-hidden="true" />
+                      {template.name}
+                    </div>
+                    <div className="text-slate-500">{template.description ?? "No description"}</div>
+                  </div>
+                  <div className="text-right text-xs text-slate-400">
+                    <div>{template.paperSize}</div>
+                    <div>{template.renderType} | v{template.version}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form className="rounded-md border border-slate-800 bg-slate-900 p-4" onSubmit={onSaveTemplate}>
+            <div className="mb-4 flex items-center gap-2 font-semibold">
+              <Save className="size-4" aria-hidden="true" />
+              {templateForm.id ? "Edit System Template" : "Create System Template"}
+            </div>
+            <div className="grid gap-3">
+              <TextInput label="Template name" value={templateForm.name} onChange={(value) => updateTemplateField("name", value)} required />
+              <TextInput label="Description" value={templateForm.description} onChange={(value) => updateTemplateField("description", value)} />
+              <SelectInput label="Paper size" value={templateForm.paperSize} options={paperSizes} onChange={(value) => updateTemplateField("paperSize", value)} />
+              <SelectInput label="Render type" value={templateForm.renderType} options={renderTypes} onChange={(value) => updateTemplateField("renderType", value)} />
+              <TextAreaInput label="ESC/POS JSON" value={templateForm.escposConfig} onChange={(value) => updateTemplateField("escposConfig", value)} />
+              <TextAreaInput label="UI config JSON" value={templateForm.uiConfig} onChange={(value) => updateTemplateField("uiConfig", value)} />
+              <TextAreaInput label="HTML source" value={templateForm.htmlSource} onChange={(value) => updateTemplateField("htmlSource", value)} tall />
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button className="h-10 flex-1 rounded-md bg-sky-400 text-sm font-semibold text-slate-950 disabled:opacity-40" type="submit" disabled={!canManage}>
+                Save template
+              </button>
+              <button className="h-10 rounded-md border border-slate-700 px-3 text-sm" type="button" onClick={() => setTemplateForm(emptyTemplateForm)}>
+                Clear
+              </button>
+            </div>
           </form>
         </section>
 
@@ -471,6 +628,30 @@ function SelectInput({
   );
 }
 
+function TextAreaInput({
+  label,
+  value,
+  onChange,
+  tall,
+}: Readonly<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  tall?: boolean;
+}>) {
+  return (
+    <label className="block text-sm font-medium text-slate-300">
+      {label}
+      <textarea
+        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500"
+        value={value}
+        rows={tall ? 8 : 4}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
 async function apiGet<T>(path: string): Promise<T> {
   return apiRequest<T>(path);
 }
@@ -478,6 +659,13 @@ async function apiGet<T>(path: string): Promise<T> {
 async function apiPost<T = unknown>(path: string, body: object): Promise<T> {
   return apiRequest<T>(path, {
     method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+async function apiPut<T = unknown>(path: string, body: object): Promise<T> {
+  return apiRequest<T>(path, {
+    method: "PUT",
     body: JSON.stringify(body),
   });
 }
@@ -528,4 +716,20 @@ function formatDate(value: string): string {
     month: "short",
     year: "numeric",
   }).format(new Date(value));
+}
+
+function parseJson(value: string): unknown {
+  if (!value.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function prettyJson(value: unknown): string {
+  return value == null ? "{}" : JSON.stringify(value, null, 2);
 }

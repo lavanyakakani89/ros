@@ -1,4 +1,4 @@
-import type { Invoice, InvoiceItem, Tenant } from "@prisma/client";
+import { PaperSize, type Invoice, type InvoiceItem, type InvoiceTemplate, type Tenant } from "@prisma/client";
 import Handlebars from "handlebars";
 import type { Client } from "minio";
 import puppeteer from "puppeteer";
@@ -12,9 +12,10 @@ export async function generateGstInvoicePdf(input: {
   tenant: Tenant;
   minio: Client;
   bucket: string;
+  template?: InvoiceTemplate | null;
 }): Promise<string> {
-  const template = Handlebars.compile(getTemplate());
-  const html = template({
+  const compiledTemplate = Handlebars.compile(input.template?.htmlSource ?? getTemplate());
+  const html = compiledTemplate({
     invoice: input.invoice,
     tenant: input.tenant,
     invoiceDate: input.invoice.invoiceDate.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
@@ -48,7 +49,7 @@ export async function generateGstInvoicePdf(input: {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdfBuffer = await page.pdf({ format: "A4", printBackground: true });
+    const pdfBuffer = await page.pdf({ format: pdfFormat(input.template?.paperSize), printBackground: true });
     const filename = `invoices/${input.tenant.id}/${input.invoice.invoiceNumber}.pdf`;
 
     await input.minio.putObject(input.bucket, filename, Buffer.from(pdfBuffer), pdfBuffer.length, {
@@ -59,6 +60,10 @@ export async function generateGstInvoicePdf(input: {
   } finally {
     await browser.close();
   }
+}
+
+function pdfFormat(paperSize: PaperSize | undefined): "A4" | "A5" {
+  return paperSize === PaperSize.A5 ? "A5" : "A4";
 }
 
 function money(value: { toNumber: () => number }): string {
