@@ -82,6 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: verify
+    environment: production
 
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -101,7 +102,7 @@ jobs:
           HEALTH_URL="${HEALTH_URL:-https://ros.sivsanoils.in/api/health}"
 
           if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
-            echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, to the repository secret named DEPLOY_SSH_KEY."
+            echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, as a repository secret or production environment secret named DEPLOY_SSH_KEY."
             exit 1
           fi
 
