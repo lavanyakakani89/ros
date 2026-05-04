@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   title: "RetailOS",
   description: "Retail management for Indian SMB shops",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "RetailOS",
+    statusBarStyle: "default",
+  },
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

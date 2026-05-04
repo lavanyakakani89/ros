@@ -28,6 +28,9 @@ export interface InvoiceListQuery {
   limit: number;
   status?: string | undefined;
   customerId?: string | undefined;
+  search?: string | undefined;
+  from?: Date | undefined;
+  to?: Date | undefined;
 }
 
 export interface InvoiceIdParams {

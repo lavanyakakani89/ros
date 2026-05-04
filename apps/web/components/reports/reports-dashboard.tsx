@@ -393,5 +393,5 @@ function ReportList({ title, items }: Readonly<{ title: string; items: string[] 
 }
 
 function money(v: number) {
-  return `INR ${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }

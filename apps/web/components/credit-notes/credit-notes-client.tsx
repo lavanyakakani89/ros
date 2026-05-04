@@ -111,7 +111,7 @@ export function CreditNotesClient() {
                     <td className="px-4 py-2 font-mono text-xs">{cn.creditNoteNumber}</td>
                     <td className="px-4 py-2">{cn.customer?.name ?? "—"}</td>
                     <td className="px-4 py-2 text-slate-500">{cn.reason ?? "—"}</td>
-                    <td className="px-4 py-2 text-right font-medium">INR {Number(cn.grandTotal).toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right font-medium">₹{Number(cn.grandTotal).toFixed(2)}</td>
                     <td className="px-4 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cn.status === "CONFIRMED" ? "bg-emerald-100 text-emerald-700" : cn.status === "CANCELLED" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
                         {cn.status}

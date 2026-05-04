@@ -75,6 +75,23 @@ export class BillingRepository {
       tenantId,
       ...(query.status ? { status: query.status as InvoiceStatus } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...(query.from || query.to
+        ? {
+            invoiceDate: {
+              ...(query.from ? { gte: query.from } : {}),
+              ...(query.to ? { lte: endOfDay(query.to) } : {}),
+            },
+          }
+        : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { invoiceNumber: { contains: query.search, mode: "insensitive" } },
+              { customer: { name: { contains: query.search, mode: "insensitive" } } },
+              { customer: { phone: { contains: query.search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
     };
 
     const [total, data] = await Promise.all([
@@ -84,6 +101,7 @@ export class BillingRepository {
         include: {
           customer: true,
           items: true,
+          delivery: true,
         },
         orderBy: {
           invoiceDate: "desc",
@@ -288,6 +306,12 @@ export interface InvoiceTotals {
   totalCgst: number;
   totalSgst: number;
   grandTotal: number;
+}
+
+function endOfDay(date: Date): Date {
+  const result = new Date(date);
+  result.setHours(23, 59, 59, 999);
+  return result;
 }
 
 const invoiceInclude = {

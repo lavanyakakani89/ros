@@ -75,7 +75,7 @@ export function LoyaltyClient() {
               <div className="text-right">
                 <div className="text-2xl font-bold text-emerald-700">{ledgerQuery.data.account.points.toLocaleString("en-IN")}</div>
                 <div className="text-xs text-slate-500">points available</div>
-                <div className="text-xs text-slate-400">≈ INR {ledgerQuery.data.account.points.toLocaleString("en-IN")} value</div>
+                <div className="text-xs text-slate-400">≈ ₹{ledgerQuery.data.account.points.toLocaleString("en-IN")} value</div>
               </div>
             </div>
           </div>

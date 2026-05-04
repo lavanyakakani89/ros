@@ -57,8 +57,8 @@ export function ExpensesClient() {
 
       {summary && (
         <StatStrip items={[
-          { label: "Total expenses", value: `INR ${summary.total.toFixed(2)}`, tone: "amber" },
-          ...Object.entries(summary.byCategory).slice(0, 4).map(([cat, amt]) => ({ label: cat, value: `INR ${amt.toFixed(2)}`, tone: "slate" as const })),
+          { label: "Total expenses", value: `₹${summary.total.toFixed(2)}`, tone: "amber" },
+          ...Object.entries(summary.byCategory).slice(0, 4).map(([cat, amt]) => ({ label: cat, value: `₹${amt.toFixed(2)}`, tone: "slate" as const })),
         ]} />
       )}
 
@@ -70,7 +70,7 @@ export function ExpensesClient() {
             {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Description" required className="h-10 rounded-md border border-border px-3 text-sm" />
-          <input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} placeholder="Amount (INR)" required className="h-10 rounded-md border border-border px-3 text-sm" />
+          <input type="number" min="0" step="0.01" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} placeholder="Amount (₹)" required className="h-10 rounded-md border border-border px-3 text-sm" />
           <input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} placeholder="Notes (optional)" className="h-10 rounded-md border border-border px-3 text-sm" />
         </div>
         <button type="submit" disabled={createExpense.isPending} className="mt-3 inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white disabled:opacity-50">
@@ -92,7 +92,7 @@ export function ExpensesClient() {
                   <div className="text-xs text-slate-500">{expense.category} · {new Date(expense.paidAt).toLocaleDateString("en-IN")}</div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-semibold text-amber-700">INR {Number(expense.amount).toFixed(2)}</span>
+                  <span className="font-semibold text-amber-700">₹{Number(expense.amount).toFixed(2)}</span>
                   <button onClick={() => deleteExpense.mutate(expense.id)} className="text-red-400 hover:text-red-600">
                     <Trash2 className="size-4" />
                   </button>

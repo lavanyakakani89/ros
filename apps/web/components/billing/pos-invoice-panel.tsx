@@ -352,6 +352,15 @@ export function PosInvoicePanel() {
       return;
     }
 
+    const outOfStockLine = activeLines.find((line) => {
+      const product = products.find((item) => item.id === line.productId);
+      return product ? line.quantity > decimalToNumber(product.currentStock) : false;
+    });
+    if (outOfStockLine) {
+      notify(`${outOfStockLine.productName} does not have enough stock. Adjust stock or quantity before confirming.`, "red");
+      return;
+    }
+
     const billLevelDiscount = Math.min(totals.billLevelDiscount, totals.subtotal);
     const invoicePayload = {
       paymentMode,
@@ -671,20 +680,23 @@ export function PosInvoicePanel() {
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">Scan a barcode or search a product to start billing.</td>
+                  <td colSpan={gstEnabled ? 7 : 6} className="px-3 py-8 text-center text-sm text-slate-500">Scan a barcode or search a product to start billing.</td>
                 </tr>
               ) : null}
               {lines.map((line) => {
                 const product = products.find((item) => item.id === line.productId);
                 const stock = product ? decimalToNumber(product.currentStock) : null;
+                const mrp = product ? decimalToNumber(product.mrp) : null;
                 const reorderLevel = product?.reorderLevel ? decimalToNumber(product.reorderLevel) : null;
-                const stockTone = stock !== null && reorderLevel !== null && stock <= reorderLevel ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600";
+                const stockTone = stock !== null && stock <= 0 ? "bg-red-50 text-red-700" : stock !== null && reorderLevel !== null && stock <= reorderLevel ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600";
                 const total = lineTotal(line, gstEnabled);
+                const aboveMrp = mrp !== null && line.sellingPrice > mrp;
                 return (
                   <tr key={line.id} className="border-t border-border">
                     <td className="px-3 py-2">
                       <div className="font-medium text-slate-900">{line.productName}</div>
                       {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
+                      {aboveMrp ? <div className="mt-1 text-xs font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
                     </td>
                     <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: Number(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>

@@ -54,7 +54,7 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
           <div key={stat.label} className="rounded-md border border-border bg-white p-3">
             <div className="text-xs text-slate-500">{stat.label}</div>
             <div className={`mt-1 text-lg font-bold ${stat.color}`}>
-              INR {stat.value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ₹{stat.value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         ))}
@@ -62,7 +62,7 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
 
       {data.customer.creditLimit != null && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-          Credit limit: INR {data.customer.creditLimit.toLocaleString("en-IN")}
+          Credit limit: ₹{data.customer.creditLimit.toLocaleString("en-IN")}
           {data.outstanding > data.customer.creditLimit && (
             <span className="ml-2 font-semibold text-red-700">— LIMIT EXCEEDED</span>
           )}
@@ -98,10 +98,10 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
                       </span>
                     </td>
                     <td className={`px-4 py-2 text-right text-xs font-medium ${entry.type === "payment" ? "text-emerald-700" : "text-slate-900"}`}>
-                      {entry.type === "payment" ? "−" : "+"}INR {entry.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      {entry.type === "payment" ? "−" : "+"}₹{entry.amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </td>
                     <td className={`px-4 py-2 text-right text-xs font-semibold ${entry.balance > 0 ? "text-red-600" : "text-slate-500"}`}>
-                      INR {entry.balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      ₹{entry.balance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))}

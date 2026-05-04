@@ -41,7 +41,7 @@ export function InventoryClient() {
           { label: "Active products", value: String(productsQuery.data?.total ?? products.length), tone: "blue" },
           { label: "Low stock", value: String(lowStockCount), tone: "amber" },
           { label: "Expiring soon", value: String(expiringQuery.data?.length ?? 0), tone: "emerald" },
-          { label: "Stock value", value: `INR ${stockValue.toFixed(2)}`, tone: "slate" },
+          { label: "Stock value", value: `₹${stockValue.toFixed(2)}`, tone: "slate" },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">

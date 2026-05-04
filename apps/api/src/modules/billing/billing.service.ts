@@ -128,11 +128,10 @@ export class BillingService {
     });
 
     await this.repository.updateInvoicePdfUrl(tenant.id, invoiceId, objectName);
-    const downloadUrl = await this.fastify.minio.presignedGetObject(this.fastify.minioBucket, objectName, 60 * 10);
 
     return {
       objectName,
-      downloadUrl,
+      downloadUrl: invoicePdfViewUrl(invoiceId),
     };
   }
 
@@ -144,7 +143,7 @@ export class BillingService {
 
     return {
       objectName: invoice.pdfUrl,
-      downloadUrl: await this.fastify.minio.presignedGetObject(this.fastify.minioBucket, invoice.pdfUrl, 60 * 10),
+      downloadUrl: invoicePdfViewUrl(invoiceId),
     };
   }
 
@@ -197,6 +196,11 @@ export class BillingService {
     };
   }
 
+}
+
+function invoicePdfViewUrl(invoiceId: string): string {
+  const baseUrl = process.env.PUBLIC_APP_URL ?? (process.env.APP_DOMAIN ? `https://${process.env.APP_DOMAIN}` : "");
+  return `${baseUrl}/api/billing/invoices/${invoiceId}/pdf/view`;
 }
 
 function createInvoiceItem(

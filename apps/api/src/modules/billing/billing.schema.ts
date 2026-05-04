@@ -12,6 +12,9 @@ export const invoiceListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
   status: z.string().trim().min(1).optional(),
   customerId: z.string().trim().min(1).optional(),
+  search: z.string().trim().min(1).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 const invoiceItemSchema = z.object({

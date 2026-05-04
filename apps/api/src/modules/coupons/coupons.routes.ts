@@ -56,7 +56,7 @@ export const couponsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       if (new Date() < coupon.validFrom || new Date() > coupon.validUntil) throw new CouponError("Coupon expired or not yet active", 400);
       if (coupon.usageLimit !== null && coupon.usedCount >= coupon.usageLimit) throw new CouponError("Coupon usage limit reached", 400);
       if (coupon.minOrderValue !== null && orderTotal < coupon.minOrderValue.toNumber()) {
-        throw new CouponError(`Minimum order value is INR ${coupon.minOrderValue.toNumber().toFixed(2)}`, 400);
+        throw new CouponError(`Minimum order value is ₹${coupon.minOrderValue.toNumber().toFixed(2)}`, 400);
       }
 
       let discount = coupon.discountType === "FLAT"

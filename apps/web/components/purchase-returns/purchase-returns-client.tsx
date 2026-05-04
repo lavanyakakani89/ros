@@ -134,7 +134,7 @@ export function PurchaseReturnsClient() {
                     <td className="px-4 py-2 font-mono text-xs">{r.returnNumber}</td>
                     <td className="px-4 py-2 text-xs">{r.supplier?.name ?? "—"}</td>
                     <td className="px-4 py-2 text-xs text-slate-500">{r.reason ?? "—"}</td>
-                    <td className="px-4 py-2 text-right font-medium">INR {Number(r.totalAmount).toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right font-medium">₹{Number(r.totalAmount).toFixed(2)}</td>
                     <td className="px-4 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(r.status)}`}>{r.status}</span>
                     </td>

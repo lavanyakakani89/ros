@@ -61,10 +61,10 @@ export function CouponsClient() {
           <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="Coupon code (e.g. SAVE20)" required className="h-10 rounded-md border border-border px-3 text-sm font-mono uppercase" />
           <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" className="h-10 rounded-md border border-border px-3 text-sm" />
           <select value={form.discountType} onChange={(e) => setForm((f) => ({ ...f, discountType: e.target.value as "FLAT" | "PERCENTAGE" }))} className="h-10 rounded-md border border-border px-3 text-sm">
-            <option value="FLAT">Flat (INR)</option>
+            <option value="FLAT">Flat (₹)</option>
             <option value="PERCENTAGE">Percentage (%)</option>
           </select>
-          <input type="number" value={form.discountValue} onChange={(e) => setForm((f) => ({ ...f, discountValue: e.target.value }))} placeholder={`Discount ${form.discountType === "FLAT" ? "amount (INR)" : "percentage"}`} required min="0" className="h-10 rounded-md border border-border px-3 text-sm" />
+          <input type="number" value={form.discountValue} onChange={(e) => setForm((f) => ({ ...f, discountValue: e.target.value }))} placeholder={`Discount ${form.discountType === "FLAT" ? "amount (₹)" : "percentage"}`} required min="0" className="h-10 rounded-md border border-border px-3 text-sm" />
           <input type="number" value={form.minOrderValue} onChange={(e) => setForm((f) => ({ ...f, minOrderValue: e.target.value }))} placeholder="Min order value (optional)" min="0" className="h-10 rounded-md border border-border px-3 text-sm" />
           <input type="number" value={form.usageLimit} onChange={(e) => setForm((f) => ({ ...f, usageLimit: e.target.value }))} placeholder="Usage limit (optional)" min="1" step="1" className="h-10 rounded-md border border-border px-3 text-sm" />
           <input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} required className="h-10 rounded-md border border-border px-3 text-sm" />
@@ -89,8 +89,8 @@ export function CouponsClient() {
                   <div>
                     <div className="font-mono text-sm font-bold text-slate-900">{coupon.code}</div>
                     <div className="text-xs text-slate-500">
-                      {coupon.discountType === "FLAT" ? `INR ${Number(coupon.discountValue).toFixed(0)} off` : `${String(Number(coupon.discountValue))}% off`}
-                      {coupon.minOrderValue ? ` · Min INR ${Number(coupon.minOrderValue).toFixed(0)}` : ""}
+                      {coupon.discountType === "FLAT" ? `₹${Number(coupon.discountValue).toFixed(0)} off` : `${String(Number(coupon.discountValue))}% off`}
+                      {coupon.minOrderValue ? ` · Min ₹${Number(coupon.minOrderValue).toFixed(0)}` : ""}
                       {coupon.usageLimit ? ` · ${String(coupon.usedCount)}/${String(coupon.usageLimit)} used` : ` · ${String(coupon.usedCount)} used`}
                       {" · Expires "}{new Date(coupon.validUntil).toLocaleDateString("en-IN")}
                     </div>

@@ -167,5 +167,5 @@ function TextInput({ name, label, type = "text", defaultValue, required }: Reado
 }
 
 function money(value: number): string {
-  return `INR ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }

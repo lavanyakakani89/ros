@@ -20,3 +20,11 @@
     reverse_proxy web:3000
   }
 }
+
+{$FILES_DOMAIN:files.ros.sivsanoils.in} {
+  encode zstd gzip
+
+  handle {
+    reverse_proxy minio:9000
+  }
+}

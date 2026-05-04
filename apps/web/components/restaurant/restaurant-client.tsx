@@ -211,7 +211,7 @@ export function RestaurantClient() {
                   {cat.products.map((p) => (
                     <div key={p.id} className="flex justify-between text-sm">
                       <span className="text-slate-700">{p.name}</span>
-                      <span className="text-slate-500">INR {Number(p.sellingPrice).toFixed(2)}</span>
+                      <span className="text-slate-500">₹{Number(p.sellingPrice).toFixed(2)}</span>
                     </div>
                   ))}
                   {cat.products.length === 0 && <div className="text-xs text-slate-400">No items — assign via Inventory</div>}

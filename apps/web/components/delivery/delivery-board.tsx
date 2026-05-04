@@ -73,7 +73,7 @@ export function DeliveryBoard() {
                       <div className="truncate text-sm font-semibold text-slate-950">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.customer?.name ?? "Customer"}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.deliveryAddress}</div>
-                      <div className="mt-2 text-sm font-semibold text-slate-900">INR {delivery.invoice?.grandTotal ?? "0.00"}</div>
+                      <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {nextStatuses(delivery.status).map((nextStatus) => (
                           <button

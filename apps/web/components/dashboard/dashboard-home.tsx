@@ -323,7 +323,7 @@ function moduleColor(href: string): { bg: string; icon: string } {
 }
 
 function money(value: number) {
-  return `INR ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
 function formatToday(): string {
