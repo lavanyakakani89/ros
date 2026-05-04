@@ -2,7 +2,7 @@
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { AlertTriangle, CreditCard } from "lucide-react";
+import { AlertTriangle, CreditCard, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -30,11 +30,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [checkingSession, setCheckingSession] = useState(true);
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [online, setOnline] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
     const storedTenant = getStoredTenant();
     const storedSession = getStoredAuthSession();
+    const storedSidebar = window.localStorage.getItem("retailos.sidebarCollapsed");
 
     if (storedConfig) {
       setVerticalConfig(storedConfig);
@@ -46,6 +48,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
     if (storedSession) {
       setSession(storedSession);
+    }
+
+    if (storedSidebar) {
+      setSidebarCollapsed(storedSidebar === "true");
     }
 
     async function verifySession() {
@@ -114,30 +120,38 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const initials = getInitials(userName);
   const dashboard = dashboardItem(verticalConfig.navigation);
   const navGroups = groupedNavigation(verticalConfig.navigation);
+  const sidebarWidthClass = sidebarCollapsed ? "lg:pl-20" : "lg:pl-64";
+
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => {
+      window.localStorage.setItem("retailos.sidebarCollapsed", String(!value));
+      return !value;
+    });
+  }
 
   return (
     <div className="min-h-screen bg-surface text-ink">
-      <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-border bg-white lg:block">
-        <div className="flex h-16 items-center gap-3 border-b border-border px-5">
+      <aside className={cn("fixed inset-y-0 left-0 hidden border-r border-border bg-white transition-[width] duration-200 lg:block", sidebarCollapsed ? "w-20" : "w-64")}>
+        <div className={cn("flex h-16 items-center gap-3 border-b border-border px-4", sidebarCollapsed && "justify-center px-3")}>
           <div className="flex size-9 items-center justify-center rounded-md bg-emerald-600 text-white">
             <CreditCard className="size-5" aria-hidden="true" />
           </div>
-          <div>
+          <div className={cn(sidebarCollapsed && "sr-only")}>
             <div className="text-sm font-semibold">RetailOS</div>
             <div className="text-xs text-slate-500">{tenantName}</div>
             <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>
         </div>
-        <nav className="px-3 py-4" aria-label="Main navigation">
+        <nav className={cn("px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
           {dashboard ? (
-            <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} />
+            <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} collapsed={sidebarCollapsed} />
           ) : null}
           {navGroups.map((group) => (
             <div key={group.label} className="mt-4 border-t border-border pt-3">
-              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{group.label}</div>
+              <div className={cn("px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400", sidebarCollapsed && "sr-only")}>{group.label}</div>
               <div className="space-y-1">
                 {group.items.map((item) => (
-                  <NavigationLink key={item.href} item={item} pathname={pathname} badgeCount={badgeCounts[item.href] ?? 0} />
+                  <NavigationLink key={item.href} item={item} pathname={pathname} badgeCount={badgeCounts[item.href] ?? 0} collapsed={sidebarCollapsed} />
                 ))}
               </div>
             </div>
@@ -145,12 +159,21 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         </nav>
       </aside>
 
-      <div className="lg:pl-64">
+      <div className={cn("transition-[padding] duration-200", sidebarWidthClass)}>
         <header className="sticky top-0 z-10 border-b border-border bg-white/95 backdrop-blur">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">{tenantName}</div>
-              <div className="text-xs text-slate-500">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"} | ₹</div>
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                className="hidden size-9 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-slate-50 lg:inline-flex"
+                onClick={toggleSidebar}
+                title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
+              </button>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-900">{tenantName}</div>
+                <div className="truncate text-xs text-slate-500">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"} | ₹</div>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <div
@@ -217,11 +240,13 @@ function NavigationLink({
   item,
   pathname,
   badgeCount,
+  collapsed = false,
   mobile = false,
 }: Readonly<{
   item: VerticalNavigationItem;
   pathname: string;
   badgeCount: number;
+  collapsed?: boolean;
   mobile?: boolean;
 }>) {
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -255,15 +280,17 @@ function NavigationLink({
       href={item.href}
       className={cn(
         "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-600 hover:bg-slate-50",
+        collapsed && "relative justify-center px-2",
         active && "bg-emerald-50 text-emerald-700",
       )}
+      title={collapsed ? item.label : undefined}
     >
       <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-50", active && "bg-white")}>
         <Icon className={cn("size-4", iconClass)} aria-hidden="true" />
       </span>
-      <span className="flex-1 truncate">{item.label}</span>
+      <span className={cn("flex-1 truncate", collapsed && "sr-only")}>{item.label}</span>
       {badgeCount > 0 ? (
-        <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+        <span className={cn("flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white", collapsed && "absolute ml-7 mt-[-22px] size-4 text-[9px]")}>
           {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       ) : null}

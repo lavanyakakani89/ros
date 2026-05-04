@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { BookMarked, History, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, listProducts, refreshAuthSession } from "@/lib/api-client";
@@ -55,7 +55,7 @@ interface LastBill {
   pdfViewUrl: string;
 }
 
-export function PosInvoicePanel() {
+export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: () => void }>) {
   const queryClient = useQueryClient();
   const { lines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -545,6 +545,12 @@ export function PosInvoicePanel() {
               <RefreshCcw className="size-4" aria-hidden="true" />
               Sync
             </button>
+            {onOpenHistory ? (
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100" onClick={onOpenHistory}>
+                <History className="size-4" aria-hidden="true" />
+                History
+              </button>
+            ) : null}
             {heldBills.length > 0 ? (
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => setShowHeld((value) => !value)}>
                 <BookMarked className="size-4" aria-hidden="true" />
