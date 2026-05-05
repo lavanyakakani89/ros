@@ -17,10 +17,14 @@ export async function generateGstInvoicePdf(input: {
   bucket: string;
   template?: InvoiceTemplate | null;
 }): Promise<string> {
+  registerInvoiceTemplateHelpers();
   const gstEnabled = input.tenant.gstEnabled;
   const templateData = {
     invoice: input.invoice,
     tenant: input.tenant,
+    shop: input.tenant,
+    business: input.tenant,
+    customer: input.invoice.customer ?? null,
     gstEnabled,
     invoiceTitle: gstEnabled ? "GST Invoice" : "Sales Invoice",
     invoiceDate: input.invoice.invoiceDate.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
@@ -35,6 +39,8 @@ export async function generateGstInvoicePdf(input: {
       sgst: gstEnabled ? money(item.sgst) : "",
       total: money(item.total),
     })),
+    lines: input.invoice.items,
+    invoiceItems: input.invoice.items,
     subtotal: money(input.invoice.subtotal),
     totalDiscount: money(input.invoice.totalDiscount),
     totalCgst: gstEnabled ? money(input.invoice.totalCgst) : "",
@@ -42,6 +48,16 @@ export async function generateGstInvoicePdf(input: {
     grandTotal: money(input.invoice.grandTotal),
     amountPaid: money(input.invoice.amountPaid),
     amountDue: money(input.invoice.amountDue),
+    totals: {
+      subtotal: money(input.invoice.subtotal),
+      discount: money(input.invoice.totalDiscount),
+      totalDiscount: money(input.invoice.totalDiscount),
+      cgst: gstEnabled ? money(input.invoice.totalCgst) : "0.00",
+      sgst: gstEnabled ? money(input.invoice.totalSgst) : "0.00",
+      grandTotal: money(input.invoice.grandTotal),
+      amountPaid: money(input.invoice.amountPaid),
+      amountDue: money(input.invoice.amountDue),
+    },
     inWords: `${money(input.invoice.grandTotal)} rupees only`,
     generatedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
   };
@@ -105,6 +121,112 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+let invoiceTemplateHelpersRegistered = false;
+
+function registerInvoiceTemplateHelpers() {
+  if (invoiceTemplateHelpersRegistered) {
+    return;
+  }
+
+  invoiceTemplateHelpersRegistered = true;
+
+  const moneyHelper = (value: unknown) => toNumber(value).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const dateHelper = (value: unknown) => formatDate(value, false);
+  const dateTimeHelper = (value: unknown) => formatDate(value, true);
+
+  Handlebars.registerHelper("fmtMoney", moneyHelper);
+  Handlebars.registerHelper("formatMoney", moneyHelper);
+  Handlebars.registerHelper("money", moneyHelper);
+  Handlebars.registerHelper("currency", (value: unknown) => `₹${moneyHelper(value)}`);
+  Handlebars.registerHelper("fmtCurrency", (value: unknown) => `₹${moneyHelper(value)}`);
+  Handlebars.registerHelper("formatCurrency", (value: unknown) => `₹${moneyHelper(value)}`);
+  Handlebars.registerHelper("fmtNumber", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("formatNumber", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("fmtDate", dateHelper);
+  Handlebars.registerHelper("formatDate", dateHelper);
+  Handlebars.registerHelper("fmtDateTime", dateTimeHelper);
+  Handlebars.registerHelper("formatDateTime", dateTimeHelper);
+  Handlebars.registerHelper("inc", (value: unknown) => toNumber(value) + 1);
+  Handlebars.registerHelper("add", (left: unknown, right: unknown) => toNumber(left) + toNumber(right));
+  Handlebars.registerHelper("subtract", (left: unknown, right: unknown) => toNumber(left) - toNumber(right));
+  Handlebars.registerHelper("multiply", (left: unknown, right: unknown) => toNumber(left) * toNumber(right));
+  Handlebars.registerHelper("divide", (left: unknown, right: unknown) => {
+    const divisor = toNumber(right);
+    return divisor === 0 ? 0 : toNumber(left) / divisor;
+  });
+  Handlebars.registerHelper("upper", (value: unknown) => stringifyTemplateValue(value).toUpperCase());
+  Handlebars.registerHelper("lower", (value: unknown) => stringifyTemplateValue(value).toLowerCase());
+  Handlebars.registerHelper("default", (value: unknown, fallback: unknown) => value || fallback);
+  Handlebars.registerHelper("json", (value: unknown) => JSON.stringify(value));
+
+  registerComparisonHelper("eq", (left, right) => left === right);
+  registerComparisonHelper("ne", (left, right) => left !== right);
+  registerComparisonHelper("gt", (left, right) => toNumber(left) > toNumber(right));
+  registerComparisonHelper("gte", (left, right) => toNumber(left) >= toNumber(right));
+  registerComparisonHelper("lt", (left, right) => toNumber(left) < toNumber(right));
+  registerComparisonHelper("lte", (left, right) => toNumber(left) <= toNumber(right));
+  registerComparisonHelper("and", (left, right) => Boolean(left && right));
+  registerComparisonHelper("or", (left, right) => Boolean(left || right));
+}
+
+function registerComparisonHelper(name: string, predicate: (left: unknown, right: unknown) => boolean) {
+  Handlebars.registerHelper(name, function comparisonHelper(this: unknown, left: unknown, right: unknown, options: Handlebars.HelperOptions) {
+    const result = predicate(left, right);
+    return typeof options.fn === "function"
+      ? result ? options.fn(this) : options.inverse(this)
+      : result;
+  });
+}
+
+function formatDate(value: unknown, includeTime: boolean): string {
+  const date = value instanceof Date ? value : new Date(stringifyTemplateValue(value));
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return includeTime
+    ? date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })
+    : date.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+}
+
+function toNumber(value: unknown): number {
+  if (value && typeof value === "object" && "toNumber" in value) {
+    const decimal = value as { toNumber?: () => number };
+    if (typeof decimal.toNumber === "function") {
+      return decimal.toNumber();
+    }
+  }
+
+  const result = Number(value);
+  return Number.isFinite(result) ? result : 0;
+}
+
+function stringifyTemplateValue(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value);
+  }
+
+  if (typeof value === "object" && "toString" in value) {
+    const toString = (value as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+      return toString.call(value);
+    }
+  }
+
+  return "";
 }
 
 function money(value: { toNumber: () => number }): string {
