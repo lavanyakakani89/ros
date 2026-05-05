@@ -137,14 +137,14 @@ export class BillingService {
 
   async getInvoicePdfUrl(tenant: Tenant, invoiceId: string) {
     const invoice = await this.getInvoice(tenant, invoiceId);
-    if (!invoice.pdfUrl) {
-      throw new BillingError("Invoice PDF has not been generated", 404);
+    if (invoice.pdfUrl) {
+      return {
+        objectName: invoice.pdfUrl,
+        downloadUrl: invoicePdfViewUrl(invoiceId),
+      };
     }
 
-    return {
-      objectName: invoice.pdfUrl,
-      downloadUrl: invoicePdfViewUrl(invoiceId),
-    };
+    return this.generateInvoicePdf(tenant, invoiceId);
   }
 
   async printInvoice(tenant: Tenant, invoiceId: string) {

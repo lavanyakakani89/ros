@@ -53,11 +53,11 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const params = invoiceIdParamsSchema.parse(request.params);
     return handleBilling(reply, async () => {
       const invoice = await service.getInvoice(request.tenant, params.id);
-      if (!invoice.pdfUrl) {
-        throw new BillingError("Invoice PDF has not been generated", 404);
-      }
+      const pdf = invoice.pdfUrl
+        ? { objectName: invoice.pdfUrl }
+        : await service.generateInvoicePdf(request.tenant, params.id);
 
-      const stream = await fastify.minio.getObject(fastify.minioBucket, invoice.pdfUrl);
+      const stream = await fastify.minio.getObject(fastify.minioBucket, pdf.objectName);
       reply
         .header("Content-Type", "application/pdf")
         .header("Content-Disposition", `inline; filename="${invoice.invoiceNumber}.pdf"`);
