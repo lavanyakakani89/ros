@@ -25,6 +25,22 @@ export function parseWorkbookRows(buffer: Buffer): ExcelRow[] {
     return [];
   }
 
+  const tableRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+  const headerIndex = findHeaderRowIndex(tableRows);
+  if (headerIndex >= 0) {
+    const headerRow = tableRows[headerIndex];
+    if (!headerRow) {
+      return [];
+    }
+    const headers = headerRow.map((value) => cellToString(value).trim());
+    return tableRows.slice(headerIndex + 1).map((row) => rowToObject(headers, row))
+      .filter((row) => Object.values(row).some((value) => String(value).trim().length > 0));
+  }
+
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
     defval: "",
     raw: false,
@@ -38,7 +54,10 @@ export function buildExcelHtml(input: {
   columns: readonly ExcelColumn[];
   rows?: readonly Record<string, unknown>[];
 }): string {
-  const rows = input.rows && input.rows.length > 0 ? input.rows : [sampleRow(input.columns)];
+  const isTemplate = !input.rows;
+  const rows = input.rows && input.rows.length > 0
+    ? input.rows
+    : [sampleRow(input.columns), ...Array.from({ length: isTemplate ? 50 : 0 }, () => emptyRow(input.columns))];
 
   return `<!doctype html>
 <html>
@@ -47,7 +66,8 @@ export function buildExcelHtml(input: {
   <style>
     body { font-family: Arial, sans-serif; }
     table { border-collapse: collapse; }
-    td, th { border: 1px solid #94a3b8; padding: 6px 8px; mso-number-format:"\\@"; }
+    td, th { border: 1px solid #64748b; padding: 6px 8px; mso-number-format:"\\@"; }
+    .entry td { height: 24px; border: 1px solid #64748b; }
     .title { background: #0f766e; color: #ffffff; font-size: 16px; font-weight: 700; }
     .mandatory { background: #fecaca; color: #7f1d1d; font-weight: 700; }
     .optional { background: #dbeafe; color: #1e3a8a; font-weight: 700; }
@@ -66,7 +86,7 @@ export function buildExcelHtml(input: {
     <tr>
       ${input.columns.map((column) => `<th class="${column.required ? "mandatory" : "optional"}">${escapeHtml(column.header)}</th>`).join("")}
     </tr>
-    ${rows.map((row) => `<tr>${input.columns.map((column) => `<td>${escapeHtml(readCell(row, column.header))}</td>`).join("")}</tr>`).join("")}
+    ${rows.map((row) => `<tr class="entry">${input.columns.map((column) => `<td>${escapeHtml(readCell(row, column.header))}</td>`).join("")}</tr>`).join("")}
   </table>
 </body>
 </html>`;
@@ -145,6 +165,39 @@ function parseIndianDate(value: string): Date | undefined {
 
 function sampleRow(columns: readonly ExcelColumn[]): Record<string, unknown> {
   return Object.fromEntries(columns.map((column) => [column.header, column.sample ?? ""]));
+}
+
+function emptyRow(columns: readonly ExcelColumn[]): Record<string, unknown> {
+  return Object.fromEntries(columns.map((column) => [column.header, ""]));
+}
+
+const knownHeaderNames = new Set([
+  "Customer ID",
+  "Customer Name",
+  "Contact No.",
+  "Product ID",
+  "Product Name",
+  "Sub Category ID",
+  "Sales Unit",
+  "Category",
+  "Barcode",
+]);
+
+function findHeaderRowIndex(rows: readonly unknown[][]): number {
+  return rows.findIndex((row) => {
+    const matches = row.filter((value) => knownHeaderNames.has(cellToString(value).trim()));
+    return matches.length >= 2;
+  });
+}
+
+function rowToObject(headers: readonly string[], row: readonly unknown[]): ExcelRow {
+  const output: ExcelRow = {};
+  headers.forEach((header, index) => {
+    if (header.trim().length > 0) {
+      output[header] = row[index] ?? "";
+    }
+  });
+  return output;
 }
 
 function readCell(row: Record<string, unknown>, header: string): string {
