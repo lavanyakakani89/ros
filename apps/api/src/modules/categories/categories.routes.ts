@@ -11,7 +11,12 @@ export const categoriesRoutes: FastifyPluginCallback = (fastify, _options, done)
   fastify.get("/api/categories", async (request) => {
     return fastify.prisma.category.findMany({
       where: { tenantId: request.tenant.id, isActive: true },
-      include: { children: true },
+      include: {
+        children: true,
+        _count: {
+          select: { products: true },
+        },
+      },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     });
   });

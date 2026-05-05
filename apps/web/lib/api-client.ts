@@ -39,6 +39,7 @@ export interface ProductPayload {
   description?: string;
   partGroup?: string;
   legacySubCategoryId?: string;
+  categoryId?: string;
   unit: string;
   mrp: number;
   sellingPrice: number;

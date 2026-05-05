@@ -16,6 +16,7 @@ export interface CreateProductInput {
   description?: string | undefined;
   partGroup?: string | undefined;
   legacySubCategoryId?: string | undefined;
+  categoryId?: string | undefined;
   unit: string;
   mrp: number;
   sellingPrice: number;

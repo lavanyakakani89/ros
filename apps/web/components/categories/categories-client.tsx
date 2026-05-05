@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Copy, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
@@ -93,7 +93,15 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
   allCategories: Category[];
   onDelete: (id: string) => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const children = allCategories.filter((c) => c.parentId === category.id);
+  const idLabel = depth > 0 ? "Sub Category ID" : "Category ID";
+
+  async function copyId() {
+    await navigator.clipboard.writeText(category.id);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
 
   return (
     <>
@@ -103,7 +111,14 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
           <div>
             <div className="text-sm font-medium text-slate-900">{category.name}</div>
             {category.description && <div className="text-xs text-slate-500">{category.description}</div>}
-            <div className="text-xs text-slate-400">{category._count?.products ?? 0} products</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <span>{category._count?.products ?? 0} products</span>
+              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">{idLabel}: {category.id}</span>
+              <button type="button" onClick={() => void copyId()} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+                {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                {copied ? "Copied" : "Copy ID"}
+              </button>
+            </div>
           </div>
         </div>
         <button onClick={() => onDelete(category.id)} className="text-red-400 hover:text-red-600">

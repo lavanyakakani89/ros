@@ -14,7 +14,7 @@ import {
   type ExcelRow,
 } from "./excel.js";
 
-type ProductWithBatches = Product & { batches: ProductBatch[] };
+type ProductWithBatches = Product & { batches: ProductBatch[]; category: { id: string; name: string; parentId: string | null } | null };
 type ProductImportData = Omit<Prisma.ProductUncheckedCreateInput, "tenantId">;
 
 const commonColumns: readonly ExcelColumn[] = [
@@ -95,6 +95,7 @@ export async function sendProductExport(fastify: FastifyInstance, tenant: Tenant
   const products = await fastify.prisma.product.findMany({
     where: { tenantId: tenant.id, isActive: true },
     include: {
+      category: true,
       batches: {
         orderBy: { receivedAt: "desc" },
         take: 1,
@@ -124,7 +125,7 @@ export async function importProducts(fastify: FastifyInstance, tenant: Tenant, b
 
   for (const [index, row] of rows.entries()) {
     try {
-      const parsed = parseProductRow(tenant, row);
+      const parsed = await parseProductRow(fastify, tenant, row);
       const existing = await findExistingProduct(fastify, tenant.id, parsed.data.barcode ?? null, parsed.data.sku ?? null);
       if (existing) {
         await fastify.prisma.product.update({
@@ -161,14 +162,14 @@ function productColumns(tenant: Tenant): readonly ExcelColumn[] {
   return [...commonColumns, ...verticalColumnMap[tenant.vertical]];
 }
 
-function parseProductRow(tenant: Tenant, row: ExcelRow): {
+async function parseProductRow(fastify: FastifyInstance, tenant: Tenant, row: ExcelRow): Promise<{
   data: ProductImportData;
   batchNumber: string | undefined;
   mfgDate: Date | undefined;
   expiryDate: Date | undefined;
   batchQuantity: number | undefined;
   batchPurchasePrice: number | undefined;
-} {
+}> {
   const name = getString(row, ["Product Name", "Menu Item Name"]);
   const sku = getString(row, ["Product ID", "Item Code"]);
   const barcode = getString(row, ["Barcode"]);
@@ -193,6 +194,7 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
   if (!category) {
     throw new Error("Category is required");
   }
+  const categoryRecord = await resolveCategory(fastify, tenant.id, legacySubCategoryId, category);
 
   const sellingPrice = getNumber(row, ["Retail Sale Price", "Menu Price"]);
   const mrp = getNumber(row, ["MRP", "Menu Price"]) ?? sellingPrice;
@@ -216,6 +218,7 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
       description: getString(row, ["Description"]) ?? null,
       partGroup: getString(row, ["Part / Group"]) ?? null,
       legacySubCategoryId,
+      categoryId: categoryRecord.id,
       unit: salesUnit,
       mrp,
       sellingPrice,
@@ -276,11 +279,30 @@ async function findExistingProduct(fastify: FastifyInstance, tenantId: string, b
   });
 }
 
+async function resolveCategory(fastify: FastifyInstance, tenantId: string, subCategoryId: string, categoryName: string): Promise<{ id: string; name: string }> {
+  const category = await fastify.prisma.category.findFirst({
+    where: {
+      id: subCategoryId,
+      tenantId,
+      isActive: true,
+    },
+  });
+  if (!category) {
+    throw new Error(`Sub Category ID ${subCategoryId} was not found`);
+  }
+
+  if (category.name.trim().toLowerCase() !== categoryName.trim().toLowerCase()) {
+    throw new Error(`Sub Category ID ${subCategoryId} does not match Category ${categoryName}`);
+  }
+
+  return category;
+}
+
 async function maybeCreateBatch(
   fastify: FastifyInstance,
   tenantId: string,
   productId: string,
-  parsed: ReturnType<typeof parseProductRow>,
+  parsed: Awaited<ReturnType<typeof parseProductRow>>,
 ): Promise<void> {
   if (!parsed.batchNumber || !parsed.expiryDate || !parsed.batchQuantity || parsed.batchPurchasePrice === undefined) {
     return;
@@ -308,7 +330,7 @@ function productToRow(product: ProductWithBatches): Record<string, unknown> {
     "Item Code": product.sku ?? "",
     "Product Name": product.name,
     "Menu Item Name": product.name,
-    "Sub Category ID": product.legacySubCategoryId ?? "",
+    "Sub Category ID": product.categoryId ?? product.legacySubCategoryId ?? "",
     "HSN Code": product.hsnCode ?? "",
     "SAC/HSN Code": product.hsnCode ?? "",
     "Part / Group": product.partGroup ?? "",
@@ -338,7 +360,7 @@ function productToRow(product: ProductWithBatches): Record<string, unknown> {
     Barcode: product.barcode ?? "",
     "Default Sale Qty": product.defaultSaleQty?.toNumber() ?? "",
     Brand: readText(verticalData, "brand"),
-    Category: readText(verticalData, "category"),
+    Category: product.category?.name ?? readText(verticalData, "category"),
     Perishable: readBool(verticalData, "perishable"),
     Manufacturer: readText(verticalData, "manufacturer"),
     "Drug Schedule": readText(verticalData, "drugSchedule"),

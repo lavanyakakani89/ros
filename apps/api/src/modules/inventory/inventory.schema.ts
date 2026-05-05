@@ -20,6 +20,7 @@ const productSchema = z.object({
   description: z.string().trim().min(1).optional(),
   partGroup: z.string().trim().min(1).optional(),
   legacySubCategoryId: z.string().trim().min(1),
+  categoryId: z.string().trim().min(1).optional(),
   unit: z.string().trim().min(1).default("piece"),
   mrp: decimalSchema.nonnegative(),
   sellingPrice: decimalSchema.nonnegative(),

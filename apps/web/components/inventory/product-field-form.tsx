@@ -157,9 +157,10 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
   const mrp = requireNumber(payload.mrp, "MRP is required");
   const sellingPrice = requireNumber(payload.sellingPrice, "Retail sale price is required");
   const category = payload.verticalData?.category;
-  if (typeof category !== "string" || category.trim() === "") {
+    if (typeof category !== "string" || category.trim() === "") {
     throw new Error("Category is required");
   }
+  const subCategoryId = requireString(payload.legacySubCategoryId, "Sub category ID is required");
 
   return {
     name: requireString(payload.name, "Product name is required"),
@@ -172,7 +173,8 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     barcode: requireString(payload.barcode, "Barcode is required"),
     ...(payload.description ? { description: payload.description } : {}),
     ...(payload.partGroup ? { partGroup: payload.partGroup } : {}),
-    legacySubCategoryId: requireString(payload.legacySubCategoryId, "Sub category ID is required"),
+    legacySubCategoryId: subCategoryId,
+    categoryId: subCategoryId,
     ...(payload.purchasePrice !== undefined ? { purchasePrice: payload.purchasePrice } : {}),
     ...(payload.wholesalePrice !== undefined ? { wholesalePrice: payload.wholesalePrice } : {}),
     ...(payload.defaultDiscountPercent !== undefined ? { defaultDiscountPercent: payload.defaultDiscountPercent } : {}),
@@ -215,6 +217,7 @@ const productKeys: Record<keyof ProductPayload, true> = {
   description: true,
   partGroup: true,
   legacySubCategoryId: true,
+  categoryId: true,
   unit: true,
   mrp: true,
   sellingPrice: true,
