@@ -36,25 +36,43 @@ export interface ProductPayload {
   name: string;
   sku?: string;
   barcode?: string;
+  description?: string;
+  partGroup?: string;
+  legacySubCategoryId?: string;
   unit: string;
   mrp: number;
   sellingPrice: number;
   purchasePrice?: number;
+  wholesalePrice?: number;
+  defaultDiscountPercent?: number;
   gstRate: number;
+  cessRate?: number;
   hsnCode?: string;
   currentStock: number;
   reorderLevel?: number;
+  purchaseUnit?: string;
+  salesUnit?: string;
+  alternateUnit?: string;
+  conversionValue?: number;
+  godown?: string;
+  rack?: string;
+  defaultSaleQty?: number;
   verticalData?: Record<string, unknown>;
 }
 
-export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPrice" | "purchasePrice" | "gstRate" | "currentStock" | "reorderLevel"> {
+export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPrice" | "purchasePrice" | "wholesalePrice" | "defaultDiscountPercent" | "gstRate" | "cessRate" | "currentStock" | "reorderLevel" | "conversionValue" | "defaultSaleQty"> {
   id: string;
   mrp: number | string;
   sellingPrice: number | string;
   purchasePrice?: number | string;
+  wholesalePrice?: number | string | null;
+  defaultDiscountPercent?: number | string | null;
   gstRate: number | string;
+  cessRate?: number | string | null;
   currentStock: number | string;
   reorderLevel?: number | string | null;
+  conversionValue?: number | string | null;
+  defaultSaleQty?: number | string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -154,7 +172,33 @@ export function createAuthenticatedApiClient() {
 
       return response.json() as Promise<T>;
     },
+    async upload<T = unknown>(path: string, file: File) {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetchWithCookieAuth(path, {
+        method: "POST",
+        body: form,
+      });
+
+      return response.json() as Promise<T>;
+    },
+    async download(path: string) {
+      const response = await fetchWithCookieAuth(path);
+      return response.blob();
+    },
   };
+}
+
+export async function downloadApiFile(path: string, filename: string): Promise<void> {
+  const blob = await createAuthenticatedApiClient().download(path);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function listProducts(options: { lowStock?: boolean } = {}): Promise<PaginatedResponse<ProductRecord>> {

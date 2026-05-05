@@ -7,6 +7,7 @@ import {
   updateCustomerSchema,
 } from "./customers.schema.js";
 import { CustomersError, CustomersService } from "./customers.service.js";
+import { importCustomers, sendCustomerExport, sendCustomerTemplate } from "../import-export/customer-import-export.js";
 
 export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new CustomersService(fastify);
@@ -14,6 +15,26 @@ export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) 
   fastify.get("/api/customers", async (request, reply) => {
     const query = customerListQuerySchema.parse(request.query);
     return handleCustomers(reply, () => Promise.resolve(service.listCustomers(request.tenant, query)));
+  });
+
+  fastify.get("/api/customers/template", async (_request, reply) => {
+    return sendCustomerTemplate(reply);
+  });
+
+  fastify.get("/api/customers/export", async (request, reply) => {
+    return sendCustomerExport(fastify, request.tenant, reply);
+  });
+
+  fastify.post("/api/customers/import", async (request, reply) => {
+    return handleCustomers(reply, async () => {
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ error: "Upload an Excel file." });
+      }
+
+      const buffer = await file.toBuffer();
+      return importCustomers(fastify, request.tenant, buffer);
+    });
   });
 
   fastify.post("/api/customers", async (request, reply) => {

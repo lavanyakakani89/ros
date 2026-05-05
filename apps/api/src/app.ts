@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import multipart from "@fastify/multipart";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 
@@ -88,6 +89,12 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(redisPlugin);
   await fastify.register(minioPlugin);
   await fastify.register(metricsPlugin);
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+      files: 1,
+    },
+  });
   await fastify.register(authPlugin);
   await fastify.register(authRoutes);
   await fastify.register(superAdminAuthRoutes);

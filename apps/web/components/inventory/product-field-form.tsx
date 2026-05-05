@@ -24,7 +24,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
   }, []);
 
   const activeProductFields = useMemo(
-    () => verticalConfig.productFields.filter((field) => gstEnabled || !["gstRate", "hsnCode"].includes(field.key)),
+    () => withImportExportFields(verticalConfig.productFields).filter((field) => gstEnabled || !["gstRate", "hsnCode", "cessRate"].includes(field.key)),
     [gstEnabled, verticalConfig.productFields],
   );
 
@@ -156,9 +156,22 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     currentStock: payload.currentStock ?? 0,
     ...(payload.sku ? { sku: payload.sku } : {}),
     ...(payload.barcode ? { barcode: payload.barcode } : {}),
+    ...(payload.description ? { description: payload.description } : {}),
+    ...(payload.partGroup ? { partGroup: payload.partGroup } : {}),
+    ...(payload.legacySubCategoryId ? { legacySubCategoryId: payload.legacySubCategoryId } : {}),
     ...(payload.purchasePrice !== undefined ? { purchasePrice: payload.purchasePrice } : {}),
+    ...(payload.wholesalePrice !== undefined ? { wholesalePrice: payload.wholesalePrice } : {}),
+    ...(payload.defaultDiscountPercent !== undefined ? { defaultDiscountPercent: payload.defaultDiscountPercent } : {}),
+    ...(payload.cessRate !== undefined ? { cessRate: payload.cessRate } : {}),
     ...(payload.hsnCode ? { hsnCode: payload.hsnCode } : {}),
     ...(payload.reorderLevel !== undefined ? { reorderLevel: payload.reorderLevel } : {}),
+    ...(payload.purchaseUnit ? { purchaseUnit: payload.purchaseUnit } : {}),
+    ...(payload.salesUnit ? { salesUnit: payload.salesUnit } : {}),
+    ...(payload.alternateUnit ? { alternateUnit: payload.alternateUnit } : {}),
+    ...(payload.conversionValue !== undefined ? { conversionValue: payload.conversionValue } : {}),
+    ...(payload.godown ? { godown: payload.godown } : {}),
+    ...(payload.rack ? { rack: payload.rack } : {}),
+    ...(payload.defaultSaleQty !== undefined ? { defaultSaleQty: payload.defaultSaleQty } : {}),
     ...(payload.verticalData ? { verticalData: payload.verticalData } : {}),
   };
 }
@@ -185,16 +198,51 @@ const productKeys: Record<keyof ProductPayload, true> = {
   name: true,
   sku: true,
   barcode: true,
+  description: true,
+  partGroup: true,
+  legacySubCategoryId: true,
   unit: true,
   mrp: true,
   sellingPrice: true,
   purchasePrice: true,
+  wholesalePrice: true,
+  defaultDiscountPercent: true,
   gstRate: true,
+  cessRate: true,
   hsnCode: true,
   currentStock: true,
   reorderLevel: true,
+  purchaseUnit: true,
+  salesUnit: true,
+  alternateUnit: true,
+  conversionValue: true,
+  godown: true,
+  rack: true,
+  defaultSaleQty: true,
   verticalData: true,
 };
+
+const importExportFields: readonly VerticalField[] = [
+  { key: "description", label: "Description", type: "text", required: false },
+  { key: "legacySubCategoryId", label: "Sub category ID", type: "text", required: false },
+  { key: "partGroup", label: "Part / group", type: "text", required: false },
+  { key: "wholesalePrice", label: "Wholesale price (₹)", type: "decimal", required: false },
+  { key: "defaultDiscountPercent", label: "Discount %", type: "decimal", required: false },
+  { key: "cessRate", label: "CESS %", type: "decimal", required: false },
+  { key: "currentStock", label: "Opening qty", type: "decimal", required: false },
+  { key: "purchaseUnit", label: "Purchase unit", type: "text", required: false },
+  { key: "salesUnit", label: "Sales unit", type: "text", required: false },
+  { key: "alternateUnit", label: "Alter unit", type: "text", required: false },
+  { key: "conversionValue", label: "Conversion value", type: "decimal", required: false },
+  { key: "godown", label: "Godown", type: "text", required: false },
+  { key: "rack", label: "Rack", type: "text", required: false },
+  { key: "defaultSaleQty", label: "Default sale qty", type: "decimal", required: false },
+];
+
+function withImportExportFields(fields: readonly VerticalField[]): readonly VerticalField[] {
+  const keys = new Set(fields.map((field) => field.key));
+  return [...fields, ...importExportFields.filter((field) => !keys.has(field.key))];
+}
 
 function requireString(value: unknown, message: string): string {
   if (typeof value !== "string" || value.trim() === "") {

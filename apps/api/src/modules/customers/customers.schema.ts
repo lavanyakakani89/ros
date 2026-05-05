@@ -13,11 +13,31 @@ export const customerIdParamsSchema = z.object({
 });
 
 export const createCustomerSchema = z.object({
+  customerCode: z.string().trim().min(1).optional(),
   name: z.string().trim().min(2),
   phone: z.string().trim().min(10).max(16),
   email: z.string().trim().email().optional(),
   address: z.string().trim().min(3).optional(),
+  city: z.string().trim().min(1).optional(),
+  state: z.string().trim().min(1).optional(),
+  postalCode: z.string().trim().min(1).optional(),
+  remarks: z.string().trim().min(1).optional(),
+  accountNo: z.string().trim().min(1).optional(),
+  accountName: z.string().trim().min(1).optional(),
+  bank: z.string().trim().min(1).optional(),
+  branch: z.string().trim().min(1).optional(),
+  ifscCode: z.string().trim().min(1).optional(),
+  gstin: z.string().trim().min(1).optional(),
+  pan: z.string().trim().min(1).optional(),
+  cin: z.string().trim().min(1).optional(),
+  openingBalanceType: z.enum(["CR", "DR"]).optional(),
+  openingBalance: decimalSchema.nonnegative().default(0),
+  tcsEnabled: z.coerce.boolean().default(false),
   creditLimit: decimalSchema.nonnegative().optional(),
+  creditLimitEnabled: z.coerce.boolean().default(false),
+  creditDays: z.coerce.number().int().nonnegative().optional(),
+  itemDiscountPercent: decimalSchema.min(0).max(100).default(0),
+  itemDiscountEnabled: z.coerce.boolean().default(false),
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial();

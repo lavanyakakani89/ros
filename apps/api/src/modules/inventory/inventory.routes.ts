@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { InventoryError, InventoryService } from "./inventory.service.js";
+import { importProducts, sendProductExport, sendProductTemplate } from "../import-export/product-import-export.js";
 import {
   addBatchSchema,
   createProductSchema,
@@ -24,6 +25,26 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
   fastify.get("/api/inventory/products", async (request, reply) => {
     const query = productListQuerySchema.parse(request.query);
     return handleInventory(reply, () => Promise.resolve(service.listProducts(request.tenant, query)));
+  });
+
+  fastify.get("/api/inventory/products/template", async (request, reply) => {
+    return sendProductTemplate(request.tenant, reply);
+  });
+
+  fastify.get("/api/inventory/products/export", async (request, reply) => {
+    return sendProductExport(fastify, request.tenant, reply);
+  });
+
+  fastify.post("/api/inventory/products/import", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      const file = await request.file();
+      if (!file) {
+        return reply.status(400).send({ error: "Upload an Excel file." });
+      }
+
+      const buffer = await file.toBuffer();
+      return importProducts(fastify, request.tenant, buffer);
+    });
   });
 
   fastify.get("/api/inventory/products/expiring", async (request, reply) => {
@@ -56,71 +77,6 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
   fastify.post("/api/inventory/stock-adjustment", async (request, reply) => {
     const input = stockAdjustmentSchema.parse(request.body);
     return handleInventory(reply, () => service.adjustStock(request.tenant, request.user, input));
-  });
-
-  // CSV export for products
-  fastify.get("/api/inventory/products/export-csv", async (request, reply) => {
-    const products = await fastify.prisma.product.findMany({
-      where: { tenantId: request.tenant.id, isActive: true },
-      orderBy: { name: "asc" },
-    });
-    const header = "Name,SKU,Barcode,Unit,MRP,Selling Price,Purchase Price,GST Rate,HSN Code,Current Stock,Reorder Level";
-    const rows = products.map((p) => [
-      p.name, p.sku ?? "", p.barcode ?? "", p.unit,
-      p.mrp.toNumber(), p.sellingPrice.toNumber(), p.purchasePrice?.toNumber() ?? "",
-      p.gstRate.toNumber(), p.hsnCode ?? "", p.currentStock.toNumber(), p.reorderLevel?.toNumber() ?? "",
-    ].map(String).map((v) => `"${v.replaceAll('"', '""')}"`).join(",")).join("\n");
-
-    await reply.header("Content-Type", "text/csv").header("Content-Disposition", "attachment; filename=products.csv");
-    return reply.send(`${header}\n${rows}`);
-  });
-
-  // CSV import for products
-  fastify.post("/api/inventory/products/import-csv", async (request, reply) => {
-    return handleInventory(reply, async () => {
-      const { rows } = z.object({
-        rows: z.array(z.object({
-          name: z.string().min(1),
-          sku: z.string().optional(),
-          barcode: z.string().optional(),
-          unit: z.string().default("piece"),
-          mrp: z.coerce.number().nonnegative(),
-          sellingPrice: z.coerce.number().nonnegative(),
-          purchasePrice: z.coerce.number().nonnegative().optional(),
-          gstRate: z.coerce.number().nonnegative().default(0),
-          hsnCode: z.string().optional(),
-          currentStock: z.coerce.number().nonnegative().default(0),
-          reorderLevel: z.coerce.number().nonnegative().optional(),
-        })),
-      }).parse(request.body);
-
-      let created = 0;
-      let updated = 0;
-      for (const row of rows) {
-        const existing = row.sku ? await fastify.prisma.product.findFirst({ where: { tenantId: request.tenant.id, sku: row.sku } }) : null;
-        const data = {
-          name: row.name,
-          sku: row.sku ?? null,
-          barcode: row.barcode ?? null,
-          unit: row.unit,
-          mrp: row.mrp,
-          sellingPrice: row.sellingPrice,
-          purchasePrice: row.purchasePrice ?? null,
-          gstRate: row.gstRate,
-          hsnCode: row.hsnCode ?? null,
-          currentStock: row.currentStock,
-          reorderLevel: row.reorderLevel ?? null,
-        };
-        if (existing) {
-          await fastify.prisma.product.update({ where: { id: existing.id }, data });
-          updated++;
-        } else {
-          await fastify.prisma.product.create({ data: { tenantId: request.tenant.id, ...data } });
-          created++;
-        }
-      }
-      return { created, updated, total: rows.length };
-    });
   });
 
   // Variants

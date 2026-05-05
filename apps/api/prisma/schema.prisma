@@ -144,14 +144,27 @@ model Product {
   name               String
   sku                String?
   barcode            String?
+  description        String?
+  partGroup          String?             @map("part_group")
+  legacySubCategoryId String?            @map("legacy_sub_category_id")
   unit               String              @default("piece")
   mrp                Decimal             @db.Decimal(10, 2)
   sellingPrice       Decimal             @map("selling_price") @db.Decimal(10, 2)
   purchasePrice      Decimal?            @map("purchase_price") @db.Decimal(10, 2)
+  wholesalePrice     Decimal?            @map("wholesale_price") @db.Decimal(10, 2)
+  defaultDiscountPercent Decimal?        @map("default_discount_percent") @db.Decimal(5, 2)
   gstRate            Decimal             @map("gst_rate") @db.Decimal(5, 2)
+  cessRate           Decimal             @default(0) @map("cess_rate") @db.Decimal(5, 2)
   hsnCode            String?             @map("hsn_code")
   currentStock       Decimal             @default(0) @map("current_stock") @db.Decimal(10, 3)
   reorderLevel       Decimal?            @map("reorder_level") @db.Decimal(10, 3)
+  purchaseUnit       String?             @map("purchase_unit")
+  salesUnit          String?             @map("sales_unit")
+  alternateUnit      String?             @map("alternate_unit")
+  conversionValue    Decimal?            @map("conversion_value") @db.Decimal(10, 3)
+  godown             String?
+  rack               String?
+  defaultSaleQty     Decimal?            @map("default_sale_qty") @db.Decimal(10, 3)
   supplierId         String?             @map("supplier_id")
   supplier           Supplier?           @relation(fields: [supplierId], references: [id])
   categoryId         String?             @map("category_id")
@@ -206,6 +219,7 @@ model ProductBatch {
   productId     String    @map("product_id")
   product       Product   @relation(fields: [productId], references: [id])
   batchNumber   String    @map("batch_number")
+  mfgDate       DateTime? @map("mfg_date")
   expiryDate    DateTime? @map("expiry_date")
   quantity      Decimal   @db.Decimal(10, 3)
   purchasePrice Decimal   @map("purchase_price") @db.Decimal(10, 2)
@@ -236,11 +250,31 @@ model Customer {
   id              String           @id @default(cuid())
   tenantId        String           @map("tenant_id")
   tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  customerCode    String?          @map("customer_code")
   name            String
   phone           String
   email           String?
   address         String?
+  city            String?
+  state           String?
+  postalCode      String?          @map("postal_code")
+  remarks         String?
+  accountNo       String?          @map("account_no")
+  accountName     String?          @map("account_name")
+  bank            String?
+  branch          String?
+  ifscCode        String?          @map("ifsc_code")
+  gstin           String?
+  pan             String?
+  cin             String?
+  openingBalanceType String?       @map("opening_balance_type")
+  openingBalance  Decimal          @default(0) @map("opening_balance") @db.Decimal(10, 2)
+  tcsEnabled      Boolean          @default(false) @map("tcs_enabled")
   creditLimit     Decimal?         @map("credit_limit") @db.Decimal(10, 2)
+  creditLimitEnabled Boolean       @default(false) @map("credit_limit_enabled")
+  creditDays      Int?             @map("credit_days")
+  itemDiscountPercent Decimal      @default(0) @map("item_discount_percent") @db.Decimal(5, 2)
+  itemDiscountEnabled Boolean      @default(false) @map("item_discount_enabled")
   outstandingDue  Decimal          @default(0) @map("outstanding_due") @db.Decimal(10, 2)
   createdAt       DateTime         @default(now()) @map("created_at")
   invoices        Invoice[]
@@ -251,6 +285,7 @@ model Customer {
   kots            KOT[]
 
   @@unique([tenantId, phone])
+  @@unique([tenantId, customerCode])
   @@index([tenantId])
   @@map("customers")
 }

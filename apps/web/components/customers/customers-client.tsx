@@ -1,20 +1,40 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save } from "lucide-react";
+import { Download, FileSpreadsheet, Save, Upload } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { createAuthenticatedApiClient, type PaginatedResponse } from "@/lib/api-client";
+import { createAuthenticatedApiClient, downloadApiFile, type PaginatedResponse } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 
 interface CustomerRecord {
   id: string;
+  customerCode?: string | null;
   name: string;
   phone: string;
   email?: string | null;
   address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  remarks?: string | null;
+  accountNo?: string | null;
+  accountName?: string | null;
+  bank?: string | null;
+  branch?: string | null;
+  ifscCode?: string | null;
+  gstin?: string | null;
+  pan?: string | null;
+  cin?: string | null;
+  openingBalanceType?: string | null;
+  openingBalance?: string | number | null;
+  tcsEnabled?: boolean;
   creditLimit?: string | number | null;
+  creditLimitEnabled?: boolean;
+  creditDays?: number | null;
+  itemDiscountPercent?: string | number | null;
+  itemDiscountEnabled?: boolean;
   outstandingDue: string | number;
   totalSpent?: number;
   lastVisitAt?: string | null;
@@ -23,6 +43,7 @@ interface CustomerRecord {
 export function CustomersClient() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [importStatus, setImportStatus] = useState("");
   const customersQuery = useQuery({
     queryKey: ["customers", search],
     queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?limit=100${search ? `&search=${encodeURIComponent(search)}` : ""}`),
@@ -35,23 +56,21 @@ export function CustomersClient() {
     mutationFn: ({ id, payload }: { id: string; payload: object }) => createAuthenticatedApiClient().put(`/customers/${id}`, payload),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["customers"] }),
   });
+  const importCustomers = useMutation({
+    mutationFn: (file: File) => createAuthenticatedApiClient().upload<ImportResult>("/customers/import", file),
+    onSuccess: async (result) => {
+      setImportStatus(`Imported ${String(result.created)} new and ${String(result.updated)} updated. Failed ${String(result.failed)}.`);
+      await queryClient.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
   const customers = customersQuery.data?.data ?? [];
-  const error = customersQuery.error ?? createCustomer.error ?? updateCustomer.error;
+  const error = customersQuery.error ?? createCustomer.error ?? updateCustomer.error ?? importCustomers.error;
 
   function handleCreate(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    createCustomer.mutate(
-      {
-        name: formString(form, "name"),
-        phone: formString(form, "phone"),
-        email: formString(form, "email") || undefined,
-        address: formString(form, "address") || undefined,
-        creditLimit: Number(form.get("creditLimit") || 0),
-      },
-      { onSuccess: () => formElement.reset() },
-    );
+    createCustomer.mutate(buildCustomerPayload(form), { onSuccess: () => formElement.reset() });
   }
 
   return (
@@ -59,20 +78,62 @@ export function CustomersClient() {
       <section className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Add customer</div>
         {error ? <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
-        <form className="space-y-3" onSubmit={handleCreate}>
+        <form className="grid gap-3 md:grid-cols-2" onSubmit={handleCreate}>
+          <TextInput name="customerCode" label="Customer ID" />
           <TextInput name="name" label="Name" required />
           <TextInput name="phone" label="Phone" required />
           <TextInput name="email" label="Email" type="email" />
           <TextInput name="address" label="Address" />
+          <TextInput name="city" label="City" />
+          <TextInput name="state" label="State" />
+          <TextInput name="postalCode" label="Postal code" />
+          <TextInput name="gstin" label="GSTIN / UID" />
+          <TextInput name="pan" label="PAN" />
+          <TextInput name="cin" label="CIN" />
+          <TextInput name="openingBalanceType" label="Opening balance type" />
+          <TextInput name="openingBalance" label="Opening balance" type="number" />
           <TextInput name="creditLimit" label="Credit limit" type="number" />
-          <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white" disabled={createCustomer.isPending}>
+          <TextInput name="creditDays" label="Turn around day" type="number" />
+          <TextInput name="itemDiscountPercent" label="Disc% on item" type="number" />
+          <TextInput name="accountNo" label="Account no." />
+          <TextInput name="accountName" label="Account name" />
+          <TextInput name="bank" label="Bank" />
+          <TextInput name="branch" label="Branch" />
+          <TextInput name="ifscCode" label="IFSC code" />
+          <TextInput name="remarks" label="Remarks" />
+          <CheckInput name="tcsEnabled" label="TCS" />
+          <CheckInput name="creditLimitEnabled" label="Limit status" />
+          <CheckInput name="itemDiscountEnabled" label="Discount status on item" />
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={createCustomer.isPending}>
             <Save className="size-4" aria-hidden="true" />
             Save customer
           </button>
         </form>
       </section>
       <section className="rounded-md border border-border bg-white">
-        <div className="border-b border-border p-4">
+        <div className="space-y-3 border-b border-border p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/template", "retailos-customer-template.xls")}>
+              <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
+              Template
+            </button>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/export", "retailos-customers-export.xls")}>
+              <Download className="size-4 text-blue-700" aria-hidden="true" />
+              Export
+            </button>
+            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
+              <Upload className="size-4 text-amber-700" aria-hidden="true" />
+              Import
+              <input type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  importCustomers.mutate(file);
+                }
+                event.currentTarget.value = "";
+              }} />
+            </label>
+          </div>
+          {importStatus ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{importStatus}</div> : null}
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, phone, email" className="h-10 w-full rounded-md border border-border px-3 text-sm" />
         </div>
         <div className="divide-y divide-border">
@@ -91,24 +152,38 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
   function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    onSave({
-      name: formString(form, "name"),
-      phone: formString(form, "phone"),
-      email: formString(form, "email") || undefined,
-      address: formString(form, "address") || undefined,
-      creditLimit: Number(form.get("creditLimit") || 0),
-    });
+    onSave(buildCustomerPayload(form));
     setEditing(false);
   }
 
   if (editing) {
     return (
       <form className="grid gap-3 p-4 md:grid-cols-2" onSubmit={handleSubmit}>
+        <TextInput name="customerCode" label="Customer ID" defaultValue={customer.customerCode ?? ""} />
         <TextInput name="name" label="Name" defaultValue={customer.name} required />
         <TextInput name="phone" label="Phone" defaultValue={customer.phone} required />
         <TextInput name="email" label="Email" defaultValue={customer.email ?? ""} />
         <TextInput name="address" label="Address" defaultValue={customer.address ?? ""} />
+        <TextInput name="city" label="City" defaultValue={customer.city ?? ""} />
+        <TextInput name="state" label="State" defaultValue={customer.state ?? ""} />
+        <TextInput name="postalCode" label="Postal code" defaultValue={customer.postalCode ?? ""} />
+        <TextInput name="gstin" label="GSTIN / UID" defaultValue={customer.gstin ?? ""} />
+        <TextInput name="pan" label="PAN" defaultValue={customer.pan ?? ""} />
+        <TextInput name="cin" label="CIN" defaultValue={customer.cin ?? ""} />
+        <TextInput name="openingBalanceType" label="Opening balance type" defaultValue={customer.openingBalanceType ?? ""} />
+        <TextInput name="openingBalance" label="Opening balance" type="number" defaultValue={String(customer.openingBalance ?? "")} />
         <TextInput name="creditLimit" label="Credit limit" type="number" defaultValue={String(customer.creditLimit ?? "")} />
+        <TextInput name="creditDays" label="Turn around day" type="number" defaultValue={String(customer.creditDays ?? "")} />
+        <TextInput name="itemDiscountPercent" label="Disc% on item" type="number" defaultValue={String(customer.itemDiscountPercent ?? "")} />
+        <TextInput name="accountNo" label="Account no." defaultValue={customer.accountNo ?? ""} />
+        <TextInput name="accountName" label="Account name" defaultValue={customer.accountName ?? ""} />
+        <TextInput name="bank" label="Bank" defaultValue={customer.bank ?? ""} />
+        <TextInput name="branch" label="Branch" defaultValue={customer.branch ?? ""} />
+        <TextInput name="ifscCode" label="IFSC code" defaultValue={customer.ifscCode ?? ""} />
+        <TextInput name="remarks" label="Remarks" defaultValue={customer.remarks ?? ""} />
+        <CheckInput name="tcsEnabled" label="TCS" defaultChecked={customer.tcsEnabled} />
+        <CheckInput name="creditLimitEnabled" label="Limit status" defaultChecked={customer.creditLimitEnabled} />
+        <CheckInput name="itemDiscountEnabled" label="Discount status on item" defaultChecked={customer.itemDiscountEnabled} />
         <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2">Save changes</button>
       </form>
     );
@@ -119,6 +194,7 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
       <div>
         <div className="text-sm font-medium text-slate-950">{customer.name}</div>
         <div className="text-xs text-slate-500">{customer.phone}{customer.email ? ` | ${customer.email}` : ""}</div>
+        <div className="mt-1 text-xs text-slate-500">{customer.city ?? ""}{customer.gstin ? ` | GSTIN ${customer.gstin}` : ""}</div>
         <div className="mt-1 text-xs text-slate-500">Due {money(Number(customer.outstandingDue))} | Spent {money(customer.totalSpent ?? 0)}</div>
       </div>
       <div className="flex items-center gap-2">
@@ -136,6 +212,52 @@ function TextInput({ name, label, type = "text", defaultValue, required }: Reado
       <input name={name} type={type} defaultValue={defaultValue} required={required} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600" />
     </label>
   );
+}
+
+function CheckInput({ name, label, defaultChecked }: Readonly<{ name: string; label: string; defaultChecked?: boolean | undefined }>) {
+  return (
+    <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
+      <input name={name} type="checkbox" defaultChecked={defaultChecked} className="size-4 accent-emerald-600" />
+      {label}
+    </label>
+  );
+}
+
+function buildCustomerPayload(form: FormData): Record<string, unknown> {
+  return {
+    customerCode: formString(form, "customerCode") || undefined,
+    name: formString(form, "name"),
+    phone: formString(form, "phone"),
+    email: formString(form, "email") || undefined,
+    address: formString(form, "address") || undefined,
+    city: formString(form, "city") || undefined,
+    state: formString(form, "state") || undefined,
+    postalCode: formString(form, "postalCode") || undefined,
+    remarks: formString(form, "remarks") || undefined,
+    accountNo: formString(form, "accountNo") || undefined,
+    accountName: formString(form, "accountName") || undefined,
+    bank: formString(form, "bank") || undefined,
+    branch: formString(form, "branch") || undefined,
+    ifscCode: formString(form, "ifscCode") || undefined,
+    gstin: formString(form, "gstin") || undefined,
+    pan: formString(form, "pan") || undefined,
+    cin: formString(form, "cin") || undefined,
+    openingBalanceType: formString(form, "openingBalanceType").toUpperCase() || undefined,
+    openingBalance: Number(form.get("openingBalance") || 0),
+    tcsEnabled: form.get("tcsEnabled") === "on",
+    creditLimit: formString(form, "creditLimit") ? Number(form.get("creditLimit")) : undefined,
+    creditLimitEnabled: form.get("creditLimitEnabled") === "on",
+    creditDays: formString(form, "creditDays") ? Number(form.get("creditDays")) : undefined,
+    itemDiscountPercent: Number(form.get("itemDiscountPercent") || 0),
+    itemDiscountEnabled: form.get("itemDiscountEnabled") === "on",
+  };
+}
+
+interface ImportResult {
+  total: number;
+  created: number;
+  updated: number;
+  failed: number;
 }
 
 function money(value: number): string {

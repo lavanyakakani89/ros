@@ -13,14 +13,27 @@ export interface CreateProductInput {
   name: string;
   sku?: string | undefined;
   barcode?: string | undefined;
+  description?: string | undefined;
+  partGroup?: string | undefined;
+  legacySubCategoryId?: string | undefined;
   unit: string;
   mrp: number;
   sellingPrice: number;
   purchasePrice?: number | undefined;
+  wholesalePrice?: number | undefined;
+  defaultDiscountPercent?: number | undefined;
   gstRate: number;
+  cessRate: number;
   hsnCode?: string | undefined;
   currentStock: number;
   reorderLevel?: number | undefined;
+  purchaseUnit?: string | undefined;
+  salesUnit?: string | undefined;
+  alternateUnit?: string | undefined;
+  conversionValue?: number | undefined;
+  godown?: string | undefined;
+  rack?: string | undefined;
+  defaultSaleQty?: number | undefined;
   supplierId?: string | undefined;
   verticalData?: Record<string, unknown> | undefined;
 }
@@ -31,6 +44,7 @@ export type UpdateProductInput = {
 
 export interface AddBatchInput {
   batchNumber: string;
+  mfgDate?: Date | undefined;
   expiryDate: Date;
   quantity: number;
   purchasePrice: number;
