@@ -155,7 +155,7 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
 
   const salesUnit = requireString(payload.salesUnit, "Sales unit is required");
   const mrp = requireNumber(payload.mrp, "MRP is required");
-  const sellingPrice = payload.sellingPrice === undefined ? mrp : requireNumber(payload.sellingPrice, "Selling price is required");
+  const sellingPrice = requireNumber(payload.sellingPrice, "Retail sale price is required");
   const category = payload.verticalData?.category;
   if (typeof category !== "string" || category.trim() === "") {
     throw new Error("Category is required");
@@ -242,6 +242,7 @@ const requiredProductFieldKeys = [
   "legacySubCategoryId",
   "salesUnit",
   "mrp",
+  "sellingPrice",
   "barcode",
   "verticalData.category",
 ];
@@ -280,7 +281,7 @@ function normalizeProductField(field: VerticalField): VerticalField {
     salesUnit: { label: "Sales unit", required: true },
     mrp: { label: "MRP", required: true },
     unit: { label: "Base unit", required: false },
-    sellingPrice: { required: false },
+    sellingPrice: { label: "Retail Sale Price", required: true },
     gstRate: { required: false },
     "verticalData.category": { label: "Category", required: true, vertical: true },
   };

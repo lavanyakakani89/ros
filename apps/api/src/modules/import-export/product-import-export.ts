@@ -26,7 +26,7 @@ const commonColumns: readonly ExcelColumn[] = [
   { key: "partGroup", header: "Part / Group", required: false },
   { key: "description", header: "Description", required: false },
   { key: "purchasePrice", header: "Purchase Price", required: false, sample: 100 },
-  { key: "sellingPrice", header: "Retail Sale Price", required: false, sample: 100 },
+  { key: "sellingPrice", header: "Retail Sale Price", required: true, sample: 100 },
   { key: "defaultDiscountPercent", header: "Discount %", required: false, sample: 0 },
   { key: "cgst", header: "CGST %", required: false, sample: 0 },
   { key: "sgst", header: "SGST %", required: false, sample: 0 },
@@ -196,6 +196,9 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
 
   const sellingPrice = getNumber(row, ["Retail Sale Price", "Menu Price"]);
   const mrp = getNumber(row, ["MRP", "Menu Price"]) ?? sellingPrice;
+  if (sellingPrice === undefined) {
+    throw new Error("Retail Sale Price is required");
+  }
   if (mrp === undefined) {
     throw new Error("MRP is required");
   }
@@ -215,7 +218,7 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
       legacySubCategoryId,
       unit: salesUnit,
       mrp,
-      sellingPrice: sellingPrice ?? mrp,
+      sellingPrice,
       purchasePrice: getNumber(row, ["Purchase Price", "Food Cost"]) ?? null,
       wholesalePrice: getNumber(row, ["Wholesale Price"]) ?? null,
       defaultDiscountPercent: getNumber(row, ["Discount %"]) ?? null,
