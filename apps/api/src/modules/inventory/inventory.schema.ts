@@ -13,13 +13,13 @@ export const productListQuerySchema = z.object({
   lowStock: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
 });
 
-export const createProductSchema = z.object({
+const productSchema = z.object({
   name: z.string().trim().min(1),
-  sku: z.string().trim().min(1).optional(),
-  barcode: z.string().trim().min(1).optional(),
+  sku: z.string().trim().min(1),
+  barcode: z.string().trim().min(1),
   description: z.string().trim().min(1).optional(),
   partGroup: z.string().trim().min(1).optional(),
-  legacySubCategoryId: z.string().trim().min(1).optional(),
+  legacySubCategoryId: z.string().trim().min(1),
   unit: z.string().trim().min(1).default("piece"),
   mrp: decimalSchema.nonnegative(),
   sellingPrice: decimalSchema.nonnegative(),
@@ -32,7 +32,7 @@ export const createProductSchema = z.object({
   currentStock: decimalSchema.default(0),
   reorderLevel: decimalSchema.nonnegative().optional(),
   purchaseUnit: z.string().trim().min(1).optional(),
-  salesUnit: z.string().trim().min(1).optional(),
+  salesUnit: z.string().trim().min(1),
   alternateUnit: z.string().trim().min(1).optional(),
   conversionValue: decimalSchema.positive().optional(),
   godown: z.string().trim().min(1).optional(),
@@ -42,7 +42,18 @@ export const createProductSchema = z.object({
   verticalData: z.record(z.unknown()).optional(),
 });
 
-export const updateProductSchema = createProductSchema.partial();
+export const createProductSchema = productSchema.superRefine((input, context) => {
+  const category = input.verticalData?.category;
+  if (typeof category !== "string" || category.trim() === "") {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["verticalData", "category"],
+      message: "Category is required",
+    });
+  }
+});
+
+export const updateProductSchema = productSchema.partial();
 
 export const addBatchSchema = z.object({
   batchNumber: z.string().trim().min(1),

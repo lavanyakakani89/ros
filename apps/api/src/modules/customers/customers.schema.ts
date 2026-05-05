@@ -13,11 +13,11 @@ export const customerIdParamsSchema = z.object({
 });
 
 export const createCustomerSchema = z.object({
-  customerCode: z.string().trim().min(1).optional(),
+  customerCode: z.string().trim().min(1),
   name: z.string().trim().min(2),
   phone: z.string().trim().min(10).max(16),
   email: z.string().trim().email().optional(),
-  address: z.string().trim().min(3).optional(),
+  address: z.string().trim().min(3),
   city: z.string().trim().min(1).optional(),
   state: z.string().trim().min(1).optional(),
   postalCode: z.string().trim().min(1).optional(),

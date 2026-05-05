@@ -2,7 +2,7 @@
 
 import type { VerticalConfig, VerticalField } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { Loader2, Save } from "lucide-react";
+import { ChevronDown, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { createProduct, type ProductPayload } from "@/lib/api-client";
@@ -29,9 +29,11 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
   );
 
   const groupedFields = useMemo(() => {
-    const base = activeProductFields.filter((field) => !field.vertical);
-    const vertical = activeProductFields.filter((field) => field.vertical);
-    return { base, vertical };
+    const fieldByKey = new Map(activeProductFields.map((field) => [field.key, field]));
+    const required = requiredProductFieldKeys.map((key) => fieldByKey.get(key)).filter((field): field is VerticalField => Boolean(field));
+    const requiredKeys = new Set(required.map((field) => field.key));
+    const optional = activeProductFields.filter((field) => !requiredKeys.has(field.key));
+    return { required, optional };
   }, [activeProductFields]);
 
   async function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -69,18 +71,22 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
           </button>
         </div>
         <div className="grid gap-4 p-4 lg:grid-cols-2">
-          {groupedFields.base.map((field) => (
+          {groupedFields.required.map((field) => (
             <DynamicField key={field.key} field={field} />
           ))}
-          {groupedFields.vertical.length > 0 ? (
-            <div className="border-t border-border pt-4 lg:col-span-2">
-              <div className="mb-3 text-xs font-semibold uppercase text-slate-500">{verticalConfig.displayName} fields</div>
-              <div className="grid gap-4 lg:grid-cols-2">
-                {groupedFields.vertical.map((field) => (
+          {groupedFields.optional.length > 0 ? (
+            <details className="rounded-md border border-border bg-slate-50 lg:col-span-2">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700">
+                Additional details
+                <ChevronDown className="size-4 text-slate-500" aria-hidden="true" />
+              </summary>
+              <div className="border-t border-border bg-white px-3 py-3 text-xs font-semibold uppercase text-slate-500">{verticalConfig.displayName} optional fields</div>
+              <div className="grid gap-4 bg-white p-3 lg:grid-cols-2">
+                {groupedFields.optional.map((field) => (
                   <DynamicField key={field.key} field={field} />
                 ))}
               </div>
-            </div>
+            </details>
           ) : null}
           {status ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 lg:col-span-2">{status}</div> : null}
           {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 lg:col-span-2">{error}</div> : null}
@@ -147,18 +153,26 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     payload.verticalData = verticalData;
   }
 
+  const salesUnit = requireString(payload.salesUnit, "Sales unit is required");
+  const mrp = requireNumber(payload.mrp, "MRP is required");
+  const sellingPrice = payload.sellingPrice === undefined ? mrp : requireNumber(payload.sellingPrice, "Selling price is required");
+  const category = payload.verticalData?.category;
+  if (typeof category !== "string" || category.trim() === "") {
+    throw new Error("Category is required");
+  }
+
   return {
     name: requireString(payload.name, "Product name is required"),
-    unit: requireString(payload.unit, "Unit is required"),
-    mrp: requireNumber(payload.mrp, "MRP is required"),
-    sellingPrice: requireNumber(payload.sellingPrice, "Selling price is required"),
-    gstRate: gstEnabled ? requireNumber(payload.gstRate, "GST rate is required") : 0,
+    unit: payload.unit ? requireString(payload.unit, "Unit is required") : salesUnit,
+    mrp,
+    sellingPrice,
+    gstRate: gstEnabled && payload.gstRate !== undefined ? requireNumber(payload.gstRate, "GST rate is required") : 0,
     currentStock: payload.currentStock ?? 0,
-    ...(payload.sku ? { sku: payload.sku } : {}),
-    ...(payload.barcode ? { barcode: payload.barcode } : {}),
+    sku: requireString(payload.sku, "Product ID is required"),
+    barcode: requireString(payload.barcode, "Barcode is required"),
     ...(payload.description ? { description: payload.description } : {}),
     ...(payload.partGroup ? { partGroup: payload.partGroup } : {}),
-    ...(payload.legacySubCategoryId ? { legacySubCategoryId: payload.legacySubCategoryId } : {}),
+    legacySubCategoryId: requireString(payload.legacySubCategoryId, "Sub category ID is required"),
     ...(payload.purchasePrice !== undefined ? { purchasePrice: payload.purchasePrice } : {}),
     ...(payload.wholesalePrice !== undefined ? { wholesalePrice: payload.wholesalePrice } : {}),
     ...(payload.defaultDiscountPercent !== undefined ? { defaultDiscountPercent: payload.defaultDiscountPercent } : {}),
@@ -166,7 +180,7 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     ...(payload.hsnCode ? { hsnCode: payload.hsnCode } : {}),
     ...(payload.reorderLevel !== undefined ? { reorderLevel: payload.reorderLevel } : {}),
     ...(payload.purchaseUnit ? { purchaseUnit: payload.purchaseUnit } : {}),
-    ...(payload.salesUnit ? { salesUnit: payload.salesUnit } : {}),
+    salesUnit,
     ...(payload.alternateUnit ? { alternateUnit: payload.alternateUnit } : {}),
     ...(payload.conversionValue !== undefined ? { conversionValue: payload.conversionValue } : {}),
     ...(payload.godown ? { godown: payload.godown } : {}),
@@ -222,16 +236,27 @@ const productKeys: Record<keyof ProductPayload, true> = {
   verticalData: true,
 };
 
+const requiredProductFieldKeys = [
+  "sku",
+  "name",
+  "legacySubCategoryId",
+  "salesUnit",
+  "mrp",
+  "barcode",
+  "verticalData.category",
+];
+
 const importExportFields: readonly VerticalField[] = [
+  { key: "verticalData.category", label: "Category", type: "text", required: true, vertical: true },
   { key: "description", label: "Description", type: "text", required: false },
-  { key: "legacySubCategoryId", label: "Sub category ID", type: "text", required: false },
+  { key: "legacySubCategoryId", label: "Sub category ID", type: "text", required: true },
   { key: "partGroup", label: "Part / group", type: "text", required: false },
   { key: "wholesalePrice", label: "Wholesale price (₹)", type: "decimal", required: false },
   { key: "defaultDiscountPercent", label: "Discount %", type: "decimal", required: false },
   { key: "cessRate", label: "CESS %", type: "decimal", required: false },
   { key: "currentStock", label: "Opening qty", type: "decimal", required: false },
   { key: "purchaseUnit", label: "Purchase unit", type: "text", required: false },
-  { key: "salesUnit", label: "Sales unit", type: "text", required: false },
+  { key: "salesUnit", label: "Sales unit", type: "text", required: true },
   { key: "alternateUnit", label: "Alter unit", type: "text", required: false },
   { key: "conversionValue", label: "Conversion value", type: "decimal", required: false },
   { key: "godown", label: "Godown", type: "text", required: false },
@@ -241,7 +266,29 @@ const importExportFields: readonly VerticalField[] = [
 
 function withImportExportFields(fields: readonly VerticalField[]): readonly VerticalField[] {
   const keys = new Set(fields.map((field) => field.key));
-  return [...fields, ...importExportFields.filter((field) => !keys.has(field.key))];
+  return [...fields, ...importExportFields.filter((field) => !keys.has(field.key))]
+    .map(normalizeProductField)
+    .filter((field, index, allFields) => allFields.findIndex((candidate) => candidate.key === field.key) === index);
+}
+
+function normalizeProductField(field: VerticalField): VerticalField {
+  const overrides: Record<string, Partial<VerticalField>> = {
+    sku: { label: "Product ID", required: true },
+    name: { label: "Product name", required: true },
+    barcode: { label: "Barcode", required: true },
+    legacySubCategoryId: { label: "Sub category ID", required: true },
+    salesUnit: { label: "Sales unit", required: true },
+    mrp: { label: "MRP", required: true },
+    unit: { label: "Base unit", required: false },
+    sellingPrice: { required: false },
+    gstRate: { required: false },
+    "verticalData.category": { label: "Category", required: true, vertical: true },
+  };
+
+  return {
+    ...field,
+    ...overrides[field.key],
+  };
 }
 
 function requireString(value: unknown, message: string): string {

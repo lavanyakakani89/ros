@@ -18,14 +18,15 @@ type ProductWithBatches = Product & { batches: ProductBatch[] };
 type ProductImportData = Omit<Prisma.ProductUncheckedCreateInput, "tenantId">;
 
 const commonColumns: readonly ExcelColumn[] = [
-  { key: "sku", header: "Product ID", required: false, sample: "530" },
+  { key: "sku", header: "Product ID", required: true, sample: "530" },
   { key: "name", header: "Product Name", required: true, sample: "Bajra Flour 1 KG" },
-  { key: "legacySubCategoryId", header: "Sub Category ID", required: false, sample: "7" },
+  { key: "legacySubCategoryId", header: "Sub Category ID", required: true, sample: "7" },
+  { key: "verticalData.category", header: "Category", required: true, sample: "Cold Pressed Oils" },
   { key: "hsnCode", header: "HSN Code", required: false },
   { key: "partGroup", header: "Part / Group", required: false },
   { key: "description", header: "Description", required: false },
   { key: "purchasePrice", header: "Purchase Price", required: false, sample: 100 },
-  { key: "sellingPrice", header: "Retail Sale Price", required: true, sample: 100 },
+  { key: "sellingPrice", header: "Retail Sale Price", required: false, sample: 100 },
   { key: "defaultDiscountPercent", header: "Discount %", required: false, sample: 0 },
   { key: "cgst", header: "CGST %", required: false, sample: 0 },
   { key: "sgst", header: "SGST %", required: false, sample: 0 },
@@ -43,14 +44,13 @@ const commonColumns: readonly ExcelColumn[] = [
   { key: "batchNumber", header: "Batch", required: false },
   { key: "mfgDate", header: "Mfg Date dd/mm/yyyy", required: false },
   { key: "expiryDate", header: "Exp Date dd/mm/yyyy", required: false },
-  { key: "barcode", header: "Barcode", required: false, sample: "530" },
+  { key: "barcode", header: "Barcode", required: true, sample: "530" },
   { key: "defaultSaleQty", header: "Default Sale Qty", required: false, sample: 1 },
 ];
 
 const verticalColumnMap: Record<Tenant["vertical"], readonly ExcelColumn[]> = {
   GROCERY: [
     { key: "verticalData.brand", header: "Brand", required: false, sample: "Sivsan Oils" },
-    { key: "verticalData.category", header: "Category", required: false, sample: "Cold Pressed Oils" },
     { key: "verticalData.perishable", header: "Perishable", required: false, sample: "No" },
   ],
   PHARMACY: [
@@ -158,27 +158,6 @@ export async function importProducts(fastify: FastifyInstance, tenant: Tenant, b
 }
 
 function productColumns(tenant: Tenant): readonly ExcelColumn[] {
-  if (tenant.vertical === "RESTAURANT") {
-    return [
-      { key: "sku", header: "Item Code", required: false, sample: "M001" },
-      { key: "name", header: "Menu Item Name", required: true, sample: "Veg Meals" },
-      { key: "verticalData.course", header: "Course", required: false, sample: "Main" },
-      { key: "verticalData.foodType", header: "Food Type", required: false, sample: "Veg" },
-      { key: "mrp", header: "Menu Price", required: true, sample: 120 },
-      { key: "sellingPrice", header: "Retail Sale Price", required: true, sample: 120 },
-      { key: "purchasePrice", header: "Food Cost", required: false, sample: 70 },
-      { key: "cgst", header: "CGST %", required: false, sample: 2.5 },
-      { key: "sgst", header: "SGST %", required: false, sample: 2.5 },
-      { key: "cessRate", header: "CESS %", required: false, sample: 0 },
-      { key: "hsnCode", header: "SAC/HSN Code", required: false },
-      { key: "verticalData.prepTimeMinutes", header: "Prep Time Minutes", required: false, sample: 10 },
-      { key: "salesUnit", header: "Unit", required: true, sample: "plate" },
-      { key: "verticalData.category", header: "Category", required: false },
-      { key: "currentStock", header: "Opening Qty", required: false, sample: 0 },
-      { key: "reorderLevel", header: "Minimum Stock", required: false, sample: 0 },
-    ];
-  }
-
   return [...commonColumns, ...verticalColumnMap[tenant.vertical]];
 }
 
@@ -191,36 +170,52 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
   batchPurchasePrice: number | undefined;
 } {
   const name = getString(row, ["Product Name", "Menu Item Name"]);
+  const sku = getString(row, ["Product ID", "Item Code"]);
+  const barcode = getString(row, ["Barcode"]);
+  const legacySubCategoryId = getString(row, ["Sub Category ID"]);
+  const category = getString(row, ["Category"]);
+  const salesUnit = getString(row, ["Sales Unit", "Unit"]);
   if (!name) {
     throw new Error("Product Name is required");
+  }
+  if (!sku) {
+    throw new Error("Product ID is required");
+  }
+  if (!legacySubCategoryId) {
+    throw new Error("Sub Category ID is required");
+  }
+  if (!salesUnit) {
+    throw new Error("Sales Unit is required");
+  }
+  if (!barcode) {
+    throw new Error("Barcode is required");
+  }
+  if (!category) {
+    throw new Error("Category is required");
   }
 
   const sellingPrice = getNumber(row, ["Retail Sale Price", "Menu Price"]);
   const mrp = getNumber(row, ["MRP", "Menu Price"]) ?? sellingPrice;
-  if (sellingPrice === undefined) {
-    throw new Error("Retail Sale Price is required");
-  }
   if (mrp === undefined) {
     throw new Error("MRP is required");
   }
 
-  const verticalData = parseVerticalData(tenant, row);
+  const verticalData = parseVerticalData(tenant, row, category);
   const cgst = getNumber(row, ["CGST %"]) ?? 0;
   const sgst = getNumber(row, ["SGST %"]) ?? 0;
   const gstRate = tenant.gstEnabled ? cgst + sgst : 0;
-  const salesUnit = getString(row, ["Sales Unit", "Unit"]) ?? defaultUnit(tenant);
 
   return {
     data: {
       name,
-      sku: getString(row, ["Product ID", "Item Code"]) ?? null,
-      barcode: getString(row, ["Barcode"]) ?? null,
+      sku,
+      barcode,
       description: getString(row, ["Description"]) ?? null,
       partGroup: getString(row, ["Part / Group"]) ?? null,
-      legacySubCategoryId: getString(row, ["Sub Category ID"]) ?? null,
+      legacySubCategoryId,
       unit: salesUnit,
       mrp,
-      sellingPrice,
+      sellingPrice: sellingPrice ?? mrp,
       purchasePrice: getNumber(row, ["Purchase Price", "Food Cost"]) ?? null,
       wholesalePrice: getNumber(row, ["Wholesale Price"]) ?? null,
       defaultDiscountPercent: getNumber(row, ["Discount %"]) ?? null,
@@ -246,8 +241,8 @@ function parseProductRow(tenant: Tenant, row: ExcelRow): {
   };
 }
 
-function parseVerticalData(tenant: Tenant, row: ExcelRow): Record<string, unknown> {
-  const data: Record<string, unknown> = {};
+function parseVerticalData(tenant: Tenant, row: ExcelRow, category: string): Record<string, unknown> {
+  const data: Record<string, unknown> = { category };
   for (const column of verticalColumnMap[tenant.vertical]) {
     const key = column.key.replace("verticalData.", "");
     const value = column.header.toLowerCase().includes("required") || column.header === "Perishable"
@@ -380,11 +375,4 @@ function readText(data: Record<string, unknown>, key: string): string {
 function readBool(data: Record<string, unknown>, key: string): string {
   const value = data[key];
   return value === true ? "Yes" : value === false ? "No" : "";
-}
-
-function defaultUnit(tenant: Tenant): string {
-  if (tenant.vertical === "RESTAURANT") {
-    return "plate";
-  }
-  return "piece";
 }

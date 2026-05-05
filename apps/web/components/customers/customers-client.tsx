@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Save, Upload } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, Save, Upload } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -15,9 +15,6 @@ interface CustomerRecord {
   phone: string;
   email?: string | null;
   address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  postalCode?: string | null;
   remarks?: string | null;
   accountNo?: string | null;
   accountName?: string | null;
@@ -78,32 +75,14 @@ export function CustomersClient() {
       <section className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Add customer</div>
         {error ? <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
-        <form className="grid gap-3 md:grid-cols-2" onSubmit={handleCreate}>
-          <TextInput name="customerCode" label="Customer ID" />
-          <TextInput name="name" label="Name" required />
-          <TextInput name="phone" label="Phone" required />
-          <TextInput name="email" label="Email" type="email" />
-          <TextInput name="address" label="Address" />
-          <TextInput name="city" label="City" />
-          <TextInput name="state" label="State" />
-          <TextInput name="postalCode" label="Postal code" />
-          <TextInput name="gstin" label="GSTIN / UID" />
-          <TextInput name="pan" label="PAN" />
-          <TextInput name="cin" label="CIN" />
-          <TextInput name="openingBalanceType" label="Opening balance type" />
-          <TextInput name="openingBalance" label="Opening balance" type="number" />
-          <TextInput name="creditLimit" label="Credit limit" type="number" />
-          <TextInput name="creditDays" label="Turn around day" type="number" />
-          <TextInput name="itemDiscountPercent" label="Disc% on item" type="number" />
-          <TextInput name="accountNo" label="Account no." />
-          <TextInput name="accountName" label="Account name" />
-          <TextInput name="bank" label="Bank" />
-          <TextInput name="branch" label="Branch" />
-          <TextInput name="ifscCode" label="IFSC code" />
-          <TextInput name="remarks" label="Remarks" />
-          <CheckInput name="tcsEnabled" label="TCS" />
-          <CheckInput name="creditLimitEnabled" label="Limit status" />
-          <CheckInput name="itemDiscountEnabled" label="Discount status on item" />
+        <form className="grid gap-3" onSubmit={handleCreate}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <TextInput name="customerCode" label="Customer ID" required />
+            <TextInput name="name" label="Customer name" required />
+            <TextInput name="phone" label="Contact No." required />
+            <TextInput name="address" label="Address" required />
+          </div>
+          <CustomerOptionalFields />
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={createCustomer.isPending}>
             <Save className="size-4" aria-hidden="true" />
             Save customer
@@ -159,31 +138,11 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
   if (editing) {
     return (
       <form className="grid gap-3 p-4 md:grid-cols-2" onSubmit={handleSubmit}>
-        <TextInput name="customerCode" label="Customer ID" defaultValue={customer.customerCode ?? ""} />
-        <TextInput name="name" label="Name" defaultValue={customer.name} required />
-        <TextInput name="phone" label="Phone" defaultValue={customer.phone} required />
-        <TextInput name="email" label="Email" defaultValue={customer.email ?? ""} />
-        <TextInput name="address" label="Address" defaultValue={customer.address ?? ""} />
-        <TextInput name="city" label="City" defaultValue={customer.city ?? ""} />
-        <TextInput name="state" label="State" defaultValue={customer.state ?? ""} />
-        <TextInput name="postalCode" label="Postal code" defaultValue={customer.postalCode ?? ""} />
-        <TextInput name="gstin" label="GSTIN / UID" defaultValue={customer.gstin ?? ""} />
-        <TextInput name="pan" label="PAN" defaultValue={customer.pan ?? ""} />
-        <TextInput name="cin" label="CIN" defaultValue={customer.cin ?? ""} />
-        <TextInput name="openingBalanceType" label="Opening balance type" defaultValue={customer.openingBalanceType ?? ""} />
-        <TextInput name="openingBalance" label="Opening balance" type="number" defaultValue={String(customer.openingBalance ?? "")} />
-        <TextInput name="creditLimit" label="Credit limit" type="number" defaultValue={String(customer.creditLimit ?? "")} />
-        <TextInput name="creditDays" label="Turn around day" type="number" defaultValue={String(customer.creditDays ?? "")} />
-        <TextInput name="itemDiscountPercent" label="Disc% on item" type="number" defaultValue={String(customer.itemDiscountPercent ?? "")} />
-        <TextInput name="accountNo" label="Account no." defaultValue={customer.accountNo ?? ""} />
-        <TextInput name="accountName" label="Account name" defaultValue={customer.accountName ?? ""} />
-        <TextInput name="bank" label="Bank" defaultValue={customer.bank ?? ""} />
-        <TextInput name="branch" label="Branch" defaultValue={customer.branch ?? ""} />
-        <TextInput name="ifscCode" label="IFSC code" defaultValue={customer.ifscCode ?? ""} />
-        <TextInput name="remarks" label="Remarks" defaultValue={customer.remarks ?? ""} />
-        <CheckInput name="tcsEnabled" label="TCS" defaultChecked={customer.tcsEnabled} />
-        <CheckInput name="creditLimitEnabled" label="Limit status" defaultChecked={customer.creditLimitEnabled} />
-        <CheckInput name="itemDiscountEnabled" label="Discount status on item" defaultChecked={customer.itemDiscountEnabled} />
+        <TextInput name="customerCode" label="Customer ID" defaultValue={customer.customerCode ?? ""} required />
+        <TextInput name="name" label="Customer name" defaultValue={customer.name} required />
+        <TextInput name="phone" label="Contact No." defaultValue={customer.phone} required />
+        <TextInput name="address" label="Address" defaultValue={customer.address ?? ""} required />
+        <CustomerOptionalFields customer={customer} />
         <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2">Save changes</button>
       </form>
     );
@@ -194,7 +153,7 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
       <div>
         <div className="text-sm font-medium text-slate-950">{customer.name}</div>
         <div className="text-xs text-slate-500">{customer.phone}{customer.email ? ` | ${customer.email}` : ""}</div>
-        <div className="mt-1 text-xs text-slate-500">{customer.city ?? ""}{customer.gstin ? ` | GSTIN ${customer.gstin}` : ""}</div>
+        <div className="mt-1 text-xs text-slate-500">{customer.address ?? ""}{customer.gstin ? ` | GSTIN ${customer.gstin}` : ""}</div>
         <div className="mt-1 text-xs text-slate-500">Due {money(Number(customer.outstandingDue))} | Spent {money(customer.totalSpent ?? 0)}</div>
       </div>
       <div className="flex items-center gap-2">
@@ -202,6 +161,37 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
         <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
       </div>
     </div>
+  );
+}
+
+function CustomerOptionalFields({ customer }: Readonly<{ customer?: CustomerRecord }>) {
+  return (
+    <details className="rounded-md border border-border bg-slate-50 md:col-span-2">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700">
+        Additional details
+        <ChevronDown className="size-4 text-slate-500" aria-hidden="true" />
+      </summary>
+      <div className="grid gap-3 border-t border-border bg-white p-3 md:grid-cols-2">
+        <TextInput name="email" label="Email" type="email" defaultValue={customer?.email ?? ""} />
+        <TextInput name="gstin" label="GSTIN / UID" defaultValue={customer?.gstin ?? ""} />
+        <TextInput name="pan" label="PAN" defaultValue={customer?.pan ?? ""} />
+        <TextInput name="cin" label="CIN" defaultValue={customer?.cin ?? ""} />
+        <TextInput name="openingBalanceType" label="Opening balance type" defaultValue={customer?.openingBalanceType ?? ""} />
+        <TextInput name="openingBalance" label="Opening balance" type="number" defaultValue={String(customer?.openingBalance ?? "")} />
+        <TextInput name="creditLimit" label="Credit limit" type="number" defaultValue={String(customer?.creditLimit ?? "")} />
+        <TextInput name="creditDays" label="Turn around day" type="number" defaultValue={String(customer?.creditDays ?? "")} />
+        <TextInput name="itemDiscountPercent" label="Disc% on item" type="number" defaultValue={String(customer?.itemDiscountPercent ?? "")} />
+        <TextInput name="accountNo" label="Account no." defaultValue={customer?.accountNo ?? ""} />
+        <TextInput name="accountName" label="Account name" defaultValue={customer?.accountName ?? ""} />
+        <TextInput name="bank" label="Bank" defaultValue={customer?.bank ?? ""} />
+        <TextInput name="branch" label="Branch" defaultValue={customer?.branch ?? ""} />
+        <TextInput name="ifscCode" label="IFSC code" defaultValue={customer?.ifscCode ?? ""} />
+        <TextInput name="remarks" label="Remarks" defaultValue={customer?.remarks ?? ""} />
+        <CheckInput name="tcsEnabled" label="TCS" defaultChecked={customer?.tcsEnabled} />
+        <CheckInput name="creditLimitEnabled" label="Limit status" defaultChecked={customer?.creditLimitEnabled} />
+        <CheckInput name="itemDiscountEnabled" label="Discount status on item" defaultChecked={customer?.itemDiscountEnabled} />
+      </div>
+    </details>
   );
 }
 
@@ -230,9 +220,6 @@ function buildCustomerPayload(form: FormData): Record<string, unknown> {
     phone: formString(form, "phone"),
     email: formString(form, "email") || undefined,
     address: formString(form, "address") || undefined,
-    city: formString(form, "city") || undefined,
-    state: formString(form, "state") || undefined,
-    postalCode: formString(form, "postalCode") || undefined,
     remarks: formString(form, "remarks") || undefined,
     accountNo: formString(form, "accountNo") || undefined,
     accountName: formString(form, "accountName") || undefined,

@@ -4,12 +4,9 @@ import type { FastifyInstance } from "fastify";
 import { buildExcelHtml, getBoolean, getNumber, getString, parseWorkbookRows, sendExcelHtml, type ExcelColumn, type ExcelRow } from "./excel.js";
 
 const customerColumns: readonly ExcelColumn[] = [
-  { key: "customerCode", header: "Customer ID", required: false, sample: "CUST-001" },
+  { key: "customerCode", header: "Customer ID", required: true, sample: "CUST-001" },
   { key: "name", header: "Customer Name", required: true, sample: "John Doe" },
-  { key: "address", header: "Address", required: false, sample: "201, Main Road" },
-  { key: "city", header: "City", required: false, sample: "Hyderabad" },
-  { key: "state", header: "State", required: false, sample: "Telangana" },
-  { key: "postalCode", header: "Postal Code", required: false, sample: "500089" },
+  { key: "address", header: "Address", required: true, sample: "201, Main Road, Hyderabad, Telangana 500089" },
   { key: "phone", header: "Contact No.", required: true, sample: "9876543210" },
   { key: "email", header: "Email ID", required: false, sample: "customer@example.com" },
   { key: "remarks", header: "Remarks", required: false },
@@ -96,8 +93,16 @@ export async function importCustomers(fastify: FastifyInstance, tenant: Tenant, 
 function parseCustomerRow(row: ExcelRow) {
   const name = getString(row, ["Customer Name", "Name"]);
   const phone = getString(row, ["Contact No.", "Phone"]);
+  const customerCode = getString(row, ["Customer ID"]);
+  const address = getString(row, ["Address"]);
+  if (!customerCode) {
+    throw new Error("Customer ID is required");
+  }
   if (!name) {
     throw new Error("Customer Name is required");
+  }
+  if (!address) {
+    throw new Error("Address is required");
   }
   if (!phone) {
     throw new Error("Contact No. is required");
@@ -106,14 +111,14 @@ function parseCustomerRow(row: ExcelRow) {
   const openingBalanceType = getString(row, ["Opening Balance Type"])?.toUpperCase();
 
   return {
-    customerCode: getString(row, ["Customer ID"]) ?? null,
+    customerCode,
     name,
     phone,
     email: getString(row, ["Email ID", "Email"]) ?? null,
-    address: getString(row, ["Address"]) ?? null,
-    city: getString(row, ["City"]) ?? null,
-    state: getString(row, ["State"]) ?? null,
-    postalCode: getString(row, ["Postal Code"]) ?? null,
+    address,
+    city: null,
+    state: null,
+    postalCode: null,
     remarks: getString(row, ["Remarks"]) ?? null,
     accountNo: getString(row, ["Account No."]) ?? null,
     accountName: getString(row, ["Account Name"]) ?? null,
@@ -151,9 +156,6 @@ function customerToRow(customer: Customer): Record<string, unknown> {
     "Customer ID": customer.customerCode ?? "",
     "Customer Name": customer.name,
     Address: customer.address ?? "",
-    City: customer.city ?? "",
-    State: customer.state ?? "",
-    "Postal Code": customer.postalCode ?? "",
     "Contact No.": customer.phone,
     "Email ID": customer.email ?? "",
     Remarks: customer.remarks ?? "",

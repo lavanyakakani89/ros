@@ -156,11 +156,12 @@ export function QuotationsClient() {
   }
 
   function handleCreateCustomer() {
-    if (!newCustomerName.trim() || !newCustomerPhone.trim()) return;
+    if (!newCustomerName.trim() || !newCustomerPhone.trim() || !newCustomerAddress.trim()) return;
     createCustomer.mutate({
+      customerCode: `CUST-${newCustomerPhone.trim()}`,
       name: newCustomerName.trim(),
       phone: newCustomerPhone.trim(),
-      ...(newCustomerAddress.trim() ? { address: newCustomerAddress.trim() } : {}),
+      address: newCustomerAddress.trim(),
     });
   }
 
@@ -266,7 +267,7 @@ export function QuotationsClient() {
                     </div>
                     <input value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} placeholder="Customer name" className="h-9 rounded-md border border-border px-3 text-sm" />
                     <input value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} placeholder="Phone number" className="h-9 rounded-md border border-border px-3 text-sm" />
-                    <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address (optional)" className="h-9 rounded-md border border-border px-3 text-sm" />
+                    <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address" className="h-9 rounded-md border border-border px-3 text-sm" />
                     <button type="button" className="h-9 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-medium text-emerald-800" onClick={handleCreateCustomer} disabled={createCustomer.isPending}>Save customer</button>
                   </div>
                 ) : null}

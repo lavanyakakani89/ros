@@ -276,16 +276,17 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   }
 
   async function createCustomerInline() {
-    if (!newCustomerName.trim() || !newCustomerPhone.trim()) {
-      notify("Customer name and phone are required.", "red");
+    if (!newCustomerName.trim() || !newCustomerPhone.trim() || !newCustomerAddress.trim()) {
+      notify("Customer name, phone and address are required.", "red");
       return;
     }
 
     try {
       const customer = await createAuthenticatedApiClient().post<CustomerRecord>("/customers", {
+        customerCode: `CUST-${newCustomerPhone.trim()}`,
         name: newCustomerName.trim(),
         phone: newCustomerPhone.trim(),
-        ...(newCustomerAddress.trim() ? { address: newCustomerAddress.trim() } : {}),
+        address: newCustomerAddress.trim(),
       });
       setSelectedCustomer(customer);
       setCustomerSearch(`${customer.name} ${customer.phone}`);
@@ -630,7 +631,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
                 </div>
               <input value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} placeholder="Customer name" className="h-9 rounded-md border border-border px-3 text-sm" />
               <input value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} placeholder="Phone number" className="h-9 rounded-md border border-border px-3 text-sm" />
-              <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address (optional)" className="h-9 rounded-md border border-border px-3 text-sm" />
+              <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address" className="h-9 rounded-md border border-border px-3 text-sm" />
               <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-medium text-emerald-800" onClick={() => void createCustomerInline()}>
                 <UserPlus className="size-4" aria-hidden="true" />
                 Save customer
