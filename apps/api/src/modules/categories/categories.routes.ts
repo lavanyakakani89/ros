@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { FastifyPluginCallback } from "fastify";
+import type { FastifyInstance, FastifyPluginCallback } from "fastify";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -23,9 +23,11 @@ export const categoriesRoutes: FastifyPluginCallback = (fastify, _options, done)
 
   fastify.post("/api/categories", async (request) => {
     const input = createSchema.parse(request.body);
+    const code = await nextCategoryCode(fastify, request.tenant.id, Boolean(input.parentId));
     return fastify.prisma.category.create({
       data: {
         tenantId: request.tenant.id,
+        code,
         name: input.name,
         sortOrder: input.sortOrder,
         ...(input.parentId ? { parentId: input.parentId } : {}),
@@ -55,3 +57,22 @@ export const categoriesRoutes: FastifyPluginCallback = (fastify, _options, done)
 
   done();
 };
+
+async function nextCategoryCode(fastify: FastifyInstance, tenantId: string, isSubCategory: boolean): Promise<string> {
+  const prefix = isSubCategory ? "SC" : "C";
+  const categories = await fastify.prisma.category.findMany({
+    where: {
+      tenantId,
+      code: {
+        startsWith: prefix,
+      },
+      ...(isSubCategory ? { parentId: { not: null } } : { parentId: null }),
+    },
+    select: { code: true },
+  });
+  const next = categories.reduce((highest, category) => {
+    const suffix = Number(category.code.slice(prefix.length));
+    return Number.isFinite(suffix) ? Math.max(highest, suffix) : highest;
+  }, 0) + 1;
+  return `${prefix}${next.toString().padStart(3, "0")}`;
+}

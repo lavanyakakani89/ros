@@ -160,7 +160,7 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     if (typeof category !== "string" || category.trim() === "") {
     throw new Error("Category is required");
   }
-  const subCategoryId = requireString(payload.legacySubCategoryId, "Sub category ID is required");
+  const subCategoryId = requireString(payload.legacySubCategoryId, "Sub category code is required");
 
   return {
     name: requireString(payload.name, "Product name is required"),
@@ -253,7 +253,7 @@ const requiredProductFieldKeys = [
 const importExportFields: readonly VerticalField[] = [
   { key: "verticalData.category", label: "Category", type: "text", required: true, vertical: true },
   { key: "description", label: "Description", type: "text", required: false },
-  { key: "legacySubCategoryId", label: "Sub category ID", type: "text", required: true },
+  { key: "legacySubCategoryId", label: "Sub category code", type: "text", required: true },
   { key: "partGroup", label: "Part / group", type: "text", required: false },
   { key: "wholesalePrice", label: "Wholesale price (₹)", type: "decimal", required: false },
   { key: "defaultDiscountPercent", label: "Discount %", type: "decimal", required: false },
@@ -280,7 +280,7 @@ function normalizeProductField(field: VerticalField): VerticalField {
     sku: { label: "Product ID", required: true },
     name: { label: "Product name", required: true },
     barcode: { label: "Barcode", required: true },
-    legacySubCategoryId: { label: "Sub category ID", required: true },
+    legacySubCategoryId: { label: "Sub category code", required: true },
     salesUnit: { label: "Sales unit", required: true },
     mrp: { label: "MRP", required: true },
     unit: { label: "Base unit", required: false },

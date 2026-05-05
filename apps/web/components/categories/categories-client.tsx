@@ -8,6 +8,7 @@ import { createAuthenticatedApiClient } from "@/lib/api-client";
 
 interface Category {
   id: string;
+  code: string;
   name: string;
   description?: string | null;
   parentId?: string | null;
@@ -60,7 +61,7 @@ export function CategoriesClient() {
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="h-10 flex-1 min-w-[160px] rounded-md border border-border px-3 text-sm" />
           <select value={parentId} onChange={(e) => setParentId(e.target.value)} className="h-10 rounded-md border border-border px-3 text-sm">
             <option value="">Root category</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
           </select>
           <button type="submit" disabled={createCategory.isPending} className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white disabled:opacity-50">
             <Plus className="size-4" />Add
@@ -95,10 +96,10 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
 }) {
   const [copied, setCopied] = useState(false);
   const children = allCategories.filter((c) => c.parentId === category.id);
-  const idLabel = depth > 0 ? "Sub Category ID" : "Category ID";
+  const idLabel = depth > 0 ? "Sub Category Code" : "Category Code";
 
   async function copyId() {
-    await navigator.clipboard.writeText(category.id);
+    await navigator.clipboard.writeText(category.code);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
   }
@@ -113,7 +114,7 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
             {category.description && <div className="text-xs text-slate-500">{category.description}</div>}
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-400">
               <span>{category._count?.products ?? 0} products</span>
-              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">{idLabel}: {category.id}</span>
+              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] text-slate-600">{idLabel}: {category.code}</span>
               <button type="button" onClick={() => void copyId()} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
                 {copied ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
                 {copied ? "Copied" : "Copy ID"}

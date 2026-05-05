@@ -16,12 +16,12 @@ export class InventoryError extends Error {
 export class InventoryService {
   private readonly repository: InventoryRepository;
 
-  constructor(fastify: FastifyInstance) {
+  constructor(private readonly fastify: FastifyInstance) {
     this.repository = new InventoryRepository(fastify.prisma);
   }
 
-  createProduct(tenant: Tenant, input: CreateProductInput) {
-    return this.repository.createProduct(tenant.id, input);
+  async createProduct(tenant: Tenant, input: CreateProductInput) {
+    return this.repository.createProduct(tenant.id, await this.normalizeProductCategory(tenant.id, input, true));
   }
 
   listProducts(tenant: Tenant, query: ProductListQuery) {
@@ -29,12 +29,52 @@ export class InventoryService {
   }
 
   async updateProduct(tenant: Tenant, productId: string, input: UpdateProductInput) {
-    const result = await this.repository.updateProduct(tenant.id, productId, input);
+    const result = await this.repository.updateProduct(tenant.id, productId, await this.normalizeProductCategory(tenant.id, input, false));
     if (result.count === 0) {
       throw new InventoryError("Product not found", 404);
     }
 
     return this.repository.findProduct(tenant.id, productId);
+  }
+
+  private async normalizeProductCategory<T extends CreateProductInput | UpdateProductInput>(tenantId: string, input: T, requireCategory: boolean): Promise<T> {
+    if (!input.legacySubCategoryId) {
+      return input;
+    }
+
+    const categoryName = readCategoryName(input.verticalData);
+    if (requireCategory && !categoryName) {
+      throw new InventoryError("Category is required", 400);
+    }
+
+    const category = await this.fastify.prisma.category.findFirst({
+      where: {
+        tenantId,
+        isActive: true,
+        OR: [
+          { code: input.legacySubCategoryId.toUpperCase() },
+          { id: input.legacySubCategoryId },
+        ],
+      },
+      include: { parent: true },
+    });
+    if (!category) {
+      throw new InventoryError(`Sub Category Code ${input.legacySubCategoryId} was not found`, 400);
+    }
+    const expectedCategoryName = category.parent?.name ?? category.name;
+    if (categoryName && expectedCategoryName.trim().toLowerCase() !== categoryName.trim().toLowerCase()) {
+      throw new InventoryError(`Sub Category Code ${input.legacySubCategoryId} is under Category ${expectedCategoryName}, not ${categoryName}`, 400);
+    }
+
+    return {
+      ...input,
+      legacySubCategoryId: category.code,
+      categoryId: category.id,
+      verticalData: {
+        ...(input.verticalData ?? {}),
+        category: categoryName ?? category.name,
+      },
+    };
   }
 
   async deleteProduct(tenant: Tenant, productId: string) {
@@ -79,4 +119,9 @@ export class InventoryService {
 
     return adjustment;
   }
+}
+
+function readCategoryName(verticalData: Record<string, unknown> | undefined): string | undefined {
+  const category = verticalData?.category;
+  return typeof category === "string" && category.trim().length > 0 ? category : undefined;
 }
