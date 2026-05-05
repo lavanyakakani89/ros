@@ -8,7 +8,7 @@ import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, re
 import type { ProductRecord } from "@/lib/api-client";
 import { useBillingStore } from "@/lib/billing-store";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
-import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
+import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
 
 const PAYMENT_SHORTCUTS = [
   { mode: "CASH", key: "1", displayKey: "Ctrl+1", label: "Cash" },
@@ -118,7 +118,6 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   const printerQuery = useQuery({
     queryKey: ["printer", "billing"],
     queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
-    enabled: hasStoredAuthSession(),
   });
   const products = productsQuery.data?.data ?? [];
   const customerResults = customersQuery.data?.data ?? [];
@@ -241,17 +240,34 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   });
 
   async function syncNow() {
-    if (!hasStoredAuthSession()) {
+    const hasSession = await ensureAuthenticatedSession();
+    if (!hasSession) {
       notify("Sign in before syncing.", "red");
       return;
     }
 
     await syncPendingInvoices(async () => {
-      await refreshAuthSession();
+      const auth = await refreshAuthSession();
+      storeAuthSession(auth);
       return createAuthenticatedApiClient();
     });
     setQueueCounts(await getPendingInvoiceCounts());
     notify("Offline queue synced.");
+  }
+
+  async function ensureAuthenticatedSession(): Promise<boolean> {
+    if (hasStoredAuthSession()) {
+      return true;
+    }
+
+    try {
+      const auth = await refreshAuthSession();
+      storeAuthSession(auth);
+      await queryClient.invalidateQueries({ queryKey: ["printer", "billing"] });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function notify(message: string, tone: "green" | "red" = "green") {
@@ -409,7 +425,8 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         return;
       }
 
-      if (!hasStoredAuthSession()) {
+      const hasSession = await ensureAuthenticatedSession();
+      if (!hasSession) {
         notify("Session expired. Please sign in again before confirming this bill.", "red");
         return;
       }
@@ -517,7 +534,12 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   }
 
   async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string) {
-    const printer = printerQuery.data?.printer;
+    const printer =
+      printerQuery.data?.printer ??
+      (await createAuthenticatedApiClient()
+        .get<PrinterResponse>("/printer")
+        .then((response) => response.printer)
+        .catch(() => null));
     if (!printer?.isActive || printer.connectionType === "NONE") {
       await downloadInvoicePdf(invoiceId, invoiceNumber);
       notify("Invoice confirmed. PDF downloaded.");

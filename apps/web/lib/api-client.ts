@@ -99,7 +99,11 @@ export async function refreshAuthSession(): Promise<AuthResponse> {
 }
 
 export async function logout(): Promise<void> {
-  await postJson("/auth/logout", {});
+  try {
+    await postJson("/auth/logout", {});
+  } finally {
+    clearBrowserSession();
+  }
 }
 
 export async function getCurrentVerticalConfig(): Promise<{

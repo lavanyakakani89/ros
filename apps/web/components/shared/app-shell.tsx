@@ -2,13 +2,13 @@
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { AlertTriangle, CreditCard, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { AlertTriangle, CreditCard, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { createAuthenticatedApiClient, getCurrentVerticalConfig } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
 import { dashboardItem, groupedNavigation } from "@/lib/navigation-groups";
 import { cn } from "@/lib/utils";
 import {
@@ -129,6 +129,11 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     });
   }
 
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
+  }
+
   return (
     <div className="min-h-screen bg-surface text-ink">
       <aside className={cn("fixed inset-y-0 left-0 hidden border-r border-border bg-white transition-[width] duration-200 lg:block", sidebarCollapsed ? "w-20" : "w-64")}>
@@ -185,6 +190,14 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 <span className={cn("block size-2.5 rounded-full", online ? "bg-emerald-500" : "bg-red-500")} />
               </div>
               <div className="flex size-9 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">{initials}</div>
+              <button
+                className="inline-flex size-9 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-slate-50"
+                onClick={() => void handleLogout()}
+                title="Logout"
+                aria-label="Logout"
+              >
+                <LogOut className="size-4" aria-hidden="true" />
+              </button>
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto border-t border-border px-2 py-2 lg:hidden" aria-label="Main navigation">
