@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, Download, History, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { BookMarked, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
@@ -70,7 +70,7 @@ interface LastBill {
   pdfViewUrl: string;
 }
 
-export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: () => void }>) {
+export function PosInvoicePanel() {
   const queryClient = useQueryClient();
   const { lines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -80,12 +80,14 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   const [status, setStatus] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<"green" | "red">("green");
   const [customerSearch, setCustomerSearch] = useState("");
+  const [customerHighlightIndex, setCustomerHighlightIndex] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
   const [showNewCustomerForm, setShowNewCustomerForm] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
+  const [productHighlightIndex, setProductHighlightIndex] = useState(0);
   const [billDiscount, setBillDiscount] = useState(0);
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
   const [useSplit, setUseSplit] = useState(false);
@@ -121,6 +123,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   });
   const products = productsQuery.data?.data ?? [];
   const customerResults = customersQuery.data?.data ?? [];
+  const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults.slice(0, 4) : [];
   const productResults = useMemo(() => {
     const term = barcodeInput.trim().toLowerCase();
     if (!term) return [];
@@ -188,6 +191,14 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       .then((data) => setLoyaltyBalance(data.points))
       .catch(() => setLoyaltyBalance(null));
   }, [selectedCustomer]);
+
+  useEffect(() => {
+    setCustomerHighlightIndex(0);
+  }, [customerSearch, visibleCustomerResults.length]);
+
+  useEffect(() => {
+    setProductHighlightIndex(0);
+  }, [barcodeInput, productResults.length]);
 
   useEffect(() => {
     async function refreshCounts() {
@@ -294,11 +305,35 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
     barcodeRef.current?.focus();
   }
 
+  function selectCustomer(customer: CustomerRecord) {
+    setSelectedCustomer(customer);
+    setCustomerSearch(`${customer.name} ${customer.phone}`);
+    setShowNewCustomerForm(false);
+  }
+
   function handleBarcodeKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" && productResults.length > 0) {
+      event.preventDefault();
+      setProductHighlightIndex((index) => (index + 1) % productResults.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp" && productResults.length > 0) {
+      event.preventDefault();
+      setProductHighlightIndex((index) => (index - 1 + productResults.length) % productResults.length);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setBarcodeInput("");
+      return;
+    }
+
     if (event.key !== "Enter" || !barcodeInput.trim()) return;
     const code = barcodeInput.trim();
     const codeLower = code.toLowerCase();
     const product =
+      productResults[productHighlightIndex] ??
       products.find((item) => item.barcode === code || item.sku === code) ??
       products.find((item) => item.name.toLowerCase().includes(codeLower));
     if (!product) {
@@ -309,6 +344,32 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
 
     insertProduct(product);
     setBarcodeInput("");
+  }
+
+  function handleCustomerSearchKey(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" && visibleCustomerResults.length > 0) {
+      event.preventDefault();
+      setCustomerHighlightIndex((index) => (index + 1) % visibleCustomerResults.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp" && visibleCustomerResults.length > 0) {
+      event.preventDefault();
+      setCustomerHighlightIndex((index) => (index - 1 + visibleCustomerResults.length) % visibleCustomerResults.length);
+      return;
+    }
+
+    if (event.key === "Enter" && visibleCustomerResults[customerHighlightIndex]) {
+      event.preventDefault();
+      selectCustomer(visibleCustomerResults[customerHighlightIndex]);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setCustomerSearch("");
+      setSelectedCustomer(null);
+      setShowNewCustomerForm(false);
+    }
   }
 
   async function createCustomerInline() {
@@ -324,9 +385,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         phone: newCustomerPhone.trim(),
         address: newCustomerAddress.trim(),
       });
-      setSelectedCustomer(customer);
-      setCustomerSearch(`${customer.name} ${customer.phone}`);
-      setShowNewCustomerForm(false);
+      selectCustomer(customer);
       setNewCustomerName("");
       setNewCustomerPhone("");
       setNewCustomerAddress("");
@@ -465,7 +524,6 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         });
       }
 
-      await createAuthenticatedApiClient().post(`/billing/invoices/${created.id}/pdf`, {});
       const pdfViewUrl = apiUrl(`/billing/invoices/${created.id}/pdf/view`);
       const nextBill = {
         id: created.id,
@@ -483,6 +541,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       };
       setLastBill(nextBill);
       await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
+      await queryClient.invalidateQueries({ queryKey: ["invoices"] });
     } catch (error) {
       if (isNetworkError(error)) {
         await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
@@ -534,19 +593,20 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   }
 
   async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string) {
-    const printer =
-      printerQuery.data?.printer ??
-      (await createAuthenticatedApiClient()
-        .get<PrinterResponse>("/printer")
-        .then((response) => response.printer)
-        .catch(() => null));
-    if (!printer?.isActive || printer.connectionType === "NONE") {
-      await downloadInvoicePdf(invoiceId, invoiceNumber);
-      notify("Invoice confirmed. PDF downloaded.");
-      return;
-    }
-
     try {
+      const printer =
+        printerQuery.data?.printer ??
+        (await createAuthenticatedApiClient()
+          .get<PrinterResponse>("/printer")
+          .then((response) => response.printer)
+          .catch(() => null));
+
+      if (!printer?.isActive || printer.connectionType === "NONE") {
+        await downloadInvoicePdf(invoiceId, invoiceNumber);
+        notify("Invoice confirmed. PDF downloaded.");
+        return;
+      }
+
       const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${invoiceId}/print`, {});
       if (result.status === "printed" || result.status === "queued") {
         notify(result.message || "Invoice printed.");
@@ -561,8 +621,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       await downloadInvoicePdf(invoiceId, invoiceNumber);
       notify(`${result.message || "Printer not available."} PDF downloaded instead.`);
     } catch (error) {
-      await downloadInvoicePdf(invoiceId, invoiceNumber);
-      notify(`${error instanceof Error ? error.message : "Printer failed."} PDF downloaded instead.`, "red");
+      notify(`Invoice confirmed. Output failed: ${error instanceof Error ? error.message : "PDF or printer failed."}`, "red");
     }
   }
 
@@ -640,12 +699,6 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
               <RefreshCcw className="size-4" aria-hidden="true" />
               Sync
             </button>
-            {onOpenHistory ? (
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100" onClick={onOpenHistory}>
-                <History className="size-4" aria-hidden="true" />
-                History
-              </button>
-            ) : null}
             {heldBills.length > 0 ? (
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => setShowHeld((value) => !value)}>
                 <BookMarked className="size-4" aria-hidden="true" />
@@ -686,6 +739,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
                   setSelectedCustomer(null);
                   setShowNewCustomerForm(false);
                 }}
+                onKeyDown={handleCustomerSearchKey}
                 placeholder="Name or phone"
                 className="min-w-0 flex-1 text-sm outline-none"
               />
@@ -698,8 +752,12 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
                 </div>
               ) : null}
               {customerSearch && !selectedCustomer
-                ? customerResults.slice(0, 4).map((customer) => (
-                    <button key={customer.id} className="rounded-md border border-slate-200 px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50" onClick={() => setSelectedCustomer(customer)}>
+                ? visibleCustomerResults.map((customer, index) => (
+                    <button
+                      key={customer.id}
+                      className={`rounded-md border px-2 py-1 text-left text-xs ${index === customerHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                      onClick={() => selectCustomer(customer)}
+                    >
                       {customer.name} | {customer.phone}
                     </button>
                   ))
@@ -739,10 +797,10 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
             <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder="Scan barcode, SKU, or type product name + Enter" className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
             {barcodeInput.trim() ? (
               <div className="mt-2 grid gap-1">
-                {productResults.length > 0 ? productResults.map((product) => (
+                {productResults.length > 0 ? productResults.map((product, index) => (
                   <button
                     key={product.id}
-                    className="rounded-md border border-slate-200 px-2 py-1 text-left text-xs text-slate-700 hover:bg-slate-50"
+                    className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
                     onClick={() => {
                       insertProduct(product);
                       setBarcodeInput("");
