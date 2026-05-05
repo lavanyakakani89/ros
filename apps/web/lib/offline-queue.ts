@@ -88,6 +88,7 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
           invoiceId: created.id,
         });
       }
+      await apiClient.post(`/billing/invoices/${created.id}/pdf`, {});
       await offlineDB.pendingInvoices.delete(invoice.id);
     } catch {
       await offlineDB.pendingInvoices.update(invoice.id, {

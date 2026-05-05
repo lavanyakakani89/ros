@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, History, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { BookMarked, Download, History, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, listProducts, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import { useBillingStore } from "@/lib/billing-store";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
@@ -18,6 +18,7 @@ const PAYMENT_SHORTCUTS = [
 ] as const;
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
+type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH";
 
 interface SplitEntry {
   mode: PaymentMode;
@@ -31,6 +32,20 @@ interface CustomerRecord {
   address?: string | null;
   creditLimit?: number | null;
   outstandingDue?: number | null;
+}
+
+interface PrinterConfig {
+  connectionType: PrinterConnectionType;
+  isActive: boolean;
+}
+
+interface PrinterResponse {
+  printer: PrinterConfig | null;
+}
+
+interface PrinterResult {
+  status: string;
+  message: string;
 }
 
 interface LastBill {
@@ -99,6 +114,11 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       createAuthenticatedApiClient().get<{ data: CustomerRecord[] }>(
         `/customers?limit=20${customerSearch ? `&search=${encodeURIComponent(customerSearch)}` : ""}`,
       ),
+  });
+  const printerQuery = useQuery({
+    queryKey: ["printer", "billing"],
+    queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
+    enabled: hasStoredAuthSession(),
   });
   const products = productsQuery.data?.data ?? [];
   const customerResults = customersQuery.data?.data ?? [];
@@ -383,18 +403,14 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
     const billSnapshot = createBillPreviewSnapshot(activeLines, totals, paymentMode, selectedCustomer);
 
     try {
-      if (!online || !hasStoredAuthSession()) {
-        await queueInvoice(
-          {
-            invoice: invoicePayload,
-            ...(deliveryPayload ? { delivery: deliveryPayload } : {}),
-            autoPay: { mode: paymentMode },
-          },
-          "local-tenant",
-        );
-        setQueueCounts(await getPendingInvoiceCounts());
-        notify(online ? "Invoice queued until sign in." : "Invoice queued offline.");
+      if (!online) {
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
         clearBill();
+        return;
+      }
+
+      if (!hasStoredAuthSession()) {
+        notify("Session expired. Please sign in again before confirming this bill.", "red");
         return;
       }
 
@@ -412,7 +428,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
       } else if (paymentMode !== "CREDIT") {
         await createAuthenticatedApiClient().post("/payments", {
           invoiceId: created.id,
-          amount: Number(created.grandTotal),
+          amount: Number(confirmed.grandTotal),
           mode: paymentMode,
         });
       }
@@ -434,7 +450,7 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
 
       await createAuthenticatedApiClient().post(`/billing/invoices/${created.id}/pdf`, {});
       const pdfViewUrl = apiUrl(`/billing/invoices/${created.id}/pdf/view`);
-      setLastBill({
+      const nextBill = {
         id: created.id,
         invoiceNumber: confirmed.invoiceNumber,
         grandTotal: Number(confirmed.grandTotal),
@@ -447,13 +463,37 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         customer: billSnapshot.customer,
         lines: billSnapshot.lines,
         pdfViewUrl,
-      });
-      notify("Invoice confirmed. Bill is ready to print.");
+      };
+      setLastBill(nextBill);
+      await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
     } catch (error) {
+      if (isNetworkError(error)) {
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
+        clearBill();
+        return;
+      }
+
       notify(error instanceof Error ? error.message : "Unable to create invoice.", "red");
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function queueOfflineInvoice(
+    invoicePayload: object,
+    deliveryPayload: { customerId: string; deliveryAddress: string; notes?: string } | undefined,
+    paymentMode: PaymentMode,
+  ) {
+    await queueInvoice(
+      {
+        invoice: invoicePayload,
+        ...(deliveryPayload ? { delivery: deliveryPayload } : {}),
+        autoPay: { mode: paymentMode },
+      },
+      getStoredTenant()?.slug ?? "local-tenant",
+    );
+    setQueueCounts(await getPendingInvoiceCounts());
+    notify("Invoice saved offline. It will sync when internet and sign-in are available.");
   }
 
   async function shareWhatsApp() {
@@ -469,11 +509,43 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
   async function printThermalInvoice() {
     if (!lastBill) return;
     try {
-      const result = await createAuthenticatedApiClient().post<{ status: string; message: string }>(`/billing/invoices/${lastBill.id}/print`, {});
+      const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${lastBill.id}/print`, {});
       notify(result.message || `Printer status: ${result.status}`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Thermal print failed.", "red");
     }
+  }
+
+  async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string) {
+    const printer = printerQuery.data?.printer;
+    if (!printer?.isActive || printer.connectionType === "NONE") {
+      await downloadInvoicePdf(invoiceId, invoiceNumber);
+      notify("Invoice confirmed. PDF downloaded.");
+      return;
+    }
+
+    try {
+      const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${invoiceId}/print`, {});
+      if (result.status === "printed" || result.status === "queued") {
+        notify(result.message || "Invoice printed.");
+        return;
+      }
+
+      if (result.status === "bluetooth_payload") {
+        notify("Invoice confirmed. Bluetooth printer payload is ready from the Thermal button.");
+        return;
+      }
+
+      await downloadInvoicePdf(invoiceId, invoiceNumber);
+      notify(`${result.message || "Printer not available."} PDF downloaded instead.`);
+    } catch (error) {
+      await downloadInvoicePdf(invoiceId, invoiceNumber);
+      notify(`${error instanceof Error ? error.message : "Printer failed."} PDF downloaded instead.`, "red");
+    }
+  }
+
+  async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string) {
+    await downloadApiFile(`/billing/invoices/${invoiceId}/pdf/view`, `${invoiceNumber}.pdf`);
   }
 
   function clearBill() {
@@ -828,7 +900,8 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
         </div>
 
         <div className="mt-4 rounded-md border border-border bg-slate-50 p-2 text-xs text-slate-600">
-          Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
+          Network: {online ? "online" : "offline"} | Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
+          <div className="mt-1">Offline bills sync after sign-in and internet restore. PDF/print is available after sync.</div>
           <div className="mt-1">Shortcuts: Ctrl+H hold | Ctrl+N new bill | Ctrl+P print preview</div>
         </div>
 
@@ -922,9 +995,10 @@ export function PosInvoicePanel({ onOpenHistory }: Readonly<{ onOpenHistory?: ()
                 <Printer className="size-4" aria-hidden="true" />
                 Thermal
               </button>
-              <a className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-900" href={lastBill.pdfViewUrl} target="_blank">
+              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-900" onClick={() => void downloadInvoicePdf(lastBill.id, lastBill.invoiceNumber)}>
+                <Download className="size-4" aria-hidden="true" />
                 PDF
-              </a>
+              </button>
               {lastBill.customer ? (
                 <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => void shareWhatsApp()}>
                   <MessageCircle className="size-4" aria-hidden="true" />
@@ -964,4 +1038,13 @@ function roundMoney(value: number): number {
 
 function decimalToNumber(value: string | number): number {
   return typeof value === "number" ? value : Number(value);
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("failed to fetch") || message.includes("networkerror") || message.includes("load failed");
 }
