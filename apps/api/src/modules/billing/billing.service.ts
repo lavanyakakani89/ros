@@ -119,7 +119,7 @@ export class BillingService {
   async generateInvoicePdf(tenant: Tenant, invoiceId: string) {
     const invoice = await this.getInvoice(tenant, invoiceId);
     const template = await getEffectiveTemplate(this.fastify, tenant);
-    const objectName = await this.renderInvoicePdfWithFallback({
+    const objectName = await this.renderInvoicePdf({
       tenant,
       invoice,
       template,
@@ -131,18 +131,13 @@ export class BillingService {
     return {
       objectName,
       downloadUrl: invoicePdfViewUrl(invoiceId),
+      templateId: template?.id ?? null,
+      templateName: template?.name ?? "RetailOS default",
+      renderType: template?.renderType ?? "HTML_PDF",
     };
   }
 
   async getInvoicePdfUrl(tenant: Tenant, invoiceId: string) {
-    const invoice = await this.getInvoice(tenant, invoiceId);
-    if (invoice.pdfUrl) {
-      return {
-        objectName: invoice.pdfUrl,
-        downloadUrl: invoicePdfViewUrl(invoiceId),
-      };
-    }
-
     return this.generateInvoicePdf(tenant, invoiceId);
   }
 
@@ -155,7 +150,7 @@ export class BillingService {
     });
   }
 
-  private async renderInvoicePdfWithFallback(input: {
+  private async renderInvoicePdf(input: {
     tenant: Tenant;
     invoice: Awaited<ReturnType<BillingService["getInvoice"]>>;
     template: InvoiceTemplate | null;
@@ -180,39 +175,7 @@ export class BillingService {
         },
         "Invoice PDF generation failed",
       );
-
-      if (input.template) {
-        try {
-          const objectName = await generateGstInvoicePdf({
-            invoice: input.invoice,
-            tenant: input.tenant,
-            minio: this.fastify.minio,
-            bucket: this.fastify.minioBucket,
-            template: null,
-          });
-          this.fastify.log.warn(
-            {
-              invoiceId: input.invoiceId,
-              tenantId: input.tenant.id,
-              failedTemplateId: input.template.id,
-            },
-            "Invoice PDF generated with default fallback template",
-          );
-          return objectName;
-        } catch (fallbackError) {
-          this.fastify.log.error(
-            {
-              error: fallbackError,
-              invoiceId: input.invoiceId,
-              tenantId: input.tenant.id,
-            },
-            "Fallback invoice PDF generation failed",
-          );
-          throw new BillingError(`Invoice PDF generation failed: ${safeErrorMessage(fallbackError)}`, 502);
-        }
-      }
-
-      throw new BillingError(`Invoice PDF generation failed: ${safeErrorMessage(error)}`, 502);
+      throw new BillingError(`Selected invoice template failed: ${safeErrorMessage(error)}`, 502);
     }
   }
 

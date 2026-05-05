@@ -141,16 +141,49 @@ export const templatesRoutes: FastifyPluginCallback = (fastify, _options, done) 
     const template = await fastify.prisma.invoiceTemplate.findFirst({
       where: {
         id: params.id,
-        tenantId: request.tenant.id,
+        OR: [
+          {
+            tenantId: request.tenant.id,
+          },
+          {
+            tenantId: null,
+            isSystem: true,
+          },
+        ],
       },
     });
 
     if (!template) {
-      return reply.status(404).send({ error: "Only cloned shop templates can be made the shop default" });
+      return reply.status(404).send({ error: "Template not found" });
     }
 
-    await fastify.prisma.$transaction([
-      fastify.prisma.invoiceTemplate.updateMany({
+    const activeTemplate = await fastify.prisma.$transaction(async (tx) => {
+      let shopTemplate = template;
+
+      if (template.tenantId === null) {
+        shopTemplate = await tx.invoiceTemplate.findFirst({
+          where: {
+            tenantId: request.tenant.id,
+            clonedFromId: template.id,
+          },
+        }) ?? await tx.invoiceTemplate.create({
+          data: {
+            tenantId: request.tenant.id,
+            name: `${template.name} active`,
+            description: template.description,
+            paperSize: template.paperSize,
+            renderType: template.renderType,
+            htmlSource: template.htmlSource,
+            escposConfig: jsonForWrite(template.escposConfig),
+            uiConfig: jsonForWrite(template.uiConfig),
+            isSystem: false,
+            isLocked: false,
+            clonedFromId: template.id,
+          },
+        });
+      }
+
+      await tx.invoiceTemplate.updateMany({
         where: {
           tenantId: request.tenant.id,
           isDefault: true,
@@ -158,18 +191,19 @@ export const templatesRoutes: FastifyPluginCallback = (fastify, _options, done) 
         data: {
           isDefault: false,
         },
-      }),
-      fastify.prisma.invoiceTemplate.update({
+      });
+
+      return tx.invoiceTemplate.update({
         where: {
-          id: params.id,
+          id: shopTemplate.id,
         },
         data: {
           isDefault: true,
         },
-      }),
-    ]);
+      });
+    });
 
-    return { status: "ok" };
+    return { status: "ok", template: activeTemplate };
   });
 
   fastify.get("/api/templates/:id/preview", async (request, reply) => {

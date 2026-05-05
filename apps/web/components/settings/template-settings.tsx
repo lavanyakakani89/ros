@@ -29,6 +29,11 @@ interface TemplatesResponse {
   effectiveTemplateId?: string | null;
 }
 
+interface SetDefaultResponse {
+  status: string;
+  template: InvoiceTemplate;
+}
+
 interface PreviewResponse {
   renderType: RenderType;
   previewHtml?: string;
@@ -44,10 +49,15 @@ export function TemplateSettings() {
     queryKey: ["invoice-templates"],
     queryFn: () => createAuthenticatedApiClient().get<TemplatesResponse>("/templates"),
   });
-  const selectedTemplate = useMemo(
-    () => templatesQuery.data?.templates.find((template) => template.id === selectedId) ?? templatesQuery.data?.templates[0] ?? null,
-    [selectedId, templatesQuery.data?.templates],
-  );
+  const selectedTemplate = useMemo(() => {
+    const templates = templatesQuery.data?.templates ?? [];
+    return (
+      templates.find((template) => template.id === selectedId) ??
+      templates.find((template) => template.id === templatesQuery.data?.effectiveTemplateId) ??
+      templates[0] ??
+      null
+    );
+  }, [selectedId, templatesQuery.data?.effectiveTemplateId, templatesQuery.data?.templates]);
   const tenantTemplates = templatesQuery.data?.templates.filter((template) => !template.isSystem) ?? [];
   const systemTemplates = templatesQuery.data?.templates.filter((template) => template.isSystem) ?? [];
 
@@ -75,8 +85,9 @@ export function TemplateSettings() {
     },
   });
   const setDefault = useMutation({
-    mutationFn: (id: string) => createAuthenticatedApiClient().post(`/templates/${id}/set-default`, {}),
-    onSuccess: async () => {
+    mutationFn: (id: string) => createAuthenticatedApiClient().post<SetDefaultResponse>(`/templates/${id}/set-default`, {}),
+    onSuccess: async (result) => {
+      setSelectedId(result.template.id);
       setMessage("Default template updated.");
       await queryClient.invalidateQueries({ queryKey: ["invoice-templates"] });
     },
@@ -123,10 +134,16 @@ export function TemplateSettings() {
               effective={templatesQuery.data?.effectiveTemplateId === template.id}
               onSelect={() => setSelectedId(template.id)}
               action={
-                <button className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2 text-xs" onClick={() => cloneTemplate.mutate(template.id)}>
-                  <Copy className="size-3" aria-hidden="true" />
-                  Clone
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-xs text-emerald-800" onClick={() => setDefault.mutate(template.id)}>
+                    <Star className="size-3" aria-hidden="true" />
+                    Use
+                  </button>
+                  <button className="inline-flex h-8 items-center gap-1 rounded-md border border-border px-2 text-xs" onClick={() => cloneTemplate.mutate(template.id)}>
+                    <Copy className="size-3" aria-hidden="true" />
+                    Clone
+                  </button>
+                </div>
               }
             />
           ))}
@@ -147,7 +164,7 @@ export function TemplateSettings() {
               action={
                 <button className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-xs text-emerald-800" onClick={() => setDefault.mutate(template.id)}>
                   <Star className="size-3" aria-hidden="true" />
-                  Default
+                  Use
                 </button>
               }
             />

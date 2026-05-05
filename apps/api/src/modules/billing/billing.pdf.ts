@@ -60,7 +60,10 @@ export async function generateGstInvoicePdf(input: {
     const pdfBuffer = await page.pdf(input.template?.renderType === RenderType.ESC_POS
       ? { printBackground: true, preferCSSPageSize: true }
       : { format: pdfFormat(input.template?.paperSize), printBackground: true });
-    const filename = `invoices/${input.tenant.id}/${input.invoice.invoiceNumber}.pdf`;
+    const templateKey = input.template
+      ? `${input.template.id}-v${String(input.template.version)}`
+      : "retailos-default";
+    const filename = `invoices/${input.tenant.id}/${input.invoice.invoiceNumber}-${templateKey}.pdf`;
 
     await input.minio.putObject(input.bucket, filename, Buffer.from(pdfBuffer), pdfBuffer.length, {
       "Content-Type": "application/pdf",
