@@ -1,4 +1,4 @@
-import type { Product, Tenant } from "@prisma/client";
+import type { InvoiceTemplate, Product, Tenant } from "@prisma/client";
 
 import { generateGstInvoicePdf } from "./billing.pdf.js";
 import { BillingRepository, type InvoiceTotals } from "./billing.repository.js";
@@ -119,12 +119,11 @@ export class BillingService {
   async generateInvoicePdf(tenant: Tenant, invoiceId: string) {
     const invoice = await this.getInvoice(tenant, invoiceId);
     const template = await getEffectiveTemplate(this.fastify, tenant);
-    const objectName = await generateGstInvoicePdf({
-      invoice,
+    const objectName = await this.renderInvoicePdfWithFallback({
       tenant,
-      minio: this.fastify.minio,
-      bucket: this.fastify.minioBucket,
-      template: template?.renderType === "HTML_PDF" ? template : null,
+      invoice,
+      template,
+      invoiceId,
     });
 
     await this.repository.updateInvoicePdfUrl(tenant.id, invoiceId, objectName);
@@ -154,6 +153,67 @@ export class BillingService {
       tenant,
       invoice,
     });
+  }
+
+  private async renderInvoicePdfWithFallback(input: {
+    tenant: Tenant;
+    invoice: Awaited<ReturnType<BillingService["getInvoice"]>>;
+    template: InvoiceTemplate | null;
+    invoiceId: string;
+  }): Promise<string> {
+    try {
+      return await generateGstInvoicePdf({
+        invoice: input.invoice,
+        tenant: input.tenant,
+        minio: this.fastify.minio,
+        bucket: this.fastify.minioBucket,
+        template: input.template,
+      });
+    } catch (error) {
+      this.fastify.log.error(
+        {
+          error,
+          invoiceId: input.invoiceId,
+          tenantId: input.tenant.id,
+          templateId: input.template?.id,
+          templateName: input.template?.name,
+        },
+        "Invoice PDF generation failed",
+      );
+
+      if (input.template) {
+        try {
+          const objectName = await generateGstInvoicePdf({
+            invoice: input.invoice,
+            tenant: input.tenant,
+            minio: this.fastify.minio,
+            bucket: this.fastify.minioBucket,
+            template: null,
+          });
+          this.fastify.log.warn(
+            {
+              invoiceId: input.invoiceId,
+              tenantId: input.tenant.id,
+              failedTemplateId: input.template.id,
+            },
+            "Invoice PDF generated with default fallback template",
+          );
+          return objectName;
+        } catch (fallbackError) {
+          this.fastify.log.error(
+            {
+              error: fallbackError,
+              invoiceId: input.invoiceId,
+              tenantId: input.tenant.id,
+            },
+            "Fallback invoice PDF generation failed",
+          );
+          throw new BillingError(`Invoice PDF generation failed: ${safeErrorMessage(fallbackError)}`, 502);
+        }
+      }
+
+      throw new BillingError(`Invoice PDF generation failed: ${safeErrorMessage(error)}`, 502);
+    }
   }
 
   private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0) {
@@ -201,6 +261,14 @@ export class BillingService {
 function invoicePdfViewUrl(invoiceId: string): string {
   const baseUrl = process.env.PUBLIC_APP_URL ?? (process.env.APP_DOMAIN ? `https://${process.env.APP_DOMAIN}` : "");
   return `${baseUrl}/api/billing/invoices/${invoiceId}/pdf/view`;
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Unknown PDF renderer error";
+  }
+
+  return error.message.replace(/\s+/g, " ").slice(0, 180) || "Unknown PDF renderer error";
 }
 
 function createInvoiceItem(

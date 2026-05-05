@@ -1,10 +1,13 @@
-import { PaperSize, type Invoice, type InvoiceItem, type InvoiceTemplate, type Tenant } from "@prisma/client";
+import { PaperSize, RenderType, type Customer, type Invoice, type InvoiceItem, type InvoiceTemplate, type Tenant } from "@prisma/client";
 import Handlebars from "handlebars";
 import type { Client } from "minio";
 import puppeteer from "puppeteer";
 
+import { buildEscposInvoice } from "../printer/printer.service.js";
+
 export interface InvoiceWithItems extends Invoice {
   items: InvoiceItem[];
+  customer?: Customer | null;
 }
 
 export async function generateGstInvoicePdf(input: {
@@ -14,9 +17,8 @@ export async function generateGstInvoicePdf(input: {
   bucket: string;
   template?: InvoiceTemplate | null;
 }): Promise<string> {
-  const compiledTemplate = Handlebars.compile(input.template?.htmlSource ?? getTemplate());
   const gstEnabled = input.tenant.gstEnabled;
-  const html = compiledTemplate({
+  const templateData = {
     invoice: input.invoice,
     tenant: input.tenant,
     gstEnabled,
@@ -42,7 +44,10 @@ export async function generateGstInvoicePdf(input: {
     amountDue: money(input.invoice.amountDue),
     inWords: `${money(input.invoice.grandTotal)} rupees only`,
     generatedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-  });
+  };
+  const html = input.template?.renderType === RenderType.ESC_POS
+    ? getEscposPreviewTemplate(input.tenant, input.invoice, input.template)
+    : Handlebars.compile(input.template?.htmlSource ?? getTemplate())(templateData);
 
   const browser = await puppeteer.launch({
     ...(process.env.PUPPETEER_EXECUTABLE_PATH ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH } : {}),
@@ -52,7 +57,9 @@ export async function generateGstInvoicePdf(input: {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdfBuffer = await page.pdf({ format: pdfFormat(input.template?.paperSize), printBackground: true });
+    const pdfBuffer = await page.pdf(input.template?.renderType === RenderType.ESC_POS
+      ? { printBackground: true, preferCSSPageSize: true }
+      : { format: pdfFormat(input.template?.paperSize), printBackground: true });
     const filename = `invoices/${input.tenant.id}/${input.invoice.invoiceNumber}.pdf`;
 
     await input.minio.putObject(input.bucket, filename, Buffer.from(pdfBuffer), pdfBuffer.length, {
@@ -67,6 +74,34 @@ export async function generateGstInvoicePdf(input: {
 
 function pdfFormat(paperSize: PaperSize | undefined): "A4" | "A5" {
   return paperSize === PaperSize.A5 ? "A5" : "A4";
+}
+
+function getEscposPreviewTemplate(tenant: Tenant, invoice: InvoiceWithItems, template: InvoiceTemplate): string {
+  const receipt = buildEscposInvoice(tenant, invoice, template);
+  const width = template.paperSize === PaperSize.THERMAL_2 ? "58mm" : template.paperSize === PaperSize.THERMAL_3 ? "76mm" : "102mm";
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @page { size: ${width} auto; margin: 4mm; }
+      body { margin: 0; background: #ffffff; color: #111827; }
+      .receipt { width: ${width}; font-family: "Courier New", monospace; font-size: 10px; line-height: 1.25; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <pre class="receipt">${escapeHtml(receipt.text)}</pre>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function money(value: { toNumber: () => number }): string {

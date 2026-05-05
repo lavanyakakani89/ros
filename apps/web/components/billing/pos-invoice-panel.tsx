@@ -242,7 +242,7 @@ export function PosInvoicePanel() {
       }
       if (key === "p" && lastBill) {
         event.preventDefault();
-        window.print();
+        openInvoicePdfPreview(lastBill);
       }
     }
 
@@ -629,6 +629,10 @@ export function PosInvoicePanel() {
     await downloadApiFile(`/billing/invoices/${invoiceId}/pdf/view`, `${invoiceNumber}.pdf`);
   }
 
+  function openInvoicePdfPreview(bill: LastBill) {
+    window.open(bill.pdfViewUrl, "_blank", "noopener,noreferrer");
+  }
+
   function clearBill() {
     reset();
     setBillDiscount(0);
@@ -993,7 +997,7 @@ export function PosInvoicePanel() {
           <section className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3">
             <div className="text-sm font-semibold text-emerald-950">Bill ready</div>
             <div className="mt-1 text-xs text-emerald-800">{lastBill.invoiceNumber} | {lastBill.paymentMode} | ₹{lastBill.grandTotal.toFixed(2)}</div>
-            <button className="mt-3 h-9 w-full rounded-md border border-emerald-300 bg-white text-sm font-medium text-emerald-900" onClick={() => window.print()}>
+            <button className="mt-3 h-9 w-full rounded-md border border-emerald-300 bg-white text-sm font-medium text-emerald-900" onClick={() => openInvoicePdfPreview(lastBill)}>
               Print preview
             </button>
           </section>
@@ -1067,9 +1071,9 @@ export function PosInvoicePanel() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-border p-4 print:hidden">
-              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => window.print()}>
+              <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => openInvoicePdfPreview(lastBill)}>
                 <Printer className="size-4" aria-hidden="true" />
-                Print
+                Print preview
               </button>
               <button className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-medium text-amber-900" onClick={() => void printThermalInvoice()}>
                 <Printer className="size-4" aria-hidden="true" />

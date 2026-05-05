@@ -53,11 +53,39 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const params = invoiceIdParamsSchema.parse(request.params);
     return handleBilling(reply, async () => {
       const invoice = await service.getInvoice(request.tenant, params.id);
-      const pdf = invoice.pdfUrl
+      let pdf = invoice.pdfUrl
         ? { objectName: invoice.pdfUrl }
         : await service.generateInvoicePdf(request.tenant, params.id);
 
-      const stream = await fastify.minio.getObject(fastify.minioBucket, pdf.objectName);
+      let stream;
+      try {
+        stream = await fastify.minio.getObject(fastify.minioBucket, pdf.objectName);
+      } catch (error) {
+        fastify.log.warn(
+          {
+            error,
+            invoiceId: params.id,
+            tenantId: request.tenant.id,
+            objectName: pdf.objectName,
+          },
+          "Stored invoice PDF was unavailable; regenerating",
+        );
+        pdf = await service.generateInvoicePdf(request.tenant, params.id);
+        try {
+          stream = await fastify.minio.getObject(fastify.minioBucket, pdf.objectName);
+        } catch (retryError) {
+          fastify.log.error(
+            {
+              error: retryError,
+              invoiceId: params.id,
+              tenantId: request.tenant.id,
+              objectName: pdf.objectName,
+            },
+            "Regenerated invoice PDF was unavailable",
+          );
+          throw new BillingError("Invoice PDF could not be opened after regeneration.", 502);
+        }
+      }
       reply
         .header("Content-Type", "application/pdf")
         .header("Content-Disposition", `inline; filename="${invoice.invoiceNumber}.pdf"`);

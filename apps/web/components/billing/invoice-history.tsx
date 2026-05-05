@@ -45,6 +45,7 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isDrawer = surface === "drawer";
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -76,8 +77,14 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
     setPage(1);
   }
 
-  function printInvoice(invoice: InvoiceRecord) {
-    window.open(apiUrl(`/billing/invoices/${invoice.id}/pdf/view`), "_blank");
+  async function printInvoice(invoice: InvoiceRecord) {
+    setActionError(null);
+    try {
+      await createAuthenticatedApiClient().post(`/billing/invoices/${invoice.id}/pdf`, {});
+      window.open(apiUrl(`/billing/invoices/${invoice.id}/pdf/view`), "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to prepare invoice PDF.");
+    }
   }
 
   return (
@@ -98,7 +105,7 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
             </select>
           </div>
         </div>
-        {error ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
+        {error || actionError ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError ?? error?.message}</div> : null}
       </div>
 
       <div className={cn("min-h-0 flex-1", isDrawer ? "grid lg:grid-cols-[minmax(0,1fr)_360px]" : "flex flex-col")}>
@@ -134,7 +141,7 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
                         <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="View details" onClick={() => setSelectedInvoice(invoice)}>
                           <Eye className="size-4" aria-hidden="true" />
                         </button>
-                        <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="Print PDF" onClick={() => printInvoice(invoice)}>
+                        <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="Print PDF" onClick={() => void printInvoice(invoice)}>
                           <Printer className="size-4" aria-hidden="true" />
                         </button>
                         <button className="inline-flex size-8 items-center justify-center rounded-md border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40" title="Cancel invoice" disabled={invoice.status === "CANCELLED"} onClick={() => cancelInvoice.mutate(invoice.id)}>
@@ -175,7 +182,7 @@ function InvoiceDetailPanel({
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
-  onPrint: (invoice: InvoiceRecord) => void;
+  onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
   if (!invoice) {
@@ -228,7 +235,7 @@ function InvoiceDetailPanel({
         </div>
 
         <div className="grid gap-2 border-t border-border bg-white p-4">
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => onPrint(invoice)}>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
             <Printer className="size-4" aria-hidden="true" />
             Print PDF
           </button>
