@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bluetooth, Network, Printer, Save, Usb } from "lucide-react";
-import { useState } from "react";
+import { Bluetooth, Network, Printer, RefreshCcw, Save, Usb } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { DEFAULT_LOCAL_AGENT_URL, checkLocalAgent, listLocalAgentPrinters, printViaLocalAgent, type LocalAgentPrinter } from "@/lib/local-print-agent";
 
 type PaperSize = "THERMAL_2" | "THERMAL_3" | "THERMAL_4" | "A5" | "A4";
-type PrinterConn = "USB_PRINTNODE" | "NETWORK" | "BLUETOOTH" | "NONE";
+type PrinterConn = "USB_PRINTNODE" | "NETWORK" | "BLUETOOTH" | "LOCAL_AGENT" | "NONE";
 
 interface PrinterConfig {
   id: string;
@@ -19,6 +20,8 @@ interface PrinterConfig {
   printNodePrinterId?: string | null;
   bluetoothDeviceId?: string | null;
   bluetoothDeviceName?: string | null;
+  localPrinterName?: string | null;
+  localAgentUrl?: string | null;
   isActive: boolean;
   lastTestedAt?: string | null;
 }
@@ -31,12 +34,15 @@ interface TestResponse {
   status: string;
   message: string;
   bytesBase64?: string;
+  printerName?: string | null;
+  agentUrl?: string | null;
   previewText?: string;
 }
 
 const paperSizes: PaperSize[] = ["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"];
 const connectionTypes: Array<{ value: PrinterConn; label: string; icon: React.ElementType }> = [
   { value: "NONE", label: "PDF only", icon: Printer },
+  { value: "LOCAL_AGENT", label: "RetailOS Local Agent", icon: Printer },
   { value: "NETWORK", label: "Network ESC/POS", icon: Network },
   { value: "USB_PRINTNODE", label: "USB via PrintNode", icon: Usb },
   { value: "BLUETOOTH", label: "Bluetooth payload", icon: Bluetooth },
@@ -46,6 +52,8 @@ export function PrinterSettings() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestResponse | null>(null);
+  const [agentUrl, setAgentUrl] = useState(DEFAULT_LOCAL_AGENT_URL);
+  const [agentPrinters, setAgentPrinters] = useState<LocalAgentPrinter[]>([]);
   const printerQuery = useQuery({
     queryKey: ["printer-config"],
     queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
@@ -60,8 +68,20 @@ export function PrinterSettings() {
   const testPrinter = useMutation({
     mutationFn: () => createAuthenticatedApiClient().post<TestResponse>("/printer/test", {}),
     onSuccess: (result) => {
-      setTestResult(result);
-      setMessage(result.message);
+      void handleTestPrinterResult(result);
+    },
+  });
+  const checkAgent = useMutation({
+    mutationFn: () => checkLocalAgent(agentUrl),
+    onSuccess: (result) => {
+      setMessage(`${result.app} is running on ${result.platform}.`);
+    },
+  });
+  const loadAgentPrinters = useMutation({
+    mutationFn: () => listLocalAgentPrinters(agentUrl),
+    onSuccess: (printers) => {
+      setAgentPrinters(printers);
+      setMessage(printers.length > 0 ? `${printers.length.toString()} Windows printers found.` : "Print agent is running, but no Windows printers were returned.");
     },
   });
 
@@ -77,12 +97,41 @@ export function PrinterSettings() {
       printNodePrinterId: formString(form, "printNodePrinterId") || null,
       bluetoothDeviceId: formString(form, "bluetoothDeviceId") || null,
       bluetoothDeviceName: formString(form, "bluetoothDeviceName") || null,
+      localPrinterName: formString(form, "localPrinterName") || null,
+      localAgentUrl: formString(form, "localAgentUrl") || DEFAULT_LOCAL_AGENT_URL,
       isActive: form.get("isActive") === "on",
     });
   }
 
   const printer = printerQuery.data?.printer;
-  const error = printerQuery.error ?? savePrinter.error ?? testPrinter.error;
+  const error = printerQuery.error ?? savePrinter.error ?? testPrinter.error ?? checkAgent.error ?? loadAgentPrinters.error;
+
+  useEffect(() => {
+    if (printer?.localAgentUrl) {
+      setAgentUrl(printer.localAgentUrl);
+    }
+  }, [printer?.localAgentUrl]);
+
+  async function handleTestPrinterResult(result: TestResponse) {
+    setTestResult(result);
+
+    if (result.status !== "local_agent_payload") {
+      setMessage(result.message);
+      return;
+    }
+
+    try {
+      await printViaLocalAgent({
+        agentUrl: result.agentUrl ?? agentUrl,
+        printerName: result.printerName,
+        bytesBase64: result.bytesBase64,
+        jobName: "RetailOS test print",
+      });
+      setMessage("Test print sent through RetailOS Local Print Agent.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Local print agent test failed.");
+    }
+  }
 
   return (
     <section className="grid gap-4 xl:grid-cols-[1fr_380px]">
@@ -113,7 +162,29 @@ export function PrinterSettings() {
           <TextInput name="printNodePrinterId" label="PrintNode printer ID" defaultValue={printer?.printNodePrinterId ?? ""} />
           <TextInput name="bluetoothDeviceId" label="Bluetooth device ID" defaultValue={printer?.bluetoothDeviceId ?? ""} />
           <TextInput name="bluetoothDeviceName" label="Bluetooth device name" defaultValue={printer?.bluetoothDeviceName ?? ""} />
+          <label className="block text-sm font-medium text-slate-700">
+            Local Windows printer name
+            <input
+              name="localPrinterName"
+              list="retailos-local-printers"
+              defaultValue={printer?.localPrinterName ?? ""}
+              placeholder="Example: ATPOS 80C"
+              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-700">
+            Local agent URL
+            <input
+              name="localAgentUrl"
+              value={agentUrl}
+              onChange={(event) => setAgentUrl(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+            />
+          </label>
         </div>
+        <datalist id="retailos-local-printers">
+          {agentPrinters.map((item) => <option key={item.name} value={item.name}>{item.isDefault ? `${item.name} (default)` : item.name}</option>)}
+        </datalist>
 
         <label className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input name="isActive" type="checkbox" defaultChecked={printer?.isActive ?? true} className="size-4 rounded border-border" />
@@ -128,6 +199,14 @@ export function PrinterSettings() {
           <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => testPrinter.mutate()} disabled={testPrinter.isPending}>
             <Printer className="size-4" aria-hidden="true" />
             Test print
+          </button>
+          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => checkAgent.mutate()} disabled={checkAgent.isPending}>
+            <RefreshCcw className="size-4" aria-hidden="true" />
+            Check agent
+          </button>
+          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => loadAgentPrinters.mutate()} disabled={loadAgentPrinters.isPending}>
+            <Printer className="size-4" aria-hidden="true" />
+            Load Windows printers
           </button>
         </div>
       </form>
@@ -173,6 +252,7 @@ function formString(form: FormData, key: string): string {
 }
 
 function modeHelp(value: PrinterConn): string {
+  if (value === "LOCAL_AGENT") return "Best for ATPOS USB printers on the billing PC. Sends ESC/POS bytes to localhost and cuts paper.";
   if (value === "NETWORK") return "Use IP printers on port 9100.";
   if (value === "USB_PRINTNODE") return "Use PrintNode for USB printers attached to a PC.";
   if (value === "BLUETOOTH") return "Returns base64 ESC/POS bytes for browser Bluetooth handoff.";

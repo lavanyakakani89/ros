@@ -8,6 +8,7 @@ import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, re
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
+import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
 import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
 
@@ -26,7 +27,7 @@ const PRODUCT_SEARCH_MODES = [
 ] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
-type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH";
+type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH" | "LOCAL_AGENT";
 type InvoiceLineRecord = NonNullable<InvoiceRecord["items"]>[number];
 
 interface SplitEntry {
@@ -46,6 +47,8 @@ interface CustomerRecord {
 interface PrinterConfig {
   connectionType: PrinterConnectionType;
   isActive: boolean;
+  localPrinterName?: string | null;
+  localAgentUrl?: string | null;
 }
 
 interface PrinterResponse {
@@ -55,6 +58,9 @@ interface PrinterResponse {
 interface PrinterResult {
   status: string;
   message: string;
+  bytesBase64?: string;
+  printerName?: string | null;
+  agentUrl?: string | null;
 }
 
 interface LastBill {
@@ -690,7 +696,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     if (!lastBill) return;
     try {
       const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${lastBill.id}/print`, {});
-      notify(result.message || `Printer status: ${result.status}`);
+      const handled = await handlePrinterResult(result, "Thermal print", lastBill.invoiceNumber);
+      if (!handled) {
+        notify(result.message || `Printer status: ${result.status}`);
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Thermal print failed.", "red");
     }
@@ -712,13 +721,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
       }
 
       const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${invoiceId}/print`, {});
-      if (result.status === "printed" || result.status === "queued") {
-        notify(result.message || "Invoice printed.");
-        return;
-      }
-
-      if (result.status === "bluetooth_payload") {
-        notify(`${actionLabel}. Bluetooth printer payload is ready from the Thermal button.`);
+      const handled = await handlePrinterResult(result, actionLabel, invoiceNumber);
+      if (handled) {
         return;
       }
 
@@ -727,6 +731,31 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     } catch (error) {
       notify(`${actionLabel}. Output failed: ${error instanceof Error ? error.message : "PDF or printer failed."}`, "red");
     }
+  }
+
+  async function handlePrinterResult(result: PrinterResult, actionLabel: string, invoiceNumber: string): Promise<boolean> {
+    if (result.status === "printed" || result.status === "queued") {
+      notify(result.message || `${actionLabel}. Invoice printed.`);
+      return true;
+    }
+
+    if (result.status === "local_agent_payload") {
+      await printViaLocalAgent({
+        agentUrl: result.agentUrl,
+        printerName: result.printerName,
+        bytesBase64: result.bytesBase64,
+        jobName: `RetailOS ${invoiceNumber}`,
+      });
+      notify(`${actionLabel}. Printed through RetailOS Local Print Agent.`);
+      return true;
+    }
+
+    if (result.status === "bluetooth_payload") {
+      notify(`${actionLabel}. Bluetooth printer payload is ready from the Thermal button.`);
+      return true;
+    }
+
+    return false;
   }
 
   async function downloadInvoicePdf(invoiceId: string, invoiceNumber: string) {

@@ -13,6 +13,8 @@ const printerSchema = z.object({
   printNodePrinterId: z.string().trim().optional().nullable(),
   bluetoothDeviceId: z.string().trim().optional().nullable(),
   bluetoothDeviceName: z.string().trim().optional().nullable(),
+  localPrinterName: z.string().trim().optional().nullable(),
+  localAgentUrl: z.string().trim().url().optional().nullable(),
   isActive: z.coerce.boolean().default(true),
 });
 
@@ -45,6 +47,8 @@ export const printerRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       printNodePrinterId: input.printNodePrinterId ?? null,
       bluetoothDeviceId: input.bluetoothDeviceId ?? null,
       bluetoothDeviceName: input.bluetoothDeviceName ?? null,
+      localPrinterName: input.localPrinterName ?? null,
+      localAgentUrl: input.localAgentUrl ?? "http://127.0.0.1:9211",
       isActive: input.isActive,
     };
     const printer = await fastify.prisma.printerConfig.upsert({

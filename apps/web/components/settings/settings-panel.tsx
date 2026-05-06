@@ -132,7 +132,7 @@ export function SettingsPanel() {
           </span>
           <span>
             <span className="block font-semibold text-slate-950">Printer setup</span>
-            <span className="text-xs text-slate-500">Network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
+            <span className="text-xs text-slate-500">Local agent, network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
           </span>
         </Link>
       </section>

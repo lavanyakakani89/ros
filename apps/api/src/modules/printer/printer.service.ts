@@ -195,6 +195,16 @@ async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | nul
     };
   }
 
+  if (printer.connectionType === PrinterConn.LOCAL_AGENT) {
+    return {
+      status: "local_agent_payload",
+      message: "Send these ESC/POS bytes to the RetailOS Local Print Agent.",
+      bytesBase64: bytes.toString("base64"),
+      printerName: printer.localPrinterName,
+      agentUrl: printer.localAgentUrl ?? "http://127.0.0.1:9211",
+    };
+  }
+
   if (printer.connectionType === PrinterConn.NETWORK) {
     if (!printer.networkIp || !printer.networkPort) {
       return {
@@ -317,11 +327,13 @@ function fit(value: string, columns: number): string {
 }
 
 export type PrinterDispatchResult = {
-  status: "printed" | "queued" | "bluetooth_payload" | "pdf_fallback" | "not_configured" | "failed";
+  status: "printed" | "queued" | "bluetooth_payload" | "local_agent_payload" | "pdf_fallback" | "not_configured" | "failed";
   message: string;
   bytesBase64?: string;
   deviceId?: string | null;
   deviceName?: string | null;
+  printerName?: string | null;
+  agentUrl?: string | null;
   previewText?: string;
   template?: InvoiceTemplate | null;
   printer?: PrinterConfig | null;

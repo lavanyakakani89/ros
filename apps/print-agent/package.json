@@ -1,0 +1,21 @@
+{
+  "name": "@retailos/print-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/server.ts",
+    "lint": "eslint src",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "tslib": "^2.8.1"
+  }
+}
