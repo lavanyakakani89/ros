@@ -123,7 +123,7 @@ async function pdfOptionsForPaper(page: Page, paperSize: PaperSize | undefined):
   }
 
   const width = thermalPaperWidth(paperSize);
-  const height = await measuredThermalHeight(page);
+  const height = await measuredThermalHeight(page, paperSize);
   return {
     width,
     height,
@@ -153,7 +153,7 @@ function forcedPaperCss(paperSize: PaperSize | undefined): string {
   `;
 }
 
-async function measuredThermalHeight(page: Page): Promise<string> {
+async function measuredThermalHeight(page: Page, paperSize: PaperSize | undefined): Promise<string> {
   const heightPx = await page.evaluate(() => {
     const body = document.body;
     const bodyRect = body.getBoundingClientRect();
@@ -169,7 +169,9 @@ async function measuredThermalHeight(page: Page): Promise<string> {
 
     return Math.ceil(Math.max(contentBottom - top, 1));
   });
-  const heightMm = Math.max(35, Math.ceil(heightPx * 25.4 / 96) + 3);
+  const widthMm = thermalPaperWidthMm(paperSize);
+  const portraitMinimumMm = Math.ceil(widthMm * 1.45);
+  const heightMm = Math.max(portraitMinimumMm, Math.ceil(heightPx * 25.4 / 96) + 3);
   return `${String(heightMm)}mm`;
 }
 
@@ -194,10 +196,13 @@ function isThermalPaper(paperSize: PaperSize | undefined): boolean {
 }
 
 function thermalPaperWidth(paperSize: PaperSize | undefined): string {
-  if (paperSize === PaperSize.THERMAL_2) return "58mm";
-  if (paperSize === PaperSize.THERMAL_3) return "76mm";
-  if (paperSize === PaperSize.THERMAL_4) return "102mm";
-  return "76mm";
+  return `${String(thermalPaperWidthMm(paperSize))}mm`;
+}
+
+function thermalPaperWidthMm(paperSize: PaperSize | undefined): number {
+  if (paperSize === PaperSize.THERMAL_2) return 58;
+  if (paperSize === PaperSize.THERMAL_4) return 102;
+  return 76;
 }
 
 const pageMarginForStandardPaper = {
