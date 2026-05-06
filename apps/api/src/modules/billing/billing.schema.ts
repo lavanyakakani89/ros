@@ -20,6 +20,7 @@ export const invoiceListQuerySchema = z.object({
 const invoiceItemSchema = z.object({
   productId: z.string().min(1),
   quantity: decimalSchema.positive(),
+  sellingPrice: decimalSchema.nonnegative().optional(),
   discount: decimalSchema.nonnegative().default(0),
   discountPercent: decimalSchema.min(0).max(100).optional(),
   batchNumber: z.string().trim().min(1).optional(),
@@ -37,5 +38,7 @@ export const createInvoiceSchema = z.object({
 });
 
 export const updateInvoiceSchema = createInvoiceSchema.partial().extend({
+  customerId: z.string().min(1).nullable().optional(),
+  notes: z.string().trim().nullable().optional(),
   items: z.array(invoiceItemSchema).min(1).optional(),
 });

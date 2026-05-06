@@ -3,6 +3,7 @@ import type { PaymentMode } from "@prisma/client";
 export interface InvoiceItemInput {
   productId: string;
   quantity: number;
+  sellingPrice?: number | undefined;
   discount?: number | undefined;
   discountPercent?: number | undefined;
   batchNumber?: string | undefined;
@@ -19,8 +20,15 @@ export interface CreateInvoiceInput {
   items: InvoiceItemInput[];
 }
 
-export type UpdateInvoiceInput = {
-  [Key in keyof CreateInvoiceInput]?: CreateInvoiceInput[Key] | undefined;
+export type UpdateInvoiceInput = Omit<
+  {
+    [Key in keyof CreateInvoiceInput]?: CreateInvoiceInput[Key] | undefined;
+  },
+  "customerId"
+  | "notes"
+> & {
+  customerId?: string | null | undefined;
+  notes?: string | null | undefined;
 };
 
 export interface InvoiceListQuery {

@@ -60,22 +60,23 @@ export class BillingService {
         existing.items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity.toNumber(),
+          sellingPrice: item.sellingPrice.toNumber(),
           discount: item.discount.toNumber(),
           ...(item.batchNumber ? { batchNumber: item.batchNumber } : {}),
           ...(item.expiryDate ? { expiryDate: item.expiryDate } : {}),
         })),
-      ...(input.customerId !== undefined ? { customerId: input.customerId } : existing.customerId ? { customerId: existing.customerId } : {}),
+      ...(input.customerId !== undefined ? input.customerId ? { customerId: input.customerId } : {} : existing.customerId ? { customerId: existing.customerId } : {}),
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : existing.dueDate ? { dueDate: existing.dueDate } : {}),
       ...(input.verticalData !== undefined
         ? { verticalData: input.verticalData }
         : existing.verticalData && typeof existing.verticalData === "object" && !Array.isArray(existing.verticalData)
           ? { verticalData: existing.verticalData }
           : {}),
-      ...(input.notes !== undefined ? { notes: input.notes } : existing.notes ? { notes: existing.notes } : {}),
+      ...(input.notes !== undefined ? input.notes ? { notes: input.notes } : {} : existing.notes ? { notes: existing.notes } : {}),
     };
 
     const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount);
-    const invoice = await this.repository.replaceDraftInvoice({
+    const invoice = await this.repository.replaceInvoice({
       tenantId: tenant.id,
       invoiceId,
       invoice: merged,
@@ -84,7 +85,7 @@ export class BillingService {
     });
 
     if (!invoice) {
-      throw new BillingError("Only draft invoices can be updated", 409);
+      throw new BillingError("Invoice not found", 404);
     }
 
     return invoice;
@@ -245,7 +246,7 @@ function createInvoiceItem(
   }
 
   const quantity = input.quantity;
-  const sellingPrice = product.sellingPrice.toNumber();
+  const sellingPrice = input.sellingPrice ?? product.sellingPrice.toNumber();
   const gross = sellingPrice * quantity;
   const lineDiscount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
   const discount = roundMoney(lineDiscount + billDiscountShare);
@@ -263,7 +264,7 @@ function createInvoiceItem(
     quantity,
     unit: product.unit,
     mrp: product.mrp,
-    sellingPrice: product.sellingPrice,
+    sellingPrice,
     discount,
     gstRate,
     cgst,
@@ -279,7 +280,8 @@ function getTaxableBaseBeforeBillDiscount(input: InvoiceItemInput, product: Prod
     throw new BillingError("Product not found", 400);
   }
 
-  const gross = product.sellingPrice.toNumber() * input.quantity;
+  const sellingPrice = input.sellingPrice ?? product.sellingPrice.toNumber();
+  const gross = sellingPrice * input.quantity;
   const lineDiscount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
   return Math.max(gross - lineDiscount, 0);
 }

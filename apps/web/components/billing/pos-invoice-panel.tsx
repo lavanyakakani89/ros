@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
+import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
 import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
@@ -26,6 +27,7 @@ const PRODUCT_SEARCH_MODES = [
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH";
+type InvoiceLineRecord = NonNullable<InvoiceRecord["items"]>[number];
 
 interface SplitEntry {
   mode: PaymentMode;
@@ -77,10 +79,16 @@ interface LastBill {
   pdfViewUrl: string;
 }
 
-export function PosInvoicePanel() {
+interface PosInvoicePanelProps {
+  editingInvoice?: InvoiceRecord | null;
+  onEditComplete?: () => void;
+}
+
+export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosInvoicePanelProps) {
   const queryClient = useQueryClient();
-  const { lines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
+  const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const isEditMode = Boolean(editingInvoice);
   const [online, setOnline] = useState(true);
   const [gstEnabled, setGstEnabled] = useState(true);
   const [queueCounts, setQueueCounts] = useState({ pending: 0, syncing: 0, failed: 0 });
@@ -190,12 +198,61 @@ export function PosInvoicePanel() {
       return;
     }
 
-    setDeliveryAddress(selectedCustomer.address ?? "");
+    setDeliveryAddress((current) => current || (selectedCustomer.address ?? ""));
     createAuthenticatedApiClient()
       .get<{ points: number }>(`/loyalty/${selectedCustomer.id}`)
       .then((data) => setLoyaltyBalance(data.points))
       .catch(() => setLoyaltyBalance(null));
   }, [selectedCustomer]);
+
+  useEffect(() => {
+    if (!editingInvoice) return;
+
+    const lineItems = editingInvoice.items ?? [];
+    const billDiscountAmount = getVerticalNumber(editingInvoice.verticalData, "billDiscountAmount") ?? 0;
+    const couponAmount = getVerticalNumber(editingInvoice.verticalData, "couponDiscount") ?? 0;
+    const redeemedPoints = getVerticalNumber(editingInvoice.verticalData, "loyaltyRedeem") ?? 0;
+    const couponCode = getVerticalString(editingInvoice.verticalData, "couponCode");
+    setLines(lineItems.map((item) => ({
+      id: item.id ?? crypto.randomUUID(),
+      productId: item.productId,
+      productName: item.productName,
+      quantity: decimalToNumber(item.quantity),
+      sellingPrice: decimalToNumber(item.sellingPrice),
+      discount: deriveLineDiscountPercent(item, billDiscountAmount, lineItems),
+      gstRate: gstEnabled ? decimalToNumber(item.gstRate) : 0,
+    })));
+    setSelectedCustomer(editingInvoice.customer
+      ? {
+          id: editingInvoice.customer.id,
+          name: editingInvoice.customer.name,
+          phone: editingInvoice.customer.phone ?? "",
+          address: editingInvoice.customer.address ?? null,
+          creditLimit: decimalToNumberOrNull(editingInvoice.customer.creditLimit),
+          outstandingDue: decimalToNumberOrNull(editingInvoice.customer.outstandingDue),
+        }
+      : null);
+    setCustomerSearch(editingInvoice.customer ? `${editingInvoice.customer.name} ${editingInvoice.customer.phone ?? ""}`.trim() : "");
+    setShowNewCustomerForm(false);
+    setBarcodeInput("");
+    setProductHighlightIndex(0);
+    setBillDiscount(billDiscountAmount);
+    setCouponDiscount(couponAmount);
+    setAppliedCoupon(couponCode ?? "");
+    setCouponInput("");
+    setLoyaltyRedeem(redeemedPoints);
+    setNotes(editingInvoice.notes ?? "");
+    setDeliveryRequired(Boolean(editingInvoice.delivery));
+    setDeliveryAddress(editingInvoice.delivery?.deliveryAddress ?? editingInvoice.customer?.address ?? "");
+    setDeliveryNotes(editingInvoice.delivery?.notes ?? "");
+    setSplitEntries([{ mode: coercePaymentMode(editingInvoice.paymentMode), amount: decimalToNumber(editingInvoice.amountPaid ?? 0) }]);
+    setUseSplit(false);
+    setAmountReceived(0);
+    setSelectedPaymentMode(coercePaymentMode(editingInvoice.paymentMode));
+    setLastBill(null);
+    notify(`Editing ${editingInvoice.invoiceNumber}. Save keeps the same invoice number.`);
+    barcodeRef.current?.focus();
+  }, [editingInvoice, gstEnabled, setLines]);
 
   useEffect(() => {
     setCustomerHighlightIndex(0);
@@ -239,6 +296,10 @@ export function PosInvoicePanel() {
       }
       if (key === "h") {
         event.preventDefault();
+        if (isEditMode) {
+          notify("Finish or cancel invoice editing before holding a bill.", "red");
+          return;
+        }
         holdBill(selectedCustomer?.id ?? "");
       }
       if (key === "n") {
@@ -451,7 +512,7 @@ export function PosInvoicePanel() {
       return;
     }
 
-    const outOfStockLine = activeLines.find((line) => {
+    const outOfStockLine = isEditMode ? undefined : activeLines.find((line) => {
       const product = products.find((item) => item.id === line.productId);
       return product ? line.quantity > decimalToNumber(product.currentStock) : false;
     });
@@ -461,17 +522,23 @@ export function PosInvoicePanel() {
     }
 
     const billLevelDiscount = Math.min(totals.billLevelDiscount, totals.subtotal);
+    const verticalData = {
+      ...toRecord(editingInvoice?.verticalData),
+      billDiscountAmount: billLevelDiscount,
+      couponDiscount,
+      loyaltyRedeem,
+      ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
+    };
     const invoicePayload = {
       paymentMode,
       billDiscount: billLevelDiscount,
-      ...(customerId ? { customerId } : {}),
-      ...(notes.trim() ? { notes: notes.trim() } : {}),
-      ...((appliedCoupon || loyaltyRedeem > 0)
-        ? { verticalData: { couponCode: appliedCoupon || undefined, couponDiscount, loyaltyRedeem } }
-        : {}),
+      ...(isEditMode ? { customerId: customerId ?? null } : customerId ? { customerId } : {}),
+      ...(isEditMode ? { notes: notes.trim() || null } : notes.trim() ? { notes: notes.trim() } : {}),
+      verticalData,
       items: activeLines.map((line) => ({
         productId: line.productId,
         quantity: line.quantity,
+        sellingPrice: line.sellingPrice,
         discountPercent: line.discount,
       })),
     };
@@ -482,6 +549,10 @@ export function PosInvoicePanel() {
 
     try {
       if (!online) {
+        if (isEditMode) {
+          notify("Invoice edits need internet because stock and payments must be reconciled immediately.", "red");
+          return;
+        }
         await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
         clearBill();
         return;
@@ -490,6 +561,36 @@ export function PosInvoicePanel() {
       const hasSession = await ensureAuthenticatedSession();
       if (!hasSession) {
         notify("Session expired. Please sign in again before confirming this bill.", "red");
+        return;
+      }
+
+      if (editingInvoice) {
+        const updated = await createAuthenticatedApiClient().put<{ id: string; invoiceNumber: string; grandTotal: string | number }>(
+          `/billing/invoices/${editingInvoice.id}`,
+          invoicePayload,
+        );
+        const pdfViewUrl = apiUrl(`/billing/invoices/${updated.id}/pdf/view`);
+        const nextBill = {
+          id: updated.id,
+          invoiceNumber: updated.invoiceNumber,
+          grandTotal: Number(updated.grandTotal),
+          subtotal: billSnapshot.subtotal,
+          lineDiscount: billSnapshot.lineDiscount,
+          billLevelDiscount: billSnapshot.billLevelDiscount,
+          cgst: billSnapshot.cgst,
+          sgst: billSnapshot.sgst,
+          paymentMode,
+          customer: billSnapshot.customer,
+          lines: billSnapshot.lines,
+          pdfViewUrl,
+        };
+        setLastBill(nextBill);
+        await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+          queryClient.invalidateQueries({ queryKey: ["products"] }),
+        ]);
+        onEditComplete?.();
         return;
       }
 
@@ -546,13 +647,13 @@ export function PosInvoicePanel() {
       await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
     } catch (error) {
-      if (isNetworkError(error)) {
+      if (!isEditMode && isNetworkError(error)) {
         await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
         clearBill();
         return;
       }
 
-      notify(error instanceof Error ? error.message : "Unable to create invoice.", "red");
+      notify(error instanceof Error ? error.message : isEditMode ? "Unable to update invoice." : "Unable to create invoice.", "red");
     } finally {
       setIsSubmitting(false);
     }
@@ -595,7 +696,7 @@ export function PosInvoicePanel() {
     }
   }
 
-  async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string) {
+  async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string, actionLabel = "Invoice confirmed") {
     try {
       const printer =
         printerQuery.data?.printer ??
@@ -606,7 +707,7 @@ export function PosInvoicePanel() {
 
       if (!printer?.isActive || printer.connectionType === "NONE") {
         await downloadInvoicePdf(invoiceId, invoiceNumber);
-        notify("Invoice confirmed. PDF downloaded.");
+        notify(`${actionLabel}. PDF downloaded.`);
         return;
       }
 
@@ -617,14 +718,14 @@ export function PosInvoicePanel() {
       }
 
       if (result.status === "bluetooth_payload") {
-        notify("Invoice confirmed. Bluetooth printer payload is ready from the Thermal button.");
+        notify(`${actionLabel}. Bluetooth printer payload is ready from the Thermal button.`);
         return;
       }
 
       await downloadInvoicePdf(invoiceId, invoiceNumber);
       notify(`${result.message || "Printer not available."} PDF downloaded instead.`);
     } catch (error) {
-      notify(`Invoice confirmed. Output failed: ${error instanceof Error ? error.message : "PDF or printer failed."}`, "red");
+      notify(`${actionLabel}. Output failed: ${error instanceof Error ? error.message : "PDF or printer failed."}`, "red");
     }
   }
 
@@ -638,6 +739,13 @@ export function PosInvoicePanel() {
 
   function clearBill() {
     reset();
+    setSelectedCustomer(null);
+    setCustomerSearch("");
+    setShowNewCustomerForm(false);
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewCustomerAddress("");
+    setBarcodeInput("");
     setBillDiscount(0);
     setCouponDiscount(0);
     setAppliedCoupon("");
@@ -645,11 +753,14 @@ export function PosInvoicePanel() {
     setLoyaltyRedeem(0);
     setNotes("");
     setDeliveryRequired(false);
+    setDeliveryAddress("");
     setDeliveryNotes("");
     setSplitEntries([{ mode: "CASH", amount: 0 }]);
     setUseSplit(false);
     setAmountReceived(0);
     setSelectedPaymentMode("CASH");
+    setLastBill(null);
+    onEditComplete?.();
     barcodeRef.current?.focus();
   }
 
@@ -693,7 +804,8 @@ export function PosInvoicePanel() {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
             <Receipt className="size-4 text-emerald-700" aria-hidden="true" />
-            POS invoice
+            {editingInvoice ? `Editing ${editingInvoice.invoiceNumber}` : "POS invoice"}
+            {editingInvoice ? <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">{editingInvoice.status}</span> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -712,10 +824,15 @@ export function PosInvoicePanel() {
                 Held ({heldBills.length})
               </button>
             ) : null}
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700" onClick={() => holdBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
               <Pause className="size-4" aria-hidden="true" />
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
             </button>
+            {isEditMode ? (
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700" onClick={clearBill}>
+                Cancel edit
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -997,7 +1114,7 @@ export function PosInvoicePanel() {
         <div className="mt-4 grid grid-cols-2 gap-2">
           {PAYMENT_SHORTCUTS.map((shortcut) => (
             <button key={shortcut.mode} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 disabled:opacity-50" onClick={() => void confirmInvoice(shortcut.mode)} disabled={isSubmitting || lines.length === 0}>
-              <span className="block">{shortcut.label}</span>
+              <span className="block">{isEditMode ? `Save ${shortcut.label}` : shortcut.label}</span>
               <span className="text-xs font-medium text-emerald-700">{shortcut.displayKey}</span>
             </button>
           ))}
@@ -1026,7 +1143,7 @@ export function PosInvoicePanel() {
         {selectedCustomer && deliveryRequired ? (
           <div className="mt-3 flex items-center gap-2 rounded-md border border-sky-200 bg-sky-50 p-2 text-xs text-sky-800">
             <Truck className="size-4" aria-hidden="true" />
-            Delivery will be created after invoice confirmation.
+            {isEditMode ? "Delivery stays linked to this invoice." : "Delivery will be created after invoice confirmation."}
           </div>
         ) : null}
       </aside>
@@ -1199,6 +1316,46 @@ function roundMoney(value: number): number {
 
 function decimalToNumber(value: string | number): number {
   return typeof value === "number" ? value : Number(value);
+}
+
+function decimalToNumberOrNull(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  return decimalToNumber(value);
+}
+
+function coercePaymentMode(value: string): PaymentMode {
+  return PAYMENT_MODES.includes(value as PaymentMode) ? value as PaymentMode : "CASH";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function getVerticalNumber(value: unknown, key: string): number | null {
+  const entry = toRecord(value)[key];
+  if (typeof entry === "number" && Number.isFinite(entry)) return entry;
+  if (typeof entry === "string" && entry.trim() && Number.isFinite(Number(entry))) return Number(entry);
+  return null;
+}
+
+function getVerticalString(value: unknown, key: string): string | null {
+  const entry = toRecord(value)[key];
+  return typeof entry === "string" && entry.trim() ? entry : null;
+}
+
+function deriveLineDiscountPercent(item: InvoiceLineRecord, billDiscountAmount: number, allItems: InvoiceLineRecord[]): number {
+  const gross = decimalToNumber(item.sellingPrice) * decimalToNumber(item.quantity);
+  if (gross <= 0) return 0;
+
+  const totalTaxableBeforeBillDiscount = allItems.reduce((sum, line) => {
+    const lineGross = decimalToNumber(line.sellingPrice) * decimalToNumber(line.quantity);
+    const lineDiscount = Math.min(lineGross, decimalToNumber(line.discount));
+    return sum + Math.max(lineGross - lineDiscount, 0);
+  }, 0);
+  const taxableBeforeBillDiscount = Math.max(gross - decimalToNumber(item.discount), 0);
+  const estimatedBillShare = totalTaxableBeforeBillDiscount > 0 ? billDiscountAmount * (taxableBeforeBillDiscount / totalTaxableBeforeBillDiscount) : 0;
+  const lineDiscountAmount = Math.max(decimalToNumber(item.discount) - estimatedBillShare, 0);
+  return Math.min(roundMoney((lineDiscountAmount / gross) * 100), 100);
 }
 
 function isNetworkError(error: unknown): boolean {

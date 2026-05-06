@@ -1,4 +1,4 @@
-import { InvoiceStatus, type Prisma, type PrismaClient } from "@prisma/client";
+import { InvoiceStatus, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
 
@@ -129,7 +129,7 @@ export class BillingRepository {
     });
   }
 
-  async replaceDraftInvoice(input: {
+  async replaceInvoice(input: {
     tenantId: string;
     invoiceId: string;
     invoice: CreateInvoiceInput;
@@ -141,12 +141,70 @@ export class BillingRepository {
         where: {
           id: input.invoiceId,
           tenantId: input.tenantId,
-          status: InvoiceStatus.DRAFT,
+        },
+        include: {
+          items: true,
+          payments: true,
         },
       });
 
       if (!invoice) {
         return null;
+      }
+
+      if (stockAffectsInvoice(invoice.status)) {
+        const oldStockByProduct = aggregateExistingInvoiceItems(invoice.items);
+        for (const [productId, quantity] of oldStockByProduct) {
+          await tx.product.update({
+            where: {
+              id: productId,
+            },
+            data: {
+              currentStock: {
+                increment: quantity,
+              },
+            },
+          });
+        }
+      }
+
+      const amountPaid = roundMoney(invoice.payments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0));
+      const amountDue = Math.max(roundMoney(input.totals.grandTotal - amountPaid), 0);
+      const nextStatus = resolveEditedInvoiceStatus(invoice.status, amountPaid, input.totals.grandTotal);
+
+      if (stockAffectsInvoice(nextStatus)) {
+        const newStockByProduct = aggregateCreateInvoiceItems(input.items);
+        const products = await tx.product.findMany({
+          where: {
+            tenantId: input.tenantId,
+            id: {
+              in: [...newStockByProduct.keys()],
+            },
+            isActive: true,
+          },
+        });
+        const productById = new Map(products.map((product) => [product.id, product]));
+
+        for (const [productId, quantity] of newStockByProduct) {
+          const product = productById.get(productId);
+          if (!product || product.currentStock.toNumber() + 0.0005 < quantity) {
+            const productName = input.items.find((item) => item.productId === productId)?.productName ?? "product";
+            throw new Error(`Insufficient stock for ${productName}`);
+          }
+        }
+
+        for (const [productId, quantity] of newStockByProduct) {
+          await tx.product.update({
+            where: {
+              id: productId,
+            },
+            data: {
+              currentStock: {
+                decrement: quantity,
+              },
+            },
+          });
+        }
       }
 
       await tx.invoiceItem.deleteMany({
@@ -164,11 +222,14 @@ export class BillingRepository {
         totalSgst: input.totals.totalSgst,
         totalIgst: 0,
         grandTotal: input.totals.grandTotal,
-        amountDue: input.totals.grandTotal,
+        amountPaid,
+        amountDue,
+        status: nextStatus,
         customerId: input.invoice.customerId ?? null,
         dueDate: input.invoice.dueDate ?? null,
         notes: input.invoice.notes ?? null,
-        ...(input.invoice.verticalData ? { verticalData: input.invoice.verticalData as Prisma.InputJsonValue } : {}),
+        pdfUrl: null,
+        verticalData: input.invoice.verticalData ? input.invoice.verticalData as Prisma.InputJsonValue : Prisma.JsonNull,
         items: {
           create: input.items,
         },
@@ -320,3 +381,47 @@ const invoiceInclude = {
   payments: true,
   delivery: true,
 } satisfies Prisma.InvoiceInclude;
+
+function stockAffectsInvoice(status: InvoiceStatus): boolean {
+  return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.CANCELLED;
+}
+
+function resolveEditedInvoiceStatus(status: InvoiceStatus, amountPaid: number, grandTotal: number): InvoiceStatus {
+  if (status === InvoiceStatus.DRAFT || status === InvoiceStatus.CANCELLED) {
+    return status;
+  }
+
+  if (amountPaid + 0.01 >= grandTotal) {
+    return InvoiceStatus.PAID;
+  }
+
+  if (amountPaid > 0) {
+    return InvoiceStatus.PARTIAL;
+  }
+
+  return InvoiceStatus.CONFIRMED;
+}
+
+function aggregateExistingInvoiceItems(items: Array<{ productId: string; quantity: Prisma.Decimal }>): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const item of items) {
+    result.set(item.productId, roundQuantity((result.get(item.productId) ?? 0) + item.quantity.toNumber()));
+  }
+  return result;
+}
+
+function aggregateCreateInvoiceItems(items: Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput[]): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const item of items) {
+    result.set(item.productId, roundQuantity((result.get(item.productId) ?? 0) + Number(item.quantity)));
+  }
+  return result;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function roundQuantity(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}

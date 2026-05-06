@@ -21,6 +21,7 @@ export interface HeldBill {
 interface BillingState {
   lines: PosLine[];
   heldBills: HeldBill[];
+  setLines: (lines: PosLine[]) => void;
   setLine: (id: string, patch: Partial<PosLine>) => void;
   addLine: () => string;
   removeLine: (id: string) => void;
@@ -58,6 +59,7 @@ function saveHeldBills(bills: HeldBill[]): void {
 export const useBillingStore = create<BillingState>((set, get) => ({
   lines: [],
   heldBills: loadHeldBills(),
+  setLines: (lines) => set({ lines }),
   setLine: (id, patch) =>
     set((state) => ({
       lines: state.lines.map((line) => (line.id === id ? { ...line, ...patch } : line)),

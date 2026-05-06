@@ -1,30 +1,50 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, FileText, Printer, Search, XCircle } from "lucide-react";
+import { Eye, FileText, Pencil, Printer, Search, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
-interface InvoiceRecord {
+export interface InvoiceRecord {
   id: string;
   invoiceNumber: string;
   status: string;
+  subtotal?: string | number;
+  totalDiscount?: string | number;
+  totalCgst?: string | number;
+  totalSgst?: string | number;
   grandTotal: string | number;
+  amountPaid?: string | number;
   amountDue: string | number;
   invoiceDate: string;
+  dueDate?: string | null;
   paymentMode: string;
+  notes?: string | null;
+  verticalData?: Record<string, unknown> | null;
   customer?: {
+    id: string;
     name: string;
     phone?: string | null;
+    address?: string | null;
+    creditLimit?: string | number | null;
+    outstandingDue?: string | number | null;
   } | null;
   delivery?: {
+    id?: string;
     status: string;
+    deliveryAddress?: string | null;
+    notes?: string | null;
   } | null;
   items?: Array<{
+    id?: string;
+    productId: string;
     productName: string;
     quantity: string | number;
+    sellingPrice: string | number;
+    discount: string | number;
+    gstRate: string | number;
     total: string | number;
   }>;
 }
@@ -36,7 +56,13 @@ interface InvoiceListResponse {
   total: number;
 }
 
-export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "embedded" | "drawer" }>) {
+export function InvoiceHistory({
+  surface = "embedded",
+  onEdit,
+}: Readonly<{
+  surface?: "embedded" | "drawer";
+  onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
+}>) {
   const queryClient = useQueryClient();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [from, setFrom] = useState(today);
@@ -144,6 +170,11 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
                         <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="Print PDF" onClick={() => void printInvoice(invoice)}>
                           <Printer className="size-4" aria-hidden="true" />
                         </button>
+                        {onEdit ? (
+                          <button className="inline-flex size-8 items-center justify-center rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50" title="Edit invoice" onClick={() => onEdit(invoice)}>
+                            <Pencil className="size-4" aria-hidden="true" />
+                          </button>
+                        ) : null}
                         <button className="inline-flex size-8 items-center justify-center rounded-md border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40" title="Cancel invoice" disabled={invoice.status === "CANCELLED"} onClick={() => cancelInvoice.mutate(invoice.id)}>
                           <XCircle className="size-4" aria-hidden="true" />
                         </button>
@@ -169,7 +200,7 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onEdit={onEdit} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
@@ -179,10 +210,12 @@ export function InvoiceHistory({ surface = "embedded" }: Readonly<{ surface?: "e
 function InvoiceDetailPanel({
   invoice,
   onPrint,
+  onEdit,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
+  onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
   if (!invoice) {
@@ -235,6 +268,12 @@ function InvoiceDetailPanel({
         </div>
 
         <div className="grid gap-2 border-t border-border bg-white p-4">
+          {onEdit ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-800" onClick={() => onEdit(invoice)}>
+              <Pencil className="size-4" aria-hidden="true" />
+              Edit invoice
+            </button>
+          ) : null}
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
             <Printer className="size-4" aria-hidden="true" />
             Print PDF
