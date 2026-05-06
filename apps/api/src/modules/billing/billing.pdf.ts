@@ -156,16 +156,20 @@ function forcedPaperCss(paperSize: PaperSize | undefined): string {
 async function measuredThermalHeight(page: Page): Promise<string> {
   const heightPx = await page.evaluate(() => {
     const body = document.body;
-    const html = document.documentElement;
-    return Math.ceil(Math.max(
-      body.scrollHeight,
-      body.offsetHeight,
-      html.clientHeight,
-      html.scrollHeight,
-      html.offsetHeight,
-    ));
+    const bodyRect = body.getBoundingClientRect();
+    const top = Math.min(0, bodyRect.top);
+    const contentBottom = Array.from(body.querySelectorAll("*")).reduce((bottom, element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) {
+        return bottom;
+      }
+
+      return Math.max(bottom, rect.bottom);
+    }, bodyRect.bottom);
+
+    return Math.ceil(Math.max(contentBottom - top, 1));
   });
-  const heightMm = Math.max(40, Math.ceil(heightPx * 25.4 / 96) + 4);
+  const heightMm = Math.max(35, Math.ceil(heightPx * 25.4 / 96) + 3);
   return `${String(heightMm)}mm`;
 }
 
