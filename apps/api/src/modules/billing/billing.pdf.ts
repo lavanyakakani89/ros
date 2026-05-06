@@ -147,6 +147,15 @@ function registerInvoiceTemplateHelpers() {
   Handlebars.registerHelper("formatCurrency", (value: unknown) => `₹${moneyHelper(value)}`);
   Handlebars.registerHelper("fmtNumber", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
   Handlebars.registerHelper("formatNumber", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("formatNum", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("fmtNum", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("number", (value: unknown) => toNumber(value).toLocaleString("en-IN"));
+  Handlebars.registerHelper("qty", (value: unknown) => toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 3 }));
+  Handlebars.registerHelper("fmtQty", (value: unknown) => toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 3 }));
+  Handlebars.registerHelper("formatQty", (value: unknown) => toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 3 }));
+  Handlebars.registerHelper("percent", (value: unknown) => `${toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%`);
+  Handlebars.registerHelper("fmtPercent", (value: unknown) => `${toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%`);
+  Handlebars.registerHelper("formatPercent", (value: unknown) => `${toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%`);
   Handlebars.registerHelper("fmtDate", dateHelper);
   Handlebars.registerHelper("formatDate", dateHelper);
   Handlebars.registerHelper("fmtDateTime", dateTimeHelper);
