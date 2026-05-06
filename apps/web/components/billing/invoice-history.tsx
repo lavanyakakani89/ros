@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, FileText, Pencil, Printer, Search, XCircle } from "lucide-react";
+import { FileText, Pencil, Printer, Search, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
@@ -137,16 +137,21 @@ export function InvoiceHistory({
       <div className={cn("min-h-0 flex-1", isDrawer ? "grid lg:grid-cols-[minmax(0,1fr)_360px]" : "flex flex-col")}>
         <div className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-[32%]" />
+                <col className="w-[24%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
+                <col className="w-[8%]" />
+              </colgroup>
               <thead className="sticky top-0 z-[1] bg-slate-50 text-left text-xs text-slate-500 shadow-[0_1px_0_0_rgba(226,232,240,1)]">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Invoice</th>
-                  <th className="px-4 py-2 font-medium">Customer</th>
-                  <th className="px-4 py-2 font-medium">Date</th>
-                  <th className="px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Delivery</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
-                  <th className="px-4 py-2 text-right font-medium">Actions</th>
+                  <th className="px-3 py-2 font-medium">Invoice</th>
+                  <th className="px-3 py-2 font-medium">Customer</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-center font-medium">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -156,34 +161,24 @@ export function InvoiceHistory({
                     className={cn("cursor-pointer hover:bg-slate-50", selectedInvoice?.id === invoice.id && "bg-emerald-50/70")}
                     onClick={() => setSelectedInvoice(invoice)}
                   >
-                    <td className="px-4 py-3 font-mono text-xs">{invoice.invoiceNumber}</td>
-                    <td className="px-4 py-3">{invoice.customer?.name ?? "Walk-in"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</td>
-                    <td className="px-4 py-3"><StatusBadge status={invoice.status} /></td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{invoice.delivery?.status ?? "-"}</td>
-                    <td className="px-4 py-3 text-right font-semibold">₹{Number(invoice.grandTotal).toFixed(2)}</td>
-                    <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                      <div className="flex justify-end gap-1">
-                        <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="View details" onClick={() => setSelectedInvoice(invoice)}>
-                          <Eye className="size-4" aria-hidden="true" />
-                        </button>
-                        <button className="inline-flex size-8 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-white" title="Print PDF" onClick={() => void printInvoice(invoice)}>
-                          <Printer className="size-4" aria-hidden="true" />
-                        </button>
+                    <td className="break-words px-3 py-3 font-mono text-xs leading-5">{invoice.invoiceNumber}</td>
+                    <td className="px-3 py-3">
+                      <div className="truncate">{invoice.customer?.name ?? "Walk-in"}</div>
+                      <div className="truncate text-xs text-slate-400">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</div>
+                    </td>
+                    <td className="px-3 py-3"><StatusBadge status={invoice.status} /></td>
+                    <td className="whitespace-nowrap px-3 py-3 text-right font-semibold">₹{Number(invoice.grandTotal).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                         {onEdit ? (
                           <button className="inline-flex size-8 items-center justify-center rounded-md border border-emerald-200 text-emerald-700 hover:bg-emerald-50" title="Edit invoice" onClick={() => onEdit(invoice)}>
                             <Pencil className="size-4" aria-hidden="true" />
                           </button>
                         ) : null}
-                        <button className="inline-flex size-8 items-center justify-center rounded-md border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40" title="Cancel invoice" disabled={invoice.status === "CANCELLED"} onClick={() => cancelInvoice.mutate(invoice.id)}>
-                          <XCircle className="size-4" aria-hidden="true" />
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-500">No invoices for this filter.</td>
+                    <td colSpan={5} className="px-4 py-12 text-center text-sm text-slate-500">No invoices for this filter.</td>
                   </tr>
                 )}
               </tbody>

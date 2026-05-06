@@ -1,7 +1,7 @@
 import { PaperSize, RenderType, type Customer, type Invoice, type InvoiceItem, type InvoiceTemplate, type Tenant } from "@prisma/client";
 import Handlebars from "handlebars";
 import type { Client } from "minio";
-import puppeteer from "puppeteer";
+import puppeteer, { type PDFOptions, type Page } from "puppeteer";
 
 import { buildEscposInvoice } from "../printer/printer.service.js";
 
@@ -72,10 +72,12 @@ export async function generateGstInvoicePdf(input: {
 
   try {
     const page = await browser.newPage();
+    const viewport = viewportForPaper(input.template?.paperSize);
+    await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdfBuffer = await page.pdf(input.template?.renderType === RenderType.ESC_POS
-      ? { printBackground: true, preferCSSPageSize: true }
-      : { format: pdfFormat(input.template?.paperSize), printBackground: true });
+    await page.addStyleTag({ content: forcedPaperCss(input.template?.paperSize) });
+    await page.emulateMediaType("print");
+    const pdfBuffer = await page.pdf(await pdfOptionsForPaper(page, input.template?.paperSize));
     const templateKey = input.template
       ? `${input.template.id}-v${String(input.template.version)}`
       : "retailos-default";
@@ -91,13 +93,9 @@ export async function generateGstInvoicePdf(input: {
   }
 }
 
-function pdfFormat(paperSize: PaperSize | undefined): "A4" | "A5" {
-  return paperSize === PaperSize.A5 ? "A5" : "A4";
-}
-
 function getEscposPreviewTemplate(tenant: Tenant, invoice: InvoiceWithItems, template: InvoiceTemplate): string {
   const receipt = buildEscposInvoice(tenant, invoice, template);
-  const width = template.paperSize === PaperSize.THERMAL_2 ? "58mm" : template.paperSize === PaperSize.THERMAL_3 ? "76mm" : "102mm";
+  const width = thermalPaperWidth(template.paperSize);
 
   return `<!doctype html>
 <html>
@@ -114,6 +112,96 @@ function getEscposPreviewTemplate(tenant: Tenant, invoice: InvoiceWithItems, tem
   </body>
 </html>`;
 }
+
+async function pdfOptionsForPaper(page: Page, paperSize: PaperSize | undefined): Promise<PDFOptions> {
+  if (paperSize === PaperSize.A5) {
+    return { format: "A5", printBackground: true, margin: pageMarginForStandardPaper };
+  }
+
+  if (paperSize === PaperSize.A4 || !isThermalPaper(paperSize)) {
+    return { format: "A4", printBackground: true, margin: pageMarginForStandardPaper };
+  }
+
+  const width = thermalPaperWidth(paperSize);
+  const height = await measuredThermalHeight(page);
+  return {
+    width,
+    height,
+    printBackground: true,
+    margin: {
+      top: "0mm",
+      right: "0mm",
+      bottom: "0mm",
+      left: "0mm",
+    },
+  };
+}
+
+function forcedPaperCss(paperSize: PaperSize | undefined): string {
+  if (paperSize === PaperSize.A5) {
+    return "@page { size: A5; margin: 10mm; }";
+  }
+
+  if (paperSize === PaperSize.A4 || !isThermalPaper(paperSize)) {
+    return "@page { size: A4; margin: 12mm; }";
+  }
+
+  const width = thermalPaperWidth(paperSize);
+  return `
+    @page { size: ${width} auto; margin: 0; }
+    html, body { width: ${width}; margin: 0; padding: 0; }
+  `;
+}
+
+async function measuredThermalHeight(page: Page): Promise<string> {
+  const heightPx = await page.evaluate(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    return Math.ceil(Math.max(
+      body.scrollHeight,
+      body.offsetHeight,
+      html.clientHeight,
+      html.scrollHeight,
+      html.offsetHeight,
+    ));
+  });
+  const heightMm = Math.max(40, Math.ceil(heightPx * 25.4 / 96) + 4);
+  return `${String(heightMm)}mm`;
+}
+
+function viewportForPaper(paperSize: PaperSize | undefined): { width: number; height: number } {
+  if (paperSize === PaperSize.A5) {
+    return { width: 560, height: 794 };
+  }
+
+  if (!isThermalPaper(paperSize)) {
+    return { width: 794, height: 1123 };
+  }
+
+  const widthMm = paperSize === PaperSize.THERMAL_2 ? 58 : paperSize === PaperSize.THERMAL_3 ? 76 : 102;
+  return {
+    width: Math.ceil(widthMm * 96 / 25.4),
+    height: 1200,
+  };
+}
+
+function isThermalPaper(paperSize: PaperSize | undefined): boolean {
+  return paperSize === PaperSize.THERMAL_2 || paperSize === PaperSize.THERMAL_3 || paperSize === PaperSize.THERMAL_4;
+}
+
+function thermalPaperWidth(paperSize: PaperSize | undefined): string {
+  if (paperSize === PaperSize.THERMAL_2) return "58mm";
+  if (paperSize === PaperSize.THERMAL_3) return "76mm";
+  if (paperSize === PaperSize.THERMAL_4) return "102mm";
+  return "76mm";
+}
+
+const pageMarginForStandardPaper = {
+  top: "10mm",
+  right: "10mm",
+  bottom: "10mm",
+  left: "10mm",
+} satisfies PDFOptions["margin"];
 
 function escapeHtml(value: string): string {
   return value
