@@ -17,7 +17,14 @@ const PAYMENT_SHORTCUTS = [
   { mode: "CREDIT", key: "4", displayKey: "Ctrl+4", label: "Credit" },
 ] as const;
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
+const PRODUCT_SEARCH_MODES = [
+  { value: "NAME", label: "Product name" },
+  { value: "BARCODE", label: "Barcode" },
+  { value: "SKU", label: "SKU" },
+  { value: "AUTO", label: "Auto" },
+] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
+type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH";
 
 interface SplitEntry {
@@ -87,6 +94,7 @@ export function PosInvoicePanel() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
+  const [productSearchMode, setProductSearchMode] = useState<ProductSearchMode>("NAME");
   const [productHighlightIndex, setProductHighlightIndex] = useState(0);
   const [billDiscount, setBillDiscount] = useState(0);
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
@@ -128,13 +136,10 @@ export function PosInvoicePanel() {
     const term = barcodeInput.trim().toLowerCase();
     if (!term) return [];
     return products
-      .filter((product) =>
-        [product.name, product.sku, product.barcode]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term)),
-      )
+      .filter((product) => matchesProductSearch(product, term, productSearchMode))
+      .sort((left, right) => productMatchRank(left, term) - productMatchRank(right, term))
       .slice(0, 6);
-  }, [barcodeInput, products]);
+  }, [barcodeInput, productSearchMode, products]);
 
   const totals = useMemo(() => {
     const itemTotals = lines.map((line) => {
@@ -332,10 +337,8 @@ export function PosInvoicePanel() {
     if (event.key !== "Enter" || !barcodeInput.trim()) return;
     const code = barcodeInput.trim();
     const codeLower = code.toLowerCase();
-    const product =
-      productResults[productHighlightIndex] ??
-      products.find((item) => item.barcode === code || item.sku === code) ??
-      products.find((item) => item.name.toLowerCase().includes(codeLower));
+    const exactProduct = products.find((item) => exactProductIdentifierMatch(item, codeLower));
+    const product = exactProduct ?? productResults[productHighlightIndex] ?? products.find((item) => item.name.toLowerCase().includes(codeLower));
     if (!product) {
       notify(`No product found for ${code}`, "red");
       setBarcodeInput("");
@@ -797,8 +800,18 @@ export function PosInvoicePanel() {
           </div>
 
           <div className="relative">
-            <label className="text-xs font-medium text-slate-500">Product search / barcode</label>
-            <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder="Scan barcode, SKU, or type product name + Enter" className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <label className="text-xs font-medium text-slate-500">Product search</label>
+              <select
+                value={productSearchMode}
+                onChange={(event) => setProductSearchMode(event.target.value as ProductSearchMode)}
+                className="h-8 rounded-md border border-border bg-white px-2 text-xs font-medium text-slate-700"
+                aria-label="Product search mode"
+              >
+                {PRODUCT_SEARCH_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+              </select>
+            </div>
+            <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder={productSearchPlaceholder(productSearchMode)} className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
             {barcodeInput.trim() ? (
               <div className="mt-2 grid gap-1">
                 {productResults.length > 0 ? productResults.map((product, index) => (
@@ -810,7 +823,14 @@ export function PosInvoicePanel() {
                       setBarcodeInput("");
                     }}
                   >
-                    {product.name} <span className="text-slate-400">| Stock {decimalToNumber(product.currentStock).toFixed(3)}</span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        {product.name} <span className="text-slate-400">| Stock {decimalToNumber(product.currentStock).toFixed(3)}</span>
+                      </span>
+                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
+                        {productMatchLabel(product, barcodeInput, productSearchMode)}
+                      </span>
+                    </span>
                   </button>
                 )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
               </div>
@@ -1106,6 +1126,63 @@ function SummaryRow({ label, value }: Readonly<{ label: string; value: number }>
       <span>{prefix}{Math.abs(value).toFixed(2)}</span>
     </div>
   );
+}
+
+function matchesProductSearch(product: ProductRecord, term: string, mode: ProductSearchMode): boolean {
+  const name = product.name.toLowerCase();
+  const sku = (product.sku ?? "").toLowerCase();
+  const barcode = (product.barcode ?? "").toLowerCase();
+
+  if (mode === "BARCODE") {
+    return barcode.includes(term);
+  }
+
+  if (mode === "SKU") {
+    return sku.includes(term);
+  }
+
+  if (mode === "AUTO") {
+    return name.includes(term) || sku.includes(term) || barcode.includes(term);
+  }
+
+  return name.includes(term);
+}
+
+function exactProductIdentifierMatch(product: ProductRecord, term: string): boolean {
+  return (product.barcode ?? "").trim().toLowerCase() === term || (product.sku ?? "").trim().toLowerCase() === term;
+}
+
+function productMatchRank(product: ProductRecord, term: string): number {
+  const name = product.name.toLowerCase();
+  const sku = (product.sku ?? "").toLowerCase();
+  const barcode = (product.barcode ?? "").toLowerCase();
+
+  if (barcode === term) return 0;
+  if (sku === term) return 1;
+  if (name === term) return 2;
+  if (barcode.startsWith(term)) return 3;
+  if (sku.startsWith(term)) return 4;
+  if (name.startsWith(term)) return 5;
+  return 6;
+}
+
+function productMatchLabel(product: ProductRecord, input: string, mode: ProductSearchMode): string {
+  const term = input.trim().toLowerCase();
+  const sku = (product.sku ?? "").toLowerCase();
+  const barcode = (product.barcode ?? "").toLowerCase();
+  const name = product.name.toLowerCase();
+
+  if (barcode && barcode.includes(term)) return "Barcode";
+  if (sku && sku.includes(term)) return "SKU";
+  if (name.includes(term)) return "Name";
+  return PRODUCT_SEARCH_MODES.find((item) => item.value === mode)?.label ?? "Match";
+}
+
+function productSearchPlaceholder(mode: ProductSearchMode): string {
+  if (mode === "BARCODE") return "Scan or type barcode + Enter";
+  if (mode === "SKU") return "Scan or type SKU + Enter";
+  if (mode === "AUTO") return "Scan barcode/SKU, or type product name + Enter";
+  return "Type product name, or scan exact barcode/SKU + Enter";
 }
 
 function lineTotal(line: { quantity: number; sellingPrice: number; discount: number; gstRate: number }, gstEnabled = true): number {
