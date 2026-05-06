@@ -917,18 +917,25 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
           </div>
 
           <div className="relative">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <label className="text-xs font-medium text-slate-500">Product search</label>
+            <label className="text-xs font-medium text-slate-500">Product search</label>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                ref={barcodeRef}
+                value={barcodeInput}
+                onChange={(event) => setBarcodeInput(event.target.value)}
+                onKeyDown={handleBarcodeKey}
+                placeholder={productSearchPlaceholder(productSearchMode)}
+                className="h-10 min-w-0 flex-1 rounded-md border border-border px-3 font-mono text-sm"
+              />
               <select
                 value={productSearchMode}
                 onChange={(event) => setProductSearchMode(event.target.value as ProductSearchMode)}
-                className="h-8 rounded-md border border-border bg-white px-2 text-xs font-medium text-slate-700"
+                className="h-10 w-32 shrink-0 rounded-md border border-border bg-white px-2 text-xs font-medium text-slate-700"
                 aria-label="Product search mode"
               >
                 {PRODUCT_SEARCH_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
               </select>
             </div>
-            <input ref={barcodeRef} value={barcodeInput} onChange={(event) => setBarcodeInput(event.target.value)} onKeyDown={handleBarcodeKey} placeholder={productSearchPlaceholder(productSearchMode)} className="mt-1 h-10 w-full rounded-md border border-border px-3 font-mono text-sm" />
             {barcodeInput.trim() ? (
               <div className="mt-2 grid gap-1">
                 {productResults.length > 0 ? productResults.map((product, index) => (
