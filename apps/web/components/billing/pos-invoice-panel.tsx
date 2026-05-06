@@ -18,10 +18,10 @@ const PAYMENT_SHORTCUTS = [
 ] as const;
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
 const PRODUCT_SEARCH_MODES = [
+  { value: "AUTO", label: "Auto" },
   { value: "NAME", label: "Product name" },
   { value: "BARCODE", label: "Barcode" },
   { value: "SKU", label: "SKU" },
-  { value: "AUTO", label: "Auto" },
 ] as const;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
@@ -94,7 +94,7 @@ export function PosInvoicePanel() {
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
   const [barcodeInput, setBarcodeInput] = useState("");
-  const [productSearchMode, setProductSearchMode] = useState<ProductSearchMode>("NAME");
+  const [productSearchMode, setProductSearchMode] = useState<ProductSearchMode>("AUTO");
   const [productHighlightIndex, setProductHighlightIndex] = useState(0);
   const [billDiscount, setBillDiscount] = useState(0);
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
