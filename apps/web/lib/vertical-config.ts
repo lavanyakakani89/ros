@@ -1,5 +1,7 @@
 import type { VerticalConfig } from "@retailos/shared";
 
+import { clearStoredImpersonation } from "@/lib/impersonation";
+
 const authStorageKey = "retailos.auth";
 const verticalConfigStorageKey = "retailos.verticalConfig";
 const tenantStorageKey = "retailos.tenant";
@@ -39,6 +41,7 @@ export function clearStoredSession() {
   window.localStorage.removeItem(authStorageKey);
   window.localStorage.removeItem(verticalConfigStorageKey);
   window.localStorage.removeItem(tenantStorageKey);
+  clearStoredImpersonation();
 }
 
 export function storeTenant(tenant: StoredTenant) {

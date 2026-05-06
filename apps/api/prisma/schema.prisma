@@ -59,6 +59,7 @@ model Tenant {
   license            TenantLicense?
   invoiceTemplates   InvoiceTemplate[]
   printerConfig      PrinterConfig?
+  impersonationSessions ImpersonationSession[]
 
   @@map("tenants")
 }
@@ -976,6 +977,7 @@ model SuperAdmin {
   updatedAt      DateTime            @updatedAt @map("updated_at")
   sessions       SuperAdminSession[]
   activityLogs   SuperAdminLog[]
+  impersonationSessions ImpersonationSession[]
 
   @@map("super_admins")
 }
@@ -1000,6 +1002,41 @@ model SuperAdminSession {
   @@map("super_admin_sessions")
 }
 
+enum ImpersonationAccessLevel {
+  READ_ONLY
+  WRITE
+}
+
+enum ImpersonationEndReason {
+  EXIT
+  EXPIRED
+  FORCE_ENDED
+}
+
+model ImpersonationSession {
+  id            String                   @id @default(cuid())
+  superAdminId  String                   @map("super_admin_id")
+  superAdmin    SuperAdmin               @relation(fields: [superAdminId], references: [id])
+  tenantId      String                   @map("tenant_id")
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id])
+  accessLevel   ImpersonationAccessLevel @map("access_level")
+  reason        String?
+  tokenHash     String?                  @map("token_hash")
+  expiresAt     DateTime                 @map("expires_at")
+  endedAt       DateTime?                @map("ended_at")
+  endReason     ImpersonationEndReason?  @map("end_reason")
+  actionsCount  Int                      @default(0) @map("actions_count")
+  ipAddress     String?                  @map("ip_address")
+  userAgent     String?                  @map("user_agent")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([superAdminId])
+  @@index([expiresAt])
+  @@index([endedAt])
+  @@map("impersonation_sessions")
+}
+
 model SuperAdminLog {
   id           String     @id @default(cuid())
   superAdminId String     @map("super_admin_id")
@@ -1008,6 +1045,7 @@ model SuperAdminLog {
   targetType   String?    @map("target_type")
   targetId     String?    @map("target_id")
   notes        String?
+  metadata     Json?
   createdAt    DateTime   @default(now()) @map("created_at")
 
   @@index([superAdminId])

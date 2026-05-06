@@ -1,5 +1,6 @@
 import type { TenantVertical, VerticalConfig } from "@retailos/shared";
 
+import { ensureWriteAllowedDuringImpersonation, type StoredImpersonation } from "@/lib/impersonation";
 import { clearStoredSession } from "@/lib/vertical-config";
 
 const apiBaseUrl =
@@ -116,6 +117,8 @@ export async function getCurrentVerticalConfig(): Promise<{
     gstNumber?: string | null;
   };
   config: VerticalConfig;
+  isImpersonated?: boolean;
+  impersonation?: StoredImpersonation | null;
 }> {
   const response = await fetch(`${apiBaseUrl}/vertical-config/current`, {
     credentials: "include",
@@ -139,6 +142,8 @@ export async function getCurrentVerticalConfig(): Promise<{
       gstNumber?: string | null;
     };
     config: VerticalConfig;
+    isImpersonated?: boolean;
+    impersonation?: StoredImpersonation | null;
   }>;
 }
 
@@ -237,6 +242,10 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
 }
 
 async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  if (isWriteMethod(init.method) && !path.startsWith("/superadmin/")) {
+    ensureWriteAllowedDuringImpersonation();
+  }
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",
@@ -261,6 +270,10 @@ async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry =
   }
 
   return response;
+}
+
+function isWriteMethod(method: string | undefined): boolean {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes((method ?? "GET").toUpperCase());
 }
 
 function clearBrowserSession() {

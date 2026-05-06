@@ -33,6 +33,7 @@ import { restaurantRoutes } from "./modules/restaurant/restaurant.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.routes.js";
+import { superAdminImpersonationRoutes } from "./modules/superadmin/superadmin-impersonation.routes.js";
 import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.routes.js";
 import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
@@ -100,6 +101,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(superAdminAuthRoutes);
   await fastify.register(superAdminShopsRoutes);
   await fastify.register(superAdminTemplatesRoutes);
+  await fastify.register(superAdminImpersonationRoutes);
 
   async function getHealth() {
     await Promise.all([fastify.prisma.$queryRaw`SELECT 1`, fastify.redis.ping()]);

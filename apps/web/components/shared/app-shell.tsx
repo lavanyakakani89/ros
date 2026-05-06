@@ -2,13 +2,19 @@
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { AlertTriangle, CreditCard, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { AlertTriangle, CreditCard, LogOut, PanelLeftClose, PanelLeftOpen, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
+import {
+  clearStoredImpersonation,
+  getStoredImpersonation,
+  storeImpersonation,
+  type StoredImpersonation,
+} from "@/lib/impersonation";
 import { dashboardItem, groupedNavigation } from "@/lib/navigation-groups";
 import { cn } from "@/lib/utils";
 import {
@@ -31,11 +37,14 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [online, setOnline] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [impersonation, setImpersonation] = useState<StoredImpersonation | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
     const storedTenant = getStoredTenant();
     const storedSession = getStoredAuthSession();
+    const storedImpersonation = getStoredImpersonation();
     const storedSidebar = window.localStorage.getItem("retailos.sidebarCollapsed");
 
     if (storedConfig) {
@@ -50,6 +59,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       setSession(storedSession);
     }
 
+    if (storedImpersonation) {
+      setImpersonation(storedImpersonation);
+    }
+
     if (storedSidebar) {
       setSidebarCollapsed(storedSidebar === "true");
     }
@@ -61,6 +74,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         setVerticalConfig(current.config);
         storeTenant(current.tenant);
         storeVerticalConfig(current.config);
+        setImpersonation(current.impersonation ?? null);
+        storeImpersonation(current.impersonation ?? null);
         setCheckingSession(false);
       } catch {
         router.replace("/login");
@@ -77,6 +92,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
     window.addEventListener("online", handleOnlineState);
     window.addEventListener("offline", handleOnlineState);
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 
     async function fetchBadges() {
       try {
@@ -104,6 +120,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     return () => {
       window.removeEventListener("online", handleOnlineState);
       window.removeEventListener("offline", handleOnlineState);
+      window.clearInterval(timer);
     };
   }, [router]);
 
@@ -116,7 +133,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   const tenantName = tenant?.name ?? "RetailOS";
-  const userName = session?.user?.name ?? "Owner";
+  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
   const initials = getInitials(userName);
   const dashboard = dashboardItem(verticalConfig.navigation);
   const navGroups = groupedNavigation(verticalConfig.navigation);
@@ -130,8 +147,23 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   async function handleLogout() {
+    if (impersonation) {
+      await handleEndImpersonation();
+      return;
+    }
+
     await logout();
     router.replace("/login");
+  }
+
+  async function handleEndImpersonation() {
+    await fetch(apiUrl("/superadmin/impersonate/end"), {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => null);
+    clearStoredImpersonation();
+    setImpersonation(null);
+    router.replace("/superadmin/dashboard");
   }
 
   return (
@@ -193,8 +225,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               <button
                 className="inline-flex size-9 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-slate-50"
                 onClick={() => void handleLogout()}
-                title="Logout"
-                aria-label="Logout"
+                title={impersonation ? "Exit support view" : "Logout"}
+                aria-label={impersonation ? "Exit support view" : "Logout"}
               >
                 <LogOut className="size-4" aria-hidden="true" />
               </button>
@@ -224,10 +256,46 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             </div>
           </div>
         ) : null}
+        {impersonation ? (
+          <div className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:px-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-2">
+                <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <div className="min-w-0">
+                  <div className="font-semibold">
+                    Support impersonation: {impersonation.superAdminEmail} is viewing {tenantName}
+                  </div>
+                  <div className="text-xs text-amber-800">
+                    {impersonation.accessLevel === "READ_ONLY" ? "Read-only mode" : "Write mode"} | expires in {formatTimeLeft(impersonation.expiresAt, now)}
+                  </div>
+                </div>
+              </div>
+              <button
+                className="h-8 rounded-md border border-amber-500 bg-white px-3 text-xs font-semibold text-amber-950 hover:bg-amber-100"
+                onClick={() => void handleEndImpersonation()}
+              >
+                Exit support view
+              </button>
+            </div>
+          </div>
+        ) : null}
         <main className="px-4 py-5 sm:px-6">{children}</main>
       </div>
     </div>
   );
+}
+
+function formatTimeLeft(expiresAt: string, now: number): string {
+  const remainingMs = Math.max(0, new Date(expiresAt).getTime() - now);
+  const minutes = Math.floor(remainingMs / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+
+  if (hours <= 0) {
+    return `${String(restMinutes)}m`;
+  }
+
+  return `${String(hours)}h ${String(restMinutes)}m`;
 }
 
 function getInitials(name: string): string {

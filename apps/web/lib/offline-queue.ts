@@ -1,5 +1,7 @@
 import Dexie, { type Table } from "dexie";
 
+import { isImpersonated } from "@/lib/impersonation";
+
 export interface PendingInvoice {
   id: string;
   tenantId: string;
@@ -40,6 +42,10 @@ interface OfflineInvoiceEnvelope {
 }
 
 export async function queueInvoice(payload: OfflineInvoicePayload, tenantId: string) {
+  if (isImpersonated()) {
+    throw new Error("Offline billing is disabled during support impersonation");
+  }
+
   await offlineDB.pendingInvoices.add({
     id: crypto.randomUUID(),
     tenantId,
@@ -61,6 +67,10 @@ export async function getPendingInvoiceCounts() {
 }
 
 export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T = unknown>(path: string, payload: object) => Promise<T> }>) {
+  if (isImpersonated()) {
+    throw new Error("Offline sync is disabled during support impersonation");
+  }
+
   const pending = await offlineDB.pendingInvoices.where("syncStatus").equals("pending").toArray();
 
   if (pending.length === 0) {

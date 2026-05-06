@@ -3,6 +3,8 @@ import type { FastifyReply, FastifyRequest as BaseFastifyRequest } from "fastify
 import type { Client } from "minio";
 import type { Redis } from "ioredis";
 
+import type { RequestImpersonationContext } from "../plugins/impersonation.js";
+
 declare module "fastify" {
   interface FastifyInstance {
     prisma: PrismaClient;
@@ -22,6 +24,8 @@ declare module "fastify" {
       role: SuperAdminRole;
       sessionId: string;
     };
+    isImpersonated?: boolean;
+    impersonation?: RequestImpersonationContext;
   }
 }
 

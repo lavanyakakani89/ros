@@ -2,7 +2,7 @@
 
 import type { SyntheticEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, FileText, LogOut, PlusCircle, RefreshCw, Save, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Eye, FileText, LogOut, PlusCircle, RefreshCw, Save, ShieldAlert, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 const apiBaseUrl =
@@ -72,6 +72,31 @@ interface SystemTemplateRecord {
   htmlSource?: string | null;
   escposConfig?: unknown;
   uiConfig?: unknown;
+}
+
+interface ImpersonationSessionRecord {
+  id: string;
+  accessLevel: "READ_ONLY" | "WRITE";
+  reason?: string | null;
+  expiresAt: string;
+  endedAt?: string | null;
+  endReason?: string | null;
+  actionsCount: number;
+  createdAt: string;
+  isActive: boolean;
+  tenant: {
+    id: string;
+    name: string;
+    slug: string;
+    vertical: string;
+    status: string;
+  };
+  superAdmin: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
 }
 
 interface CreateShopForm {
@@ -154,9 +179,13 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   const [shops, setShops] = useState<ShopRecord[]>([]);
   const [admins, setAdmins] = useState<AdminRecord[]>([]);
   const [templates, setTemplates] = useState<SystemTemplateRecord[]>([]);
+  const [impersonationSessions, setImpersonationSessions] = useState<ImpersonationSessionRecord[]>([]);
   const [shopForm, setShopForm] = useState<CreateShopForm>(emptyShopForm);
   const [adminForm, setAdminForm] = useState<CreateAdminForm>(emptyAdminForm);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplateForm);
+  const [impersonationTarget, setImpersonationTarget] = useState<ShopRecord | null>(null);
+  const [impersonationAccessLevel, setImpersonationAccessLevel] = useState<"READ_ONLY" | "WRITE">("READ_ONLY");
+  const [impersonationReason, setImpersonationReason] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,17 +195,19 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
 
   const loadData = useCallback(async () => {
     setError(null);
-    const [dashboardBody, shopsBody, adminsBody, templatesBody] = await Promise.all([
+    const [dashboardBody, shopsBody, adminsBody, templatesBody, sessionsBody] = await Promise.all([
       apiGet<{ metrics: DashboardMetrics }>("/superadmin/dashboard"),
       apiGet<{ shops: ShopRecord[] }>("/superadmin/shops?limit=100"),
       apiGet<{ admins: AdminRecord[] }>("/superadmin/admins"),
       apiGet<{ templates: SystemTemplateRecord[] }>("/superadmin/templates"),
+      apiGet<{ sessions: ImpersonationSessionRecord[] }>("/superadmin/impersonate/sessions?active=true&limit=50"),
     ]);
 
     setMetrics(dashboardBody.metrics);
     setShops(shopsBody.shops);
     setAdmins(adminsBody.admins);
     setTemplates(templatesBody.templates);
+    setImpersonationSessions(sessionsBody.sessions);
     setLoading(false);
   }, []);
 
@@ -295,6 +326,33 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     setNotice(`Template pushed to ${shop.name}`);
   }
 
+  function openImpersonationDialog(shop: ShopRecord) {
+    setImpersonationTarget(shop);
+    setImpersonationAccessLevel("READ_ONLY");
+    setImpersonationReason("");
+    setError(null);
+  }
+
+  async function startImpersonation() {
+    if (!impersonationTarget) {
+      return;
+    }
+
+    setError(null);
+    const body = await apiPost<{ shopUrl: string }>(`/superadmin/impersonate/${impersonationTarget.id}`, {
+      accessLevel: impersonationAccessLevel,
+      reason: impersonationReason,
+    });
+    window.location.href = body.shopUrl || "/dashboard";
+  }
+
+  async function forceEndImpersonation(session: ImpersonationSessionRecord) {
+    setError(null);
+    await apiPost(`/superadmin/impersonate/${session.id}/force-end`, {});
+    setNotice(`Ended support view for ${session.tenant.name}`);
+    await loadData();
+  }
+
   async function logout() {
     await apiPost("/superadmin/auth/logout", {});
     router.replace("/superadmin/login");
@@ -395,6 +453,14 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-violet-700 px-2 text-xs text-violet-200 disabled:opacity-40"
+                            disabled={shop.status === "SUSPENDED"}
+                            onClick={() => openImpersonationDialog(shop)}
+                          >
+                            <Eye className="size-3" aria-hidden="true" />
+                            View as shop
+                          </button>
+                          <button
                             className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-700 px-2 text-xs text-amber-200 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void changeShopStatus(shop, "warning").catch((err: unknown) => setError(readError(err)))}
@@ -457,6 +523,46 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               Create shop
             </button>
           </form>
+        </section>
+
+        <section className="rounded-md border border-slate-800 bg-slate-900">
+          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+            <div>
+              <div className="font-semibold">Active Support Sessions</div>
+              <div className="text-sm text-slate-400">Who is currently viewing a shop through support impersonation</div>
+            </div>
+            <button className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-700 px-3 text-xs" onClick={() => void loadData()}>
+              <RefreshCw className="size-3" aria-hidden="true" />
+              Refresh
+            </button>
+          </div>
+          <div className="divide-y divide-slate-800">
+            {impersonationSessions.length === 0 ? (
+              <div className="px-4 py-5 text-sm text-slate-500">No active support sessions.</div>
+            ) : (
+              impersonationSessions.map((session) => (
+                <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <div>
+                    <div className="font-medium text-white">{session.tenant.name}</div>
+                    <div className="text-xs text-slate-500">
+                      {session.superAdmin.email} | {session.accessLevel} | expires {formatDateTime(session.expiresAt)}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400">{session.actionsCount} writes</span>
+                    <button
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-red-700 px-2 text-xs text-red-200 disabled:opacity-40"
+                      disabled={!canManage}
+                      onClick={() => void forceEndImpersonation(session).catch((err: unknown) => setError(readError(err)))}
+                    >
+                      <XCircle className="size-3" aria-hidden="true" />
+                      Force end
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
@@ -544,6 +650,51 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
           </form>
         </section>
       </div>
+      {impersonationTarget ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-lg rounded-md border border-slate-700 bg-slate-900 p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold">View as shop</div>
+                <div className="text-sm text-slate-400">
+                  Start a two-hour support session for {impersonationTarget.name}. No shop password is used.
+                </div>
+              </div>
+              <button className="rounded-md border border-slate-700 px-2 py-1 text-xs" onClick={() => setImpersonationTarget(null)}>
+                Close
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <SelectInput
+                label="Access level"
+                value={impersonationAccessLevel}
+                options={canManage ? ["READ_ONLY", "WRITE"] : ["READ_ONLY"]}
+                onChange={(value) => setImpersonationAccessLevel(value as "READ_ONLY" | "WRITE")}
+              />
+              <TextAreaInput
+                label={impersonationAccessLevel === "WRITE" ? "Reason (required for write mode)" : "Reason"}
+                value={impersonationReason}
+                onChange={setImpersonationReason}
+              />
+              <div className="rounded-md border border-amber-800 bg-amber-950 px-3 py-2 text-xs text-amber-100">
+                Read-only mode blocks all shop write actions. Write mode still blocks passwords, users, tenant GST/vertical, and lifecycle settings.
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="h-9 rounded-md border border-slate-700 px-3 text-sm" onClick={() => setImpersonationTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className="h-9 rounded-md bg-violet-400 px-3 text-sm font-semibold text-slate-950 disabled:opacity-40"
+                disabled={impersonationAccessLevel === "WRITE" && impersonationReason.trim().length < 10}
+                onClick={() => void startImpersonation().catch((err: unknown) => setError(readError(err)))}
+              >
+                Start support view
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -715,6 +866,15 @@ function formatDate(value: string): string {
     day: "2-digit",
     month: "short",
     year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
   }).format(new Date(value));
 }
 
