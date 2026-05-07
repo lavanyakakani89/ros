@@ -35,11 +35,22 @@ interface SplitEntry {
   amount: number;
 }
 
-interface CustomerRecord {
+type DecimalValue = string | number | null | undefined;
+
+interface CustomerApiRecord {
   id: string;
   name: string;
   phone: string;
   address?: string | null;
+  creditLimit?: DecimalValue;
+  outstandingDue?: DecimalValue;
+}
+
+interface CustomerRecord {
+  id: string;
+  name: string;
+  phone: string;
+  address: string | null;
   creditLimit?: number | null;
   outstandingDue?: number | null;
 }
@@ -135,7 +146,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
   const customersQuery = useQuery({
     queryKey: ["customers", "billing", customerSearch],
     queryFn: () =>
-      createAuthenticatedApiClient().get<{ data: CustomerRecord[] }>(
+      createAuthenticatedApiClient().get<{ data: CustomerApiRecord[] }>(
         `/customers?limit=20${customerSearch ? `&search=${encodeURIComponent(customerSearch)}` : ""}`,
       ),
   });
@@ -144,7 +155,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
   });
   const products = productsQuery.data?.data ?? [];
-  const customerResults = customersQuery.data?.data ?? [];
+  const customerResults = useMemo(
+    () => (customersQuery.data?.data ?? []).map(normalizeCustomer),
+    [customersQuery.data?.data],
+  );
   const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults.slice(0, 4) : [];
   const productResults = useMemo(() => {
     const term = barcodeInput.trim().toLowerCase();
@@ -377,9 +391,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     barcodeRef.current?.focus();
   }
 
-  function selectCustomer(customer: CustomerRecord) {
-    setSelectedCustomer(customer);
-    setCustomerSearch(`${customer.name} ${customer.phone}`);
+  function selectCustomer(customer: CustomerApiRecord | CustomerRecord) {
+    const normalizedCustomer = normalizeCustomer(customer);
+    setSelectedCustomer(normalizedCustomer);
+    setCustomerSearch(`${normalizedCustomer.name} ${normalizedCustomer.phone}`);
     setShowNewCustomerForm(false);
   }
 
@@ -449,7 +464,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     }
 
     try {
-      const customer = await createAuthenticatedApiClient().post<CustomerRecord>("/customers", {
+      const customer = await createAuthenticatedApiClient().post<CustomerApiRecord>("/customers", {
         customerCode: `CUST-${newCustomerPhone.trim()}`,
         name: newCustomerName.trim(),
         phone: newCustomerPhone.trim(),
@@ -1361,6 +1376,17 @@ function decimalToNumberOrNull(value: string | number | null | undefined): numbe
 
 function coercePaymentMode(value: string): PaymentMode {
   return PAYMENT_MODES.includes(value as PaymentMode) ? value as PaymentMode : "CASH";
+}
+
+function normalizeCustomer(customer: CustomerApiRecord | CustomerRecord): CustomerRecord {
+  return {
+    id: customer.id,
+    name: customer.name,
+    phone: customer.phone,
+    address: customer.address ?? null,
+    creditLimit: decimalToNumberOrNull(customer.creditLimit),
+    outstandingDue: decimalToNumberOrNull(customer.outstandingDue),
+  };
 }
 
 function toRecord(value: unknown): Record<string, unknown> {
