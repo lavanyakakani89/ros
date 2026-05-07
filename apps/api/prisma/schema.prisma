@@ -384,6 +384,74 @@ enum PaymentMode {
   NETBANKING
 }
 
+enum WhatsappDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum WhatsappMessageStatus {
+  RECEIVED
+  PARSED
+  QUEUED
+  SENT
+  FAILED
+  IGNORED
+}
+
+enum WhatsappOrderStatus {
+  DRAFT_CREATED
+  NEEDS_REVIEW
+  CONFIRMED
+  CANCELLED
+}
+
+model WhatsappMessage {
+  id                String                @id @default(cuid())
+  tenantId          String                @map("tenant_id")
+  direction         WhatsappDirection
+  phone             String
+  customerName      String?               @map("customer_name")
+  customerId        String?               @map("customer_id")
+  invoiceId         String?               @map("invoice_id")
+  deliveryId        String?               @map("delivery_id")
+  externalMessageId String?               @map("external_message_id")
+  provider          String                @default("baileys")
+  messageType       String                @default("text") @map("message_type")
+  body              String?
+  payload           Json?
+  status            WhatsappMessageStatus @default(RECEIVED)
+  error             String?
+  receivedAt        DateTime?             @map("received_at")
+  sentAt            DateTime?             @map("sent_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  @@unique([tenantId, externalMessageId])
+  @@index([tenantId, phone, createdAt])
+  @@index([tenantId, invoiceId])
+  @@map("whatsapp_messages")
+}
+
+model WhatsappOrder {
+  id             String              @id @default(cuid())
+  tenantId       String              @map("tenant_id")
+  messageId      String?             @map("message_id")
+  customerId     String?             @map("customer_id")
+  invoiceId      String?             @unique @map("invoice_id")
+  phone          String
+  customerName   String?             @map("customer_name")
+  rawText        String              @map("raw_text")
+  parsedItems    Json?               @map("parsed_items")
+  unmatchedLines Json?               @map("unmatched_lines")
+  status         WhatsappOrderStatus @default(NEEDS_REVIEW)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, phone])
+  @@map("whatsapp_orders")
+}
+
 enum PaperSize {
   THERMAL_2
   THERMAL_3

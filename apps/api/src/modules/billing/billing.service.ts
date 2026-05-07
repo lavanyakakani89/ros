@@ -6,6 +6,7 @@ import type { CreateInvoiceInput, InvoiceItemInput, InvoiceListQuery, UpdateInvo
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { getEffectiveTemplate, printInvoiceForTenant } from "../printer/printer.service.js";
+import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 
 export class BillingError extends Error {
   constructor(
@@ -97,6 +98,10 @@ export class BillingService {
       if (!invoice) {
         throw new BillingError("Draft invoice not found", 404);
       }
+
+      await this.notifyWhatsappInvoiceConfirmed(tenant, invoice).catch((error: unknown) => {
+        this.fastify.log.error({ error, invoiceId, tenantId: tenant.id }, "Failed to queue WhatsApp invoice confirmation");
+      });
 
       return invoice;
     } catch (error) {
@@ -220,6 +225,47 @@ export class BillingService {
     };
   }
 
+  private async notifyWhatsappInvoiceConfirmed(tenant: Tenant, invoice: Awaited<ReturnType<BillingRepository["confirmInvoice"]>>) {
+    if (!invoice || !isWhatsappSourced(invoice.verticalData) || !invoice.customer?.phone) {
+      return;
+    }
+
+    const metadata = toRecord(invoice.verticalData);
+    const whatsappOrderId = typeof metadata.whatsappOrderId === "string" ? metadata.whatsappOrderId : null;
+    const pdf = await this.generateInvoicePdf(tenant, invoice.id).catch((error: unknown) => {
+      this.fastify.log.error({ error, invoiceId: invoice.id, tenantId: tenant.id }, "Failed to generate WhatsApp invoice PDF");
+      return null;
+    });
+    const pdfLine = pdf?.downloadUrl ? `\nInvoice: ${pdf.downloadUrl}` : "";
+    const message = [
+      `Hi ${invoice.customer.name}, your order ${invoice.invoiceNumber} from ${tenant.name} is confirmed.`,
+      `Total: ₹${invoice.grandTotal.toNumber().toFixed(2)}.`,
+      pdfLine,
+    ].join(" ").replace(/\s+\n/g, "\n").trim();
+
+    if (whatsappOrderId) {
+      await this.fastify.prisma.whatsappOrder.updateMany({
+        where: {
+          id: whatsappOrderId,
+          tenantId: tenant.id,
+        },
+        data: {
+          status: "CONFIRMED",
+          invoiceId: invoice.id,
+        },
+      });
+    }
+
+    await queueWhatsappNotification(this.fastify, {
+      tenantId: tenant.id,
+      phone: invoice.customer.phone,
+      customerId: invoice.customerId,
+      invoiceId: invoice.id,
+      message,
+      jobName: "invoice-confirmed",
+    });
+  }
+
 }
 
 function invoicePdfViewUrl(invoiceId: string): string {
@@ -233,6 +279,15 @@ function safeErrorMessage(error: unknown): string {
   }
 
   return error.message.replace(/\s+/g, " ").slice(0, 180) || "Unknown PDF renderer error";
+}
+
+function isWhatsappSourced(value: unknown): boolean {
+  const record = toRecord(value);
+  return record.source === "WHATSAPP" || typeof record.whatsappOrderId === "string";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function createInvoiceItem(

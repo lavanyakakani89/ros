@@ -1,4 +1,5 @@
 import makeWASocket, { useMultiFileAuthState } from "@whiskeysockets/baileys";
+import { PrismaClient } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 
 import { createQueueConnection } from "./connection.js";
@@ -6,6 +7,8 @@ import { createQueueConnection } from "./connection.js";
 type WhatsAppSocket = ReturnType<typeof makeWASocket>;
 
 export interface WhatsAppNotifyJob {
+  tenantId?: string;
+  whatsappMessageId?: string;
   phone: string;
   message: string;
 }
@@ -18,10 +21,39 @@ export const whatsappNotifyQueue = new Queue<WhatsAppNotifyJob>("whatsapp-notify
 });
 
 export function createWhatsappNotifyWorker() {
+  const prisma = new PrismaClient();
+
   return new Worker<WhatsAppNotifyJob>(
     "whatsapp-notify",
     async (job) => {
-      await sendWhatsAppMessage(job.data.phone, job.data.message);
+      try {
+        await sendWhatsAppMessage(job.data.phone, job.data.message);
+        if (job.data.whatsappMessageId) {
+          await prisma.whatsappMessage.update({
+            where: {
+              id: job.data.whatsappMessageId,
+            },
+            data: {
+              status: "SENT",
+              sentAt: new Date(),
+            },
+          });
+        }
+      } catch (error) {
+        if (job.data.whatsappMessageId) {
+          await prisma.whatsappMessage.update({
+            where: {
+              id: job.data.whatsappMessageId,
+            },
+            data: {
+              status: "FAILED",
+              error: error instanceof Error ? error.message : "WhatsApp send failed",
+            },
+          }).catch(() => undefined);
+        }
+
+        throw error;
+      }
     },
     {
       connection: createQueueConnection(),

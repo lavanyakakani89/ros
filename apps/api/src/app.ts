@@ -38,6 +38,7 @@ import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.rou
 import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
+import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const fastify = Fastify({
@@ -145,6 +146,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(couponsRoutes);
   await fastify.register(auditRoutes);
   await fastify.register(restaurantRoutes);
+  await fastify.register(whatsappRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
     const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];

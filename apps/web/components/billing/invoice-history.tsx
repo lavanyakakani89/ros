@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Pencil, Printer, Search, XCircle } from "lucide-react";
+import { FileText, MessageCircle, Pencil, Printer, Search, XCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
@@ -161,7 +161,15 @@ export function InvoiceHistory({
                     className={cn("cursor-pointer hover:bg-slate-50", selectedInvoice?.id === invoice.id && "bg-emerald-50/70")}
                     onClick={() => setSelectedInvoice(invoice)}
                   >
-                    <td className="break-words px-3 py-3 font-mono text-xs leading-5">{invoice.invoiceNumber}</td>
+                    <td className="break-words px-3 py-3 font-mono text-xs leading-5">
+                      <div>{invoice.invoiceNumber}</div>
+                      {isWhatsappInvoice(invoice) ? (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                          <MessageCircle className="size-3" aria-hidden="true" />
+                          WhatsApp
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-3">
                       <div className="truncate">{invoice.customer?.name ?? "Walk-in"}</div>
                       <div className="truncate text-xs text-slate-400">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</div>
@@ -242,6 +250,7 @@ function InvoiceDetailPanel({
             <div>{new Date(invoice.invoiceDate).toLocaleString("en-IN")}</div>
             <div>Payment: {invoice.paymentMode}</div>
             <div>Delivery: {invoice.delivery?.status ?? "Not required"}</div>
+            {isWhatsappInvoice(invoice) ? <div className="font-medium text-emerald-700">Source: WhatsApp order</div> : null}
           </div>
         </div>
 
@@ -293,4 +302,8 @@ function statusClass(status: string): string {
   if (status === "PARTIAL" || status === "CONFIRMED") return "bg-amber-50 text-amber-800";
   if (status === "CANCELLED") return "bg-red-50 text-red-700";
   return "bg-slate-100 text-slate-600";
+}
+
+function isWhatsappInvoice(invoice: InvoiceRecord): boolean {
+  return invoice.verticalData?.source === "WHATSAPP" || typeof invoice.verticalData?.whatsappOrderId === "string";
 }
