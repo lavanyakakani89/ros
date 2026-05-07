@@ -36,6 +36,8 @@ const paperColumns: Record<PaperSize, number> = {
   A4: 56,
 };
 
+const thermalPaperSizes = new Set<PaperSize>([PaperSize.THERMAL_2, PaperSize.THERMAL_3, PaperSize.THERMAL_4]);
+
 export async function getEffectiveTemplate(fastify: FastifyInstance, tenant: Tenant): Promise<InvoiceTemplate | null> {
   const tenantDefault = await fastify.prisma.invoiceTemplate.findFirst({
     where: {
@@ -66,18 +68,19 @@ export async function printInvoiceForTenant(input: {
   tenant: Tenant;
   invoice: InvoiceForPrint;
 }): Promise<PrinterDispatchResult> {
-  const template = await getEffectiveTemplate(input.fastify, input.tenant);
+  const selectedTemplate = await getEffectiveTemplate(input.fastify, input.tenant);
   const printer = await input.fastify.prisma.printerConfig.findUnique({
     where: {
       tenantId: input.tenant.id,
     },
   });
+  const template = await getEffectiveEscposTemplate(input.fastify, input.tenant, selectedTemplate, printer);
 
-  if (!template || template.renderType === RenderType.HTML_PDF) {
+  if (!template) {
     return {
       status: "pdf_fallback",
-      message: "This invoice uses a PDF template. Generate or open the invoice PDF to print.",
-      template,
+      message: "No thermal ESC/POS template is available. Generate or open the invoice PDF to print.",
+      template: selectedTemplate,
       printer,
     };
   }
@@ -97,12 +100,13 @@ export async function testPrinterForTenant(input: {
   fastify: FastifyInstance;
   tenant: Tenant;
 }): Promise<PrinterDispatchResult> {
-  const template = await getEffectiveTemplate(input.fastify, input.tenant);
+  const selectedTemplate = await getEffectiveTemplate(input.fastify, input.tenant);
   const printer = await input.fastify.prisma.printerConfig.findUnique({
     where: {
       tenantId: input.tenant.id,
     },
   });
+  const template = await getEffectiveEscposTemplate(input.fastify, input.tenant, selectedTemplate, printer);
   const receipt = buildEscposText(
     [
       input.tenant.name,
@@ -110,7 +114,7 @@ export async function testPrinterForTenant(input: {
       new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
       "If this prints, billing print is ready.",
     ],
-    template?.paperSize ?? printer?.paperSize ?? PaperSize.THERMAL_3,
+    template?.paperSize ?? preferredEscposPaperSize(input.tenant, printer, selectedTemplate),
   );
   const dispatch = await dispatchEscposReceipt(receipt.bytes, printer);
 
@@ -166,14 +170,72 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
 
 export function buildEscposText(lines: string[], paperSize: PaperSize): { bytes: Buffer; text: string } {
   const columns = paperColumns[paperSize];
-  const text = `${lines.map((line) => fit(line, columns)).join("\n")}\n\n\n`;
+  const text = `${lines.map((line) => fit(line, columns)).join("\n")}\n`;
   const reset = Buffer.from([0x1b, 0x40]);
+  const feedBeforeCut = Buffer.from([0x1b, 0x64, 0x06]);
   const cut = Buffer.from([0x1d, 0x56, 0x00]);
 
   return {
     text,
-    bytes: Buffer.concat([reset, Buffer.from(text, "utf8"), cut]),
+    bytes: Buffer.concat([reset, Buffer.from(text, "utf8"), feedBeforeCut, cut]),
   };
+}
+
+async function getEffectiveEscposTemplate(
+  fastify: FastifyInstance,
+  tenant: Tenant,
+  selectedTemplate: InvoiceTemplate | null,
+  printer: PrinterConfig | null,
+): Promise<InvoiceTemplate | null> {
+  if (selectedTemplate?.renderType === RenderType.ESC_POS) {
+    return selectedTemplate;
+  }
+
+  const paperSize = preferredEscposPaperSize(tenant, printer, selectedTemplate);
+  const tenantEscposTemplate = await fastify.prisma.invoiceTemplate.findFirst({
+    where: {
+      tenantId: tenant.id,
+      renderType: RenderType.ESC_POS,
+      paperSize,
+    },
+    orderBy: [
+      { isDefault: "desc" },
+      { createdAt: "asc" },
+    ],
+  });
+
+  if (tenantEscposTemplate) {
+    return tenantEscposTemplate;
+  }
+
+  return fastify.prisma.invoiceTemplate.findFirst({
+    where: {
+      tenantId: null,
+      paperSize,
+      renderType: RenderType.ESC_POS,
+      isSystem: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+}
+
+function preferredEscposPaperSize(tenant: Tenant, printer: PrinterConfig | null, selectedTemplate: InvoiceTemplate | null): PaperSize {
+  if (isThermalPaperSize(printer?.paperSize)) {
+    return printer.paperSize;
+  }
+
+  if (isThermalPaperSize(selectedTemplate?.paperSize)) {
+    return selectedTemplate.paperSize;
+  }
+
+  const verticalDefault = defaultTemplateByVertical[tenant.vertical];
+  return isThermalPaperSize(verticalDefault) ? verticalDefault : PaperSize.THERMAL_3;
+}
+
+function isThermalPaperSize(paperSize: PaperSize | null | undefined): paperSize is PaperSize {
+  return Boolean(paperSize && thermalPaperSizes.has(paperSize));
 }
 
 async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | null): Promise<Omit<PrinterDispatchResult, "template" | "printer">> {
