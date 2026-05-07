@@ -1,10 +1,15 @@
-import { DeliveryStatus, type Tenant } from "@prisma/client";
+import { DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
-import { DeliveryRepository } from "./delivery.repository.js";
+import { DeliveryRepository, type CreateDeliveryProofInput } from "./delivery.repository.js";
 import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+
+export interface DeliveryActor {
+  userId: string;
+  role: UserRole;
+}
 
 export class DeliveryError extends Error {
   constructor(
@@ -46,10 +51,16 @@ export class DeliveryService {
       throw new DeliveryError("Delivery not found", 404);
     }
 
-    return this.repository.getDelivery(tenant.id, deliveryId);
+    const delivery = await this.repository.getDelivery(tenant.id, deliveryId);
+    await this.notifyDeliveryAssignment(tenant, delivery, input.userId).catch((error: unknown) => {
+      this.fastify.log.error({ error, tenantId: tenant.id, deliveryId, assignedTo: input.userId }, "Failed to notify delivery assignment");
+    });
+
+    return delivery;
   }
 
-  async updateStatus(tenant: Tenant, deliveryId: string, input: UpdateDeliveryStatusInput) {
+  async updateStatus(tenant: Tenant, deliveryId: string, input: UpdateDeliveryStatusInput, actor?: DeliveryActor) {
+    await this.ensureDeliveryAccess(tenant.id, deliveryId, actor);
     const result = await this.repository.updateDeliveryStatus(tenant.id, deliveryId, input);
     if (result.count === 0) {
       throw new DeliveryError("Delivery not found", 404);
@@ -67,12 +78,103 @@ export class DeliveryService {
     return this.repository.listAgentDeliveries(tenant.id, userId);
   }
 
+  listMyDeliveries(tenant: Tenant, actor: DeliveryActor) {
+    return this.repository.listAgentDeliveries(tenant.id, actor.userId);
+  }
+
+  listMyNotifications(tenant: Tenant, actor: DeliveryActor) {
+    return this.repository.listNotifications(tenant.id, actor.userId);
+  }
+
+  async markNotificationRead(tenant: Tenant, actor: DeliveryActor, notificationId: string) {
+    const result = await this.repository.markNotificationRead(tenant.id, actor.userId, notificationId);
+    if (result.count === 0) {
+      throw new DeliveryError("Notification not found", 404);
+    }
+
+    return { status: "ok" };
+  }
+
+  async createProof(tenant: Tenant, actor: DeliveryActor, input: CreateDeliveryProofInput) {
+    await this.ensureDeliveryAccess(tenant.id, input.deliveryId, actor);
+    const delivery = await this.repository.getDelivery(tenant.id, input.deliveryId);
+    if (!delivery) {
+      throw new DeliveryError("Delivery not found", 404);
+    }
+
+    return this.repository.createProof(tenant.id, {
+      ...input,
+      proofType: input.proofType,
+      uploadedBy: actor.userId,
+    });
+  }
+
+  async getProof(tenant: Tenant, deliveryId: string, proofId: string, actor?: DeliveryActor) {
+    await this.ensureDeliveryAccess(tenant.id, deliveryId, actor);
+    const proof = await this.repository.getProof(tenant.id, deliveryId, proofId);
+    if (!proof) {
+      throw new DeliveryError("Delivery proof not found", 404);
+    }
+
+    return proof;
+  }
+
+  private async ensureDeliveryAccess(tenantId: string, deliveryId: string, actor?: DeliveryActor) {
+    if (!actor || actor.role !== UserRole.DELIVERY) {
+      return;
+    }
+
+    const allowed = await this.repository.canAccessDelivery(tenantId, deliveryId, actor.userId);
+    if (!allowed) {
+      throw new DeliveryError("This delivery is not assigned to you", 403);
+    }
+  }
+
+  private async notifyDeliveryAssignment(
+    tenant: Tenant,
+    delivery: Awaited<ReturnType<DeliveryRepository["getDelivery"]>>,
+    userId: string,
+  ) {
+    if (!delivery) {
+      return;
+    }
+
+    await this.repository.createNotification({
+      tenantId: tenant.id,
+      userId,
+      title: "New delivery assigned",
+      body: `${delivery.invoice.invoiceNumber} | ${delivery.customer.name} | ₹${delivery.invoice.grandTotal.toNumber().toFixed(2)}`,
+      type: "DELIVERY_ASSIGNED",
+      entityType: "DELIVERY",
+      entityId: delivery.id,
+    });
+
+    const user = await this.fastify.prisma.user.findFirst({
+      where: {
+        id: userId,
+        tenantId: tenant.id,
+        isActive: true,
+      },
+    });
+
+    if (user?.phone) {
+      await queueWhatsappNotification(this.fastify, {
+        tenantId: tenant.id,
+        phone: user.phone,
+        invoiceId: delivery.invoiceId,
+        deliveryId: delivery.id,
+        jobName: "delivery-assigned",
+        message: `RetailOS: delivery assigned for ${delivery.invoice.invoiceNumber}. Customer: ${delivery.customer.name}. Amount: ₹${delivery.invoice.grandTotal.toNumber().toFixed(2)}. Address: ${delivery.deliveryAddress}`,
+      });
+    }
+  }
+
   private async notifyWhatsappDeliveryStatus(
     tenant: Tenant,
     delivery: Awaited<ReturnType<DeliveryRepository["getDelivery"]>>,
     status: DeliveryStatus,
   ) {
-    if (!delivery || !delivery.customer.phone || !isWhatsappSourced(delivery.invoice.verticalData)) {
+    if (!delivery || !delivery.customer.phone) {
       return;
     }
 
@@ -95,9 +197,4 @@ export class DeliveryService {
       jobName: `delivery-${label.replaceAll(" ", "-")}`,
     });
   }
-}
-
-function isWhatsappSourced(value: unknown): boolean {
-  const record = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-  return record.source === "WHATSAPP" || typeof record.whatsappOrderId === "string";
 }

@@ -192,6 +192,14 @@ export function createAuthenticatedApiClient() {
 
       return response.json() as Promise<T>;
     },
+    async uploadForm<T = unknown>(path: string, form: FormData) {
+      const response = await fetchWithCookieAuth(path, {
+        method: "POST",
+        body: form,
+      });
+
+      return response.json() as Promise<T>;
+    },
     async download(path: string) {
       const response = await fetchWithCookieAuth(path);
       return response.blob();

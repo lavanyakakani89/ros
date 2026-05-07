@@ -1,4 +1,4 @@
-import { DeliveryStatus } from "@prisma/client";
+import { DeliveryProofType, DeliveryStatus } from "@prisma/client";
 import { z } from "zod";
 
 export const createDeliverySchema = z.object({
@@ -21,6 +21,15 @@ export const deliveryAgentParamsSchema = z.object({
   userId: z.string().min(1),
 });
 
+export const deliveryProofParamsSchema = z.object({
+  id: z.string().min(1),
+  proofId: z.string().min(1),
+});
+
+export const notificationIdParamsSchema = z.object({
+  id: z.string().min(1),
+});
+
 export const assignDeliverySchema = z.object({
   userId: z.string().min(1),
 });
@@ -28,4 +37,11 @@ export const assignDeliverySchema = z.object({
 export const updateDeliveryStatusSchema = z.object({
   status: z.nativeEnum(DeliveryStatus),
   notes: z.string().trim().min(1).optional(),
+});
+
+export const createDeliveryProofFieldsSchema = z.object({
+  proofType: z.nativeEnum(DeliveryProofType).default(DeliveryProofType.DELIVERY_PHOTO),
+  notes: z.string().trim().min(1).optional(),
+  latitude: z.coerce.number().finite().optional(),
+  longitude: z.coerce.number().finite().optional(),
 });

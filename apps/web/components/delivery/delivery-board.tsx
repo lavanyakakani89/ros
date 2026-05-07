@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Truck } from "lucide-react";
+import { Camera, Smartphone, Truck } from "lucide-react";
+import Link from "next/link";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
@@ -22,6 +23,21 @@ interface DeliveryItem {
     name: string;
     phone: string;
   };
+  proofs?: Array<{
+    id: string;
+    proofType: "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
+    fileName: string;
+    createdAt: string;
+  }>;
+}
+
+interface SettingsResponse {
+  users: Array<{
+    id: string;
+    name: string;
+    role: string;
+    isActive: boolean;
+  }>;
 }
 
 const statuses: DeliveryStatus[] = ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY", "DELIVERED"];
@@ -42,6 +58,12 @@ export function DeliveryBoard() {
     },
     staleTime: 30_000,
   });
+  const usersQuery = useQuery({
+    queryKey: ["settings-current", "delivery-users"],
+    queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
+    enabled: hasSession,
+    staleTime: 60_000,
+  });
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
@@ -52,9 +74,21 @@ export function DeliveryBoard() {
   });
 
   const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
+  const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-4">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-3">
+        <div>
+          <div className="text-sm font-semibold text-emerald-950">Delivery Android app</div>
+          <div className="text-xs text-emerald-700">Delivery users can install the mobile PWA and see only their assigned orders.</div>
+        </div>
+        <Link href="/delivery-app" className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white">
+          <Smartphone className="size-4" aria-hidden="true" />
+          Open app
+        </Link>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-4">
       {statuses.map((status) => {
         const items = deliveries.filter((delivery) => delivery.status === status);
 
@@ -74,6 +108,20 @@ export function DeliveryBoard() {
                       <div className="mt-1 text-xs text-slate-500">{delivery.customer?.name ?? "Customer"}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.deliveryAddress}</div>
                       <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(delivery.proofs ?? []).slice(0, 3).map((proof) => (
+                          <a
+                            key={proof.id}
+                            href={`/api/delivery/${delivery.id}/proofs/${proof.id}/view`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700"
+                          >
+                            <Camera className="size-3" aria-hidden="true" />
+                            {proof.proofType.replaceAll("_", " ")}
+                          </a>
+                        ))}
+                      </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {nextStatuses(delivery.status).map((nextStatus) => (
                           <button
@@ -90,7 +138,10 @@ export function DeliveryBoard() {
                         const form = new FormData(event.currentTarget);
                         assignDelivery.mutate({ id: delivery.id, userId: formString(form, "userId") });
                       }}>
-                        <input name="userId" placeholder="Delivery user ID" className="h-8 min-w-0 flex-1 rounded-md border border-border px-2 text-xs" />
+                        <select name="userId" defaultValue={delivery.assignedTo ?? ""} className="h-8 min-w-0 flex-1 rounded-md border border-border px-2 text-xs">
+                          <option value="">Assign person</option>
+                          {deliveryUsers.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+                        </select>
                         <button className="h-8 rounded-md bg-slate-900 px-2 text-xs font-medium text-white">Assign</button>
                       </form>
                     </div>
@@ -102,6 +153,7 @@ export function DeliveryBoard() {
           </section>
         );
       })}
+      </div>
     </div>
   );
 }
