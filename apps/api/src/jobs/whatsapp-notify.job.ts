@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 
 import { createQueueConnection } from "./connection.js";
+import { decryptWhatsappToken } from "../modules/whatsapp/whatsapp.credentials.js";
 
 type WhatsAppSocket = ReturnType<typeof makeWASocket>;
 
@@ -27,7 +28,10 @@ export function createWhatsappNotifyWorker() {
     "whatsapp-notify",
     async (job) => {
       try {
-        await sendWhatsAppMessage(job.data.phone, job.data.message);
+        await sendWhatsAppMessage(job.data.phone, job.data.message, {
+          prisma,
+          ...(job.data.tenantId ? { tenantId: job.data.tenantId } : {}),
+        });
         if (job.data.whatsappMessageId) {
           await prisma.whatsappMessage.update({
             where: {
@@ -61,9 +65,43 @@ export function createWhatsappNotifyWorker() {
   );
 }
 
-export async function sendWhatsAppMessage(phone: string, message: string): Promise<void> {
+export async function sendWhatsAppMessage(
+  phone: string,
+  message: string,
+  options: { prisma?: PrismaClient; tenantId?: string } = {},
+): Promise<void> {
+  if (options.prisma && options.tenantId) {
+    const tenantId = options.tenantId;
+    const integration = await options.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, TRUE)`;
+      return tx.whatsappIntegration.findFirst({
+        where: {
+          tenantId,
+          status: "CONNECTED",
+          phoneNumberId: {
+            not: null,
+          },
+          accessTokenCiphertext: {
+            not: null,
+          },
+        },
+      });
+    });
+    const accessToken = decryptWhatsappToken(integration?.accessTokenCiphertext);
+    if (integration?.phoneNumberId && accessToken) {
+      await sendCloudApiWhatsAppMessage(phone, message, {
+        phoneNumberId: integration.phoneNumberId,
+        accessToken,
+      });
+      return;
+    }
+  }
+
   if (process.env.WHATSAPP_CLOUD_ACCESS_TOKEN && process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID) {
-    await sendCloudApiWhatsAppMessage(phone, message);
+    await sendCloudApiWhatsAppMessage(phone, message, {
+      phoneNumberId: process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID,
+      accessToken: process.env.WHATSAPP_CLOUD_ACCESS_TOKEN,
+    });
     return;
   }
 
@@ -71,19 +109,17 @@ export async function sendWhatsAppMessage(phone: string, message: string): Promi
   await activeSocket.sendMessage(`${phone.replace(/\D/g, "")}@s.whatsapp.net`, { text: message });
 }
 
-async function sendCloudApiWhatsAppMessage(phone: string, message: string): Promise<void> {
+async function sendCloudApiWhatsAppMessage(
+  phone: string,
+  message: string,
+  credentials: { phoneNumberId: string; accessToken: string },
+): Promise<void> {
   const apiVersion = process.env.WHATSAPP_CLOUD_API_VERSION ?? "v23.0";
-  const phoneNumberId = process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID;
-  const accessToken = process.env.WHATSAPP_CLOUD_ACCESS_TOKEN;
 
-  if (!phoneNumberId || !accessToken) {
-    throw new Error("WhatsApp Cloud API credentials are not configured");
-  }
-
-  const response = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+  const response = await fetch(`https://graph.facebook.com/${apiVersion}/${credentials.phoneNumberId}/messages`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${credentials.accessToken}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

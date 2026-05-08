@@ -109,7 +109,7 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         : await service.generateInvoicePdf(request.tenant, params.id);
       const message = `Hi ${customer.name}, your invoice ${invoice.invoiceNumber} from ${request.tenant.name} is ready. Download: ${pdf.downloadUrl}`;
 
-      await whatsappNotifyQueue.add("invoice-share", { phone: customer.phone, message });
+      await whatsappNotifyQueue.add("invoice-share", { tenantId: request.tenant.id, phone: customer.phone, message });
       return { status: "queued", channel: input.channel };
     });
   });
@@ -121,7 +121,7 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
       if (!customer) throw new BillingError("Customer not found", 404);
       const message = `Hi ${customer.name}, your invoice from ${request.tenant.name} is ready. Download: ${pdfUrl}`;
-      await whatsappNotifyQueue.add("invoice-share", { phone: customer.phone, message });
+      await whatsappNotifyQueue.add("invoice-share", { tenantId: request.tenant.id, phone: customer.phone, message });
       return { status: "queued" };
     });
   });

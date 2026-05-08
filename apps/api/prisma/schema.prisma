@@ -62,6 +62,7 @@ model Tenant {
   impersonationSessions ImpersonationSession[]
   appNotifications   AppNotification[]
   deliveryProofs     DeliveryProof[]
+  whatsappIntegration WhatsappIntegration?
 
   @@map("tenants")
 }
@@ -406,6 +407,38 @@ enum WhatsappOrderStatus {
   NEEDS_REVIEW
   CONFIRMED
   CANCELLED
+}
+
+enum WhatsappIntegrationStatus {
+  PENDING
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+model WhatsappIntegration {
+  id                    String                    @id @default(cuid())
+  tenantId              String                    @unique @map("tenant_id")
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id])
+  provider              String                    @default("whatsapp-cloud")
+  phoneNumberId         String?                   @unique @map("phone_number_id")
+  wabaId                String?                   @map("waba_id")
+  businessId            String?                   @map("business_id")
+  displayPhoneNumber    String?                   @map("display_phone_number")
+  verifiedName          String?                   @map("verified_name")
+  accessTokenCiphertext String?                   @map("access_token_ciphertext")
+  tokenExpiresAt        DateTime?                 @map("token_expires_at")
+  status                WhatsappIntegrationStatus @default(PENDING)
+  lastError             String?                   @map("last_error")
+  connectedAt           DateTime?                 @map("connected_at")
+  disconnectedAt        DateTime?                 @map("disconnected_at")
+  setupPayload          Json?                     @map("setup_payload")
+  createdAt             DateTime                  @default(now()) @map("created_at")
+  updatedAt             DateTime                  @updatedAt @map("updated_at")
+
+  @@index([tenantId, status])
+  @@index([phoneNumberId])
+  @@map("whatsapp_integrations")
 }
 
 model WhatsappMessage {

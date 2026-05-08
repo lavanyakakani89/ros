@@ -1,9 +1,10 @@
-import { PaymentMode, Prisma, type Product, type Tenant } from "@prisma/client";
+import { PaymentMode, Prisma, UserRole, WhatsappIntegrationStatus, type Product, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { BillingService } from "../billing/billing.service.js";
-import { normalizeWhatsappPhone } from "./whatsapp.notifications.js";
-import type { WhatsappOrdersQuery } from "./whatsapp.schema.js";
+import { encryptWhatsappToken } from "./whatsapp.credentials.js";
+import { normalizeWhatsappPhone, queueWhatsappNotification } from "./whatsapp.notifications.js";
+import type { WhatsappEmbeddedSignupCompleteInput, WhatsappOrdersQuery, WhatsappTestMessageInput } from "./whatsapp.schema.js";
 
 export interface InboundWhatsappMessage {
   provider: string;
@@ -224,6 +225,169 @@ export class WhatsappService {
     }));
   }
 
+  async getIntegration(tenant: Tenant) {
+    const integration = await this.fastify.prisma.whatsappIntegration.findUnique({
+      where: {
+        tenantId: tenant.id,
+      },
+    });
+
+    return toIntegrationResponse(integration);
+  }
+
+  getEmbeddedSignupConfig(tenant: Tenant) {
+    const appId = process.env.WHATSAPP_EMBEDDED_APP_ID ?? process.env.META_APP_ID ?? null;
+    const configurationId = process.env.WHATSAPP_EMBEDDED_CONFIG_ID ?? process.env.WHATSAPP_CONFIGURATION_ID ?? null;
+    const appSecret = process.env.WHATSAPP_EMBEDDED_APP_SECRET ?? process.env.WHATSAPP_WEBHOOK_APP_SECRET ?? null;
+    const apiVersion = getGraphApiVersion();
+    const callbackUrl = `${getPublicAppUrl()}/api/public/whatsapp/inbound`;
+    const missing = [
+      ...(!appId ? ["WHATSAPP_EMBEDDED_APP_ID"] : []),
+      ...(!configurationId ? ["WHATSAPP_EMBEDDED_CONFIG_ID"] : []),
+      ...(!appSecret ? ["WHATSAPP_EMBEDDED_APP_SECRET"] : []),
+      ...(!process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ? ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] : []),
+    ];
+
+    return {
+      isConfigured: missing.length === 0,
+      appId,
+      configurationId,
+      apiVersion,
+      callbackUrl,
+      legacyCallbackUrl: `${getPublicAppUrl()}/api/public/whatsapp/${tenant.slug}/inbound`,
+      verifyTokenConfigured: Boolean(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN),
+      missing,
+    };
+  }
+
+  async completeEmbeddedSignup(
+    tenant: Tenant,
+    currentUser: { role: UserRole },
+    input: WhatsappEmbeddedSignupCompleteInput,
+  ) {
+    ensureManager(currentUser.role);
+
+    const appId = process.env.WHATSAPP_EMBEDDED_APP_ID ?? process.env.META_APP_ID;
+    const appSecret = process.env.WHATSAPP_EMBEDDED_APP_SECRET ?? process.env.WHATSAPP_WEBHOOK_APP_SECRET;
+    if (!appId || !appSecret) {
+      throw new WhatsappIntegrationError("WhatsApp Embedded Signup is not configured on the server", 503);
+    }
+
+    const sessionData = toRecord(toRecord(input.sessionPayload).data);
+    let phoneNumberId = input.phoneNumberId ?? stringValue(sessionData.phone_number_id);
+    const wabaId = input.wabaId ?? stringValue(sessionData.waba_id);
+    const businessId = input.businessId ?? stringValue(sessionData.business_id);
+    const token = await exchangeEmbeddedSignupCode({
+      appId,
+      appSecret,
+      code: input.code,
+    });
+
+    let phoneDetails: WhatsappPhoneDetails | null = null;
+    const warnings: string[] = [];
+
+    if (!phoneNumberId && wabaId) {
+      const phoneNumbers = await listWabaPhoneNumbers(wabaId, token.accessToken).catch((error: unknown) => {
+        warnings.push(`Unable to read WhatsApp phone numbers: ${errorMessage(error)}`);
+        return [];
+      });
+      const firstPhoneNumber = phoneNumbers[0];
+      if (firstPhoneNumber) {
+        phoneNumberId = firstPhoneNumber.id;
+        phoneDetails = firstPhoneNumber;
+      }
+    }
+
+    if (!phoneNumberId) {
+      throw new WhatsappIntegrationError("Meta signup did not return a WhatsApp phone number ID", 400);
+    }
+
+    phoneDetails ??= await getWhatsappPhoneDetails(phoneNumberId, token.accessToken).catch((error: unknown) => {
+      warnings.push(`Unable to read WhatsApp phone details: ${errorMessage(error)}`);
+      return null;
+    });
+
+    if (wabaId) {
+      await subscribeWabaToApp(wabaId, token.accessToken).catch((error: unknown) => {
+        warnings.push(`Webhook subscription could not be confirmed automatically: ${errorMessage(error)}`);
+      });
+    }
+
+    const integration = await this.fastify.prisma.whatsappIntegration.upsert({
+      where: {
+        tenantId: tenant.id,
+      },
+      create: {
+        tenantId: tenant.id,
+        phoneNumberId,
+        wabaId: wabaId || null,
+        businessId: businessId || null,
+        displayPhoneNumber: phoneDetails?.display_phone_number ?? null,
+        verifiedName: phoneDetails?.verified_name ?? null,
+        accessTokenCiphertext: encryptWhatsappToken(token.accessToken),
+        tokenExpiresAt: token.expiresAt,
+        status: WhatsappIntegrationStatus.CONNECTED,
+        lastError: warnings.length > 0 ? warnings.join("\n") : null,
+        connectedAt: new Date(),
+        disconnectedAt: null,
+        setupPayload: toJson(input.sessionPayload) ?? Prisma.JsonNull,
+      },
+      update: {
+        phoneNumberId,
+        wabaId: wabaId || null,
+        businessId: businessId || null,
+        displayPhoneNumber: phoneDetails?.display_phone_number ?? null,
+        verifiedName: phoneDetails?.verified_name ?? null,
+        accessTokenCiphertext: encryptWhatsappToken(token.accessToken),
+        tokenExpiresAt: token.expiresAt,
+        status: WhatsappIntegrationStatus.CONNECTED,
+        lastError: warnings.length > 0 ? warnings.join("\n") : null,
+        connectedAt: new Date(),
+        disconnectedAt: null,
+        setupPayload: toJson(input.sessionPayload) ?? Prisma.JsonNull,
+      },
+    });
+
+    return {
+      ...toIntegrationResponse(integration),
+      warnings,
+    };
+  }
+
+  async disconnectIntegration(tenant: Tenant, currentUser: { role: UserRole }) {
+    ensureManager(currentUser.role);
+
+    const integration = await this.fastify.prisma.whatsappIntegration.update({
+      where: {
+        tenantId: tenant.id,
+      },
+      data: {
+        status: WhatsappIntegrationStatus.DISCONNECTED,
+        accessTokenCiphertext: null,
+        tokenExpiresAt: null,
+        disconnectedAt: new Date(),
+        lastError: null,
+      },
+    }).catch(() => null);
+
+    return toIntegrationResponse(integration);
+  }
+
+  async sendTestMessage(tenant: Tenant, currentUser: { role: UserRole }, input: WhatsappTestMessageInput) {
+    ensureManager(currentUser.role);
+
+    await queueWhatsappNotification(this.fastify, {
+      tenantId: tenant.id,
+      phone: input.phone,
+      message: `RetailOS WhatsApp test from ${tenant.name}. If you received this, WhatsApp Business is connected.`,
+      jobName: "whatsapp-test",
+    });
+
+    return {
+      status: "queued",
+    };
+  }
+
   private async createIgnoredMessage(tenant: Tenant, input: InboundWhatsappMessage, phone: string, reason: string) {
     const message = await this.fastify.prisma.whatsappMessage.create({
       data: {
@@ -420,10 +584,216 @@ function compact(value: string): string {
   return value.replace(/\s+/g, "");
 }
 
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function toArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown, fallback = ""): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return fallback;
+}
+
 function toJson(value: unknown): Prisma.InputJsonValue | undefined {
   if (value === undefined) {
     return undefined;
   }
 
   return value as Prisma.InputJsonValue;
+}
+
+interface WhatsappPhoneDetails {
+  id: string;
+  display_phone_number?: string;
+  verified_name?: string;
+}
+
+interface EmbeddedSignupToken {
+  accessToken: string;
+  expiresAt: Date | null;
+}
+
+async function exchangeEmbeddedSignupCode(input: { appId: string; appSecret: string; code: string }): Promise<EmbeddedSignupToken> {
+  const params = new URLSearchParams({
+    client_id: input.appId,
+    client_secret: input.appSecret,
+    code: input.code,
+  });
+  const redirectUri = process.env.WHATSAPP_EMBEDDED_REDIRECT_URI;
+  if (redirectUri) {
+    params.set("redirect_uri", redirectUri);
+  }
+
+  const response = await fetch(`${graphBaseUrl()}/oauth/access_token?${params.toString()}`);
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new WhatsappIntegrationError(`Meta token exchange failed: ${metaErrorMessage(body)}`, 502);
+  }
+
+  const accessToken = stringValue(body?.access_token);
+  if (!accessToken) {
+    throw new WhatsappIntegrationError("Meta token exchange did not return an access token", 502);
+  }
+
+  const expiresIn = Number(body?.expires_in);
+  return {
+    accessToken,
+    expiresAt: Number.isFinite(expiresIn) && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000) : null,
+  };
+}
+
+async function getWhatsappPhoneDetails(phoneNumberId: string, accessToken: string): Promise<WhatsappPhoneDetails> {
+  const params = new URLSearchParams({
+    fields: "id,display_phone_number,verified_name",
+    access_token: accessToken,
+  });
+  const response = await fetch(`${graphBaseUrl()}/${phoneNumberId}?${params.toString()}`);
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(metaErrorMessage(body));
+  }
+
+  const details: WhatsappPhoneDetails = {
+    id: stringValue(body?.id, phoneNumberId),
+  };
+  const displayPhoneNumber = stringValue(body?.display_phone_number);
+  const verifiedName = stringValue(body?.verified_name);
+  if (displayPhoneNumber) details.display_phone_number = displayPhoneNumber;
+  if (verifiedName) details.verified_name = verifiedName;
+
+  return details;
+}
+
+async function listWabaPhoneNumbers(wabaId: string, accessToken: string): Promise<WhatsappPhoneDetails[]> {
+  const params = new URLSearchParams({
+    fields: "id,display_phone_number,verified_name",
+    access_token: accessToken,
+  });
+  const response = await fetch(`${graphBaseUrl()}/${wabaId}/phone_numbers?${params.toString()}`);
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(metaErrorMessage(body));
+  }
+
+  return toArray(body?.data).map((item) => {
+    const record = toRecord(item);
+    const details: WhatsappPhoneDetails = {
+      id: stringValue(record.id),
+    };
+    const displayPhoneNumber = stringValue(record.display_phone_number);
+    const verifiedName = stringValue(record.verified_name);
+    if (displayPhoneNumber) details.display_phone_number = displayPhoneNumber;
+    if (verifiedName) details.verified_name = verifiedName;
+
+    return details;
+  }).filter((item) => Boolean(item.id));
+}
+
+async function subscribeWabaToApp(wabaId: string, accessToken: string): Promise<void> {
+  const params = new URLSearchParams({
+    access_token: accessToken,
+  });
+  const response = await fetch(`${graphBaseUrl()}/${wabaId}/subscribed_apps?${params.toString()}`, {
+    method: "POST",
+  });
+  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok) {
+    throw new Error(metaErrorMessage(body));
+  }
+}
+
+function toIntegrationResponse(integration: {
+  id: string;
+  provider: string;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  businessId: string | null;
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
+  accessTokenCiphertext: string | null;
+  tokenExpiresAt: Date | null;
+  status: WhatsappIntegrationStatus;
+  lastError: string | null;
+  connectedAt: Date | null;
+  disconnectedAt: Date | null;
+  updatedAt: Date;
+} | null) {
+  const fallbackConfigured = Boolean(process.env.WHATSAPP_CLOUD_ACCESS_TOKEN && process.env.WHATSAPP_CLOUD_PHONE_NUMBER_ID);
+  if (!integration) {
+    return {
+      status: "NOT_CONNECTED",
+      provider: "whatsapp-cloud",
+      fallbackConfigured,
+      isConnected: false,
+      phoneNumberId: null,
+      wabaId: null,
+      businessId: null,
+      displayPhoneNumber: null,
+      verifiedName: null,
+      tokenExpiresAt: null,
+      lastError: null,
+      connectedAt: null,
+      disconnectedAt: null,
+      updatedAt: null,
+    };
+  }
+
+  return {
+    status: integration.status,
+    provider: integration.provider,
+    fallbackConfigured,
+    isConnected: integration.status === WhatsappIntegrationStatus.CONNECTED && Boolean(integration.accessTokenCiphertext),
+    phoneNumberId: integration.phoneNumberId,
+    wabaId: integration.wabaId,
+    businessId: integration.businessId,
+    displayPhoneNumber: integration.displayPhoneNumber,
+    verifiedName: integration.verifiedName,
+    tokenExpiresAt: integration.tokenExpiresAt,
+    lastError: integration.lastError,
+    connectedAt: integration.connectedAt,
+    disconnectedAt: integration.disconnectedAt,
+    updatedAt: integration.updatedAt,
+  };
+}
+
+function ensureManager(role: UserRole): void {
+  if (role !== UserRole.OWNER && role !== UserRole.MANAGER) {
+    throw new WhatsappIntegrationError("Only owners and managers can manage WhatsApp", 403);
+  }
+}
+
+function getGraphApiVersion(): string {
+  return process.env.WHATSAPP_CLOUD_API_VERSION ?? "v23.0";
+}
+
+function graphBaseUrl(): string {
+  return `https://graph.facebook.com/${getGraphApiVersion()}`;
+}
+
+function getPublicAppUrl(): string {
+  const explicit = process.env.PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+
+  return process.env.APP_DOMAIN ? `https://${process.env.APP_DOMAIN}` : "http://localhost:3000";
+}
+
+function metaErrorMessage(body: Record<string, unknown> | null): string {
+  const error = toRecord(body?.error);
+  return stringValue(error.message) || stringValue(body?.error_description) || "Unknown Meta API error";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
 }

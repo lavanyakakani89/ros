@@ -1,22 +1,65 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { WhatsappIntegrationStatus } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
 
 import { WhatsappIntegrationError, WhatsappService, type InboundWhatsappMessage } from "./whatsapp.service.js";
-import { whatsappOrdersQuerySchema, whatsappTenantParamsSchema, whatsappWebhookQuerySchema } from "./whatsapp.schema.js";
+import {
+  whatsappEmbeddedSignupCompleteSchema,
+  whatsappOrdersQuerySchema,
+  whatsappTenantParamsSchema,
+  whatsappTestMessageSchema,
+  whatsappWebhookQuerySchema,
+} from "./whatsapp.schema.js";
 
 export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new WhatsappService(fastify);
 
+  fastify.get("/api/public/whatsapp/inbound", async (request, reply) => {
+    return verifyWebhookHandshake(request, reply);
+  });
+
   fastify.get("/api/public/whatsapp/:tenantSlug/inbound", async (request, reply) => {
-    const query = whatsappWebhookQuerySchema.parse(request.query);
-    const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? process.env.WHATSAPP_WEBHOOK_SECRET;
+    return verifyWebhookHandshake(request, reply);
+  });
 
-    if (query["hub.mode"] === "subscribe" && verifyToken && query["hub.verify_token"] === verifyToken && query["hub.challenge"]) {
-      return reply.type("text/plain").send(query["hub.challenge"]);
-    }
+  fastify.post("/api/public/whatsapp/inbound", async (request, reply) => {
+    return handleWhatsapp(reply, async () => {
+      verifyWebhookSignature(request);
+      const phoneNumberId = extractPhoneNumberId(request.body);
+      if (!phoneNumberId) {
+        throw new WhatsappIntegrationError("WhatsApp webhook payload did not include phone_number_id", 400);
+      }
 
-    return reply.status(403).send({ error: "WhatsApp webhook verification failed" });
+      const integration = await fastify.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.public_whatsapp_webhook', 'true', TRUE)`;
+        return tx.whatsappIntegration.findFirst({
+          where: {
+            phoneNumberId,
+            status: {
+              in: [WhatsappIntegrationStatus.CONNECTED, WhatsappIntegrationStatus.ERROR],
+            },
+          },
+        });
+      });
+
+      if (!integration) {
+        throw new WhatsappIntegrationError("No RetailOS shop is connected to this WhatsApp phone number", 404);
+      }
+
+      const tenant = await fastify.prisma.tenant.findUnique({
+        where: {
+          id: integration.tenantId,
+        },
+      });
+      if (!tenant) {
+        throw new WhatsappIntegrationError("Connected WhatsApp shop was not found", 404);
+      }
+
+      await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, FALSE)`;
+
+      return processInboundPayload(service, tenant, request.body);
+    });
   });
 
   fastify.post("/api/public/whatsapp/:tenantSlug/inbound", async (request, reply) => {
@@ -35,25 +78,30 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
       await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, FALSE)`;
 
-      const inboundMessages = extractInboundMessages(request.body);
-      if (inboundMessages.length === 0) {
-        return {
-          status: "ignored",
-          reason: "No supported text messages in payload",
-        };
-      }
-
-      const results = [];
-      for (const inboundMessage of inboundMessages) {
-        results.push(await service.handleInboundMessage(tenant, inboundMessage));
-      }
-
-      return {
-        status: "processed",
-        count: results.length,
-        results,
-      };
+      return processInboundPayload(service, tenant, request.body);
     });
+  });
+
+  fastify.get("/api/whatsapp/integration", async (request) => {
+    return service.getIntegration(request.tenant);
+  });
+
+  fastify.get("/api/whatsapp/embedded-signup/config", (request) => {
+    return service.getEmbeddedSignupConfig(request.tenant);
+  });
+
+  fastify.post("/api/whatsapp/embedded-signup/complete", async (request, reply) => {
+    const input = whatsappEmbeddedSignupCompleteSchema.parse(request.body);
+    return handleWhatsapp(reply, () => service.completeEmbeddedSignup(request.tenant, request.user, input));
+  });
+
+  fastify.post("/api/whatsapp/integration/disconnect", async (request, reply) => {
+    return handleWhatsapp(reply, () => service.disconnectIntegration(request.tenant, request.user));
+  });
+
+  fastify.post("/api/whatsapp/integration/test", async (request, reply) => {
+    const input = whatsappTestMessageSchema.parse(request.body);
+    return handleWhatsapp(reply, () => service.sendTestMessage(request.tenant, request.user, input));
   });
 
   fastify.get("/api/whatsapp/orders", async (request, reply) => {
@@ -64,8 +112,40 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
   done();
 };
 
+function verifyWebhookHandshake(request: FastifyRequest, reply: FastifyReply) {
+  const query = whatsappWebhookQuerySchema.parse(request.query);
+  const verifyToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? process.env.WHATSAPP_WEBHOOK_SECRET;
+
+  if (query["hub.mode"] === "subscribe" && verifyToken && query["hub.verify_token"] === verifyToken && query["hub.challenge"]) {
+    return reply.type("text/plain").send(query["hub.challenge"]);
+  }
+
+  return reply.status(403).send({ error: "WhatsApp webhook verification failed" });
+}
+
+async function processInboundPayload(service: WhatsappService, tenant: Parameters<WhatsappService["handleInboundMessage"]>[0], payload: unknown) {
+  const inboundMessages = extractInboundMessages(payload);
+  if (inboundMessages.length === 0) {
+    return {
+      status: "ignored",
+      reason: "No supported text messages in payload",
+    };
+  }
+
+  const results = [];
+  for (const inboundMessage of inboundMessages) {
+    results.push(await service.handleInboundMessage(tenant, inboundMessage));
+  }
+
+  return {
+    status: "processed",
+    count: results.length,
+    results,
+  };
+}
+
 function verifyWebhookSignature(request: FastifyRequest): void {
-  const appSecret = process.env.WHATSAPP_WEBHOOK_APP_SECRET;
+  const appSecret = process.env.WHATSAPP_WEBHOOK_APP_SECRET ?? process.env.WHATSAPP_EMBEDDED_APP_SECRET;
   const sharedSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
 
   if (appSecret) {
@@ -141,6 +221,22 @@ function extractInboundMessages(payload: unknown): InboundWhatsappMessage[] {
   }
 
   return messages;
+}
+
+function extractPhoneNumberId(payload: unknown): string | null {
+  const root = toRecord(payload);
+  for (const entry of toArray(root.entry)) {
+    const changes = toArray(toRecord(entry).changes);
+    for (const change of changes) {
+      const metadata = toRecord(toRecord(toRecord(change).value).metadata);
+      const phoneNumberId = stringValue(metadata.phone_number_id);
+      if (phoneNumberId) {
+        return phoneNumberId;
+      }
+    }
+  }
+
+  return null;
 }
 
 function extractDirectInboundMessage(payload: unknown): InboundWhatsappMessage | null {

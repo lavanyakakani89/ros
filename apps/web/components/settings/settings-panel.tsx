@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Printer, Save, UserPlus } from "lucide-react";
+import { FileText, MessageCircle, Printer, Save, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -133,6 +133,15 @@ export function SettingsPanel() {
           <span>
             <span className="block font-semibold text-slate-950">Printer setup</span>
             <span className="text-xs text-slate-500">Local agent, network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
+          </span>
+        </Link>
+        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/whatsapp">
+          <span className="flex size-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+            <MessageCircle className="size-5" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block font-semibold text-slate-950">WhatsApp Business</span>
+            <span className="text-xs text-slate-500">Connect a shop number, receive orders, and send invoice updates.</span>
           </span>
         </Link>
       </section>
