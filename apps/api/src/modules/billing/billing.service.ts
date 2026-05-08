@@ -283,6 +283,10 @@ function safeErrorMessage(error: unknown): string {
 
 function isWhatsappSourced(value: unknown): boolean {
   const record = toRecord(value);
+  if (record.whatsappManual === true) {
+    return false;
+  }
+
   return record.source === "WHATSAPP" || typeof record.whatsappOrderId === "string";
 }
 

@@ -7,6 +7,7 @@ import { WhatsappIntegrationError, WhatsappService, type InboundWhatsappMessage 
 import {
   whatsappEmbeddedSignupCompleteSchema,
   whatsappOrdersQuerySchema,
+  whatsappPasteOrderSchema,
   whatsappTenantParamsSchema,
   whatsappTestMessageSchema,
   whatsappWebhookQuerySchema,
@@ -107,6 +108,11 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
   fastify.get("/api/whatsapp/orders", async (request, reply) => {
     const query = whatsappOrdersQuerySchema.parse(request.query);
     return handleWhatsapp(reply, () => service.listOrders(request.tenant, query));
+  });
+
+  fastify.post("/api/whatsapp/orders/paste", async (request, reply) => {
+    const input = whatsappPasteOrderSchema.parse(request.body);
+    return handleWhatsapp(reply, () => service.createManualPastedOrder(request.tenant, input));
   });
 
   done();

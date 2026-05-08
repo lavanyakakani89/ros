@@ -184,12 +184,25 @@ export function WhatsappSettings() {
       {connectError ? <Alert tone="error">{connectError}</Alert> : null}
       {message ? <Alert tone="success">{message}</Alert> : null}
 
+      <section className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-emerald-950">
+              <MessageCircle className="size-4 text-emerald-700" aria-hidden="true" />
+              Manual WhatsApp
+            </div>
+            <div className="mt-1 text-xs text-emerald-700">Default mode for invoice sharing, delivery updates, and pasted orders.</div>
+          </div>
+          <span className="inline-flex h-8 items-center rounded-md bg-white px-3 text-xs font-semibold text-emerald-700">Active</span>
+        </div>
+      </section>
+
       <section className="rounded-md border border-border bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
               <MessageCircle className="size-4 text-emerald-700" aria-hidden="true" />
-              WhatsApp Business
+              Automated WhatsApp
             </div>
             <div className="mt-1 text-xs text-slate-500">
               {statusLine(integration)}
@@ -319,7 +332,7 @@ function statusLine(integration: WhatsappIntegrationResponse | undefined): strin
     return "Global server WhatsApp credentials are still available as fallback.";
   }
 
-  return "Connect once with Meta login and OTP verification.";
+  return "Optional upgrade for automatic incoming orders and status messages.";
 }
 
 async function loadFacebookSdk(appId: string, apiVersion: string): Promise<void> {

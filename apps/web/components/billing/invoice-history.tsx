@@ -6,6 +6,8 @@ import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { getStoredTenant } from "@/lib/vertical-config";
+import { formatInvoiceRecordWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
 
 export interface InvoiceRecord {
   id: string;
@@ -113,6 +115,22 @@ export function InvoiceHistory({
     }
   }
 
+  function shareInvoiceWhatsApp(invoice: InvoiceRecord) {
+    setActionError(null);
+    if (!invoice.customer?.phone) {
+      setActionError("Invoice does not have a customer phone number.");
+      return;
+    }
+
+    const opened = openWhatsappMessage(
+      invoice.customer.phone,
+      formatInvoiceRecordWhatsappMessage(invoice, getStoredTenant()?.name ?? "RetailOS"),
+    );
+    if (!opened) {
+      setActionError("Customer phone number is invalid for WhatsApp.");
+    }
+  }
+
   return (
     <section className={cn("flex min-h-0 flex-col bg-white", isDrawer ? "flex-1" : "max-h-[72vh] rounded-md border border-border")}>
       <div className="border-b border-border px-4 py-3">
@@ -203,7 +221,7 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onEdit={onEdit} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onEdit={onEdit} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
@@ -213,11 +231,13 @@ export function InvoiceHistory({
 function InvoiceDetailPanel({
   invoice,
   onPrint,
+  onShareWhatsapp,
   onEdit,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
+  onShareWhatsapp: (invoice: InvoiceRecord) => void;
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
@@ -282,6 +302,12 @@ function InvoiceDetailPanel({
             <Printer className="size-4" aria-hidden="true" />
             Print PDF
           </button>
+          {invoice.customer?.phone ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => onShareWhatsapp(invoice)}>
+              <MessageCircle className="size-4" aria-hidden="true" />
+              Send WhatsApp
+            </button>
+          ) : null}
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:opacity-40" disabled={invoice.status === "CANCELLED"} onClick={() => onCancel(invoice)}>
             <XCircle className="size-4" aria-hidden="true" />
             Cancel invoice

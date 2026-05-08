@@ -29,6 +29,13 @@ export const whatsappTestMessageSchema = z.object({
   phone: z.string().trim().min(10).max(16),
 });
 
+export const whatsappPasteOrderSchema = z.object({
+  phone: z.string().trim().min(10).max(16),
+  customerName: z.string().trim().min(2).max(120).optional(),
+  body: z.string().trim().min(3).max(5000),
+});
+
 export type WhatsappOrdersQuery = z.infer<typeof whatsappOrdersQuerySchema>;
 export type WhatsappEmbeddedSignupCompleteInput = z.infer<typeof whatsappEmbeddedSignupCompleteSchema>;
 export type WhatsappTestMessageInput = z.infer<typeof whatsappTestMessageSchema>;
+export type WhatsappPasteOrderInput = z.infer<typeof whatsappPasteOrderSchema>;

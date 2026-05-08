@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Smartphone, Truck } from "lucide-react";
+import { Camera, MessageCircle, Smartphone, Truck } from "lucide-react";
 import Link from "next/link";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { hasStoredAuthSession } from "@/lib/vertical-config";
+import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
+import { formatDeliveryWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 
@@ -76,6 +77,20 @@ export function DeliveryBoard() {
   const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
 
+  function shareDeliveryUpdate(delivery: DeliveryItem) {
+    openWhatsappMessage(
+      delivery.customer?.phone,
+      formatDeliveryWhatsappMessage({
+        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        customerName: delivery.customer?.name,
+        invoiceNumber: delivery.invoice?.invoiceNumber,
+        grandTotal: delivery.invoice?.grandTotal,
+        status: delivery.status,
+        address: delivery.deliveryAddress,
+      }),
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-emerald-100 bg-emerald-50 px-4 py-3">
@@ -123,6 +138,15 @@ export function DeliveryBoard() {
                         ))}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
+                        {delivery.customer?.phone ? (
+                          <button
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-green-200 bg-green-50 px-2 text-xs font-medium text-green-800"
+                            onClick={() => shareDeliveryUpdate(delivery)}
+                          >
+                            <MessageCircle className="size-3.5" aria-hidden="true" />
+                            Send update
+                          </button>
+                        ) : null}
                         {nextStatuses(delivery.status).map((nextStatus) => (
                           <button
                             key={nextStatus}

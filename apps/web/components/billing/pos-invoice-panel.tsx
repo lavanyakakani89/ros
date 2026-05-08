@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
@@ -11,6 +11,7 @@ import { useBillingStore } from "@/lib/billing-store";
 import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
 import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
+import { formatInvoiceWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
 
 const PAYMENT_SHORTCUTS = [
   { mode: "CASH", key: "1", displayKey: "Ctrl+1", label: "Cash" },
@@ -99,9 +100,22 @@ interface LastBill {
 interface PosInvoicePanelProps {
   editingInvoice?: InvoiceRecord | null;
   onEditComplete?: () => void;
+  onDraftReady?: (invoice: InvoiceRecord) => void;
 }
 
-export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosInvoicePanelProps) {
+interface PasteWhatsappOrderResponse {
+  status: string;
+  orderId?: string;
+  messageId?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  unmatchedLines?: Array<{
+    line: string;
+    reason: string;
+  }>;
+}
+
+export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraftReady }: PosInvoicePanelProps) {
   const queryClient = useQueryClient();
   const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
@@ -132,6 +146,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
   const [loyaltyRedeem, setLoyaltyRedeem] = useState(0);
   const [loyaltyBalance, setLoyaltyBalance] = useState<number | null>(null);
   const [showHeld, setShowHeld] = useState(false);
+  const [showPasteOrder, setShowPasteOrder] = useState(false);
+  const [pasteOrderPhone, setPasteOrderPhone] = useState("");
+  const [pasteOrderName, setPasteOrderName] = useState("");
+  const [pasteOrderText, setPasteOrderText] = useState("");
+  const [pasteOrderReviewLines, setPasteOrderReviewLines] = useState<Array<{ line: string; reason: string }>>([]);
+  const [isPastingOrder, setIsPastingOrder] = useState(false);
   const [notes, setNotes] = useState("");
   const [deliveryRequired, setDeliveryRequired] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -481,6 +501,49 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     }
   }
 
+  async function submitPastedWhatsappOrder() {
+    if (!pasteOrderPhone.trim() || !pasteOrderText.trim()) {
+      notify("Customer phone and WhatsApp order text are required.", "red");
+      return;
+    }
+
+    const hasSession = await ensureAuthenticatedSession();
+    if (!hasSession) {
+      notify("Sign in before creating a pasted WhatsApp order.", "red");
+      return;
+    }
+
+    setIsPastingOrder(true);
+    setPasteOrderReviewLines([]);
+    try {
+      const result = await createAuthenticatedApiClient().post<PasteWhatsappOrderResponse>("/whatsapp/orders/paste", {
+        phone: pasteOrderPhone.trim(),
+        ...(pasteOrderName.trim() ? { customerName: pasteOrderName.trim() } : {}),
+        body: pasteOrderText.trim(),
+      });
+
+      if (!result.invoiceId) {
+        setPasteOrderReviewLines(result.unmatchedLines ?? []);
+        notify("WhatsApp order saved for review, but no product lines matched.", "red");
+        return;
+      }
+
+      const draftInvoice = await createAuthenticatedApiClient().get<InvoiceRecord>(`/billing/invoices/${result.invoiceId}`);
+      onDraftReady?.(draftInvoice);
+      await queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      setShowPasteOrder(false);
+      setPasteOrderPhone("");
+      setPasteOrderName("");
+      setPasteOrderText("");
+      setPasteOrderReviewLines([]);
+      notify(`Draft invoice ${result.invoiceNumber ?? draftInvoice.invoiceNumber} created from WhatsApp order.`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Unable to create draft from pasted WhatsApp order.", "red");
+    } finally {
+      setIsPastingOrder(false);
+    }
+  }
+
   async function applyCoupon() {
     if (!couponInput.trim()) return;
     try {
@@ -697,14 +760,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
     notify("Invoice saved offline. It will sync when internet and sign-in are available.");
   }
 
-  async function shareWhatsApp() {
+  function shareWhatsApp() {
     if (!lastBill?.customer) return;
-    try {
-      await createAuthenticatedApiClient().post(`/billing/invoices/${lastBill.id}/share`, { channel: "whatsapp" });
-      notify("Invoice sent via WhatsApp.");
-    } catch {
-      notify("WhatsApp share failed.", "red");
-    }
+    const opened = openWhatsappMessage(
+      lastBill.customer.phone,
+      formatInvoiceWhatsappMessage({
+        invoiceNumber: lastBill.invoiceNumber,
+        grandTotal: lastBill.grandTotal,
+        paymentMode: lastBill.paymentMode,
+        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        customerName: lastBill.customer.name,
+        items: lastBill.lines,
+      }),
+    );
+    notify(opened ? "WhatsApp opened with invoice message." : "Customer phone number is invalid for WhatsApp.", opened ? "green" : "red");
   }
 
   async function printThermalInvoice() {
@@ -861,6 +930,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
             <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void syncNow()}>
               <RefreshCcw className="size-4" aria-hidden="true" />
               Sync
+            </button>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-800" onClick={() => setShowPasteOrder(true)}>
+              <ClipboardPaste className="size-4" aria-hidden="true" />
+              Paste order
             </button>
             {heldBills.length > 0 ? (
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => setShowHeld((value) => !value)}>
@@ -1199,6 +1272,65 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
         ) : null}
       </aside>
 
+      {showPasteOrder ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <section className="w-full max-w-2xl rounded-md border border-border bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-4 border-b border-border p-4">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                  <MessageCircle className="size-4 text-emerald-700" aria-hidden="true" />
+                  Paste WhatsApp order
+                </div>
+                <div className="mt-1 text-xs text-slate-500">Creates an unconfirmed draft invoice for review.</div>
+              </div>
+              <button className="inline-flex size-9 items-center justify-center rounded-md hover:bg-slate-100" onClick={() => setShowPasteOrder(false)}>
+                <X className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="grid gap-3 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700">
+                  Customer phone
+                  <input value={pasteOrderPhone} onChange={(event) => setPasteOrderPhone(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="9876543210" />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Customer name
+                  <input value={pasteOrderName} onChange={(event) => setPasteOrderName(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Optional" />
+                </label>
+              </div>
+              <label className="block text-sm font-medium text-slate-700">
+                Order message
+                <textarea
+                  value={pasteOrderText}
+                  onChange={(event) => setPasteOrderText(event.target.value)}
+                  className="mt-1 min-h-40 w-full rounded-md border border-border px-3 py-2 text-sm"
+                  placeholder={"Groundnut Oil 500ML x 2\nSunflower Oil 1L qty 1\nAddress: ..."}
+                />
+              </label>
+              {pasteOrderReviewLines.length > 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div className="mb-1 font-semibold">Needs review</div>
+                  {pasteOrderReviewLines.map((line) => (
+                    <div key={`${line.line}-${line.reason}`}>{line.line} - {line.reason}</div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-border p-4">
+              <button className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => setShowPasteOrder(false)}>Cancel</button>
+              <button
+                className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={isPastingOrder || !pasteOrderPhone.trim() || !pasteOrderText.trim()}
+                onClick={() => void submitPastedWhatsappOrder()}
+              >
+                <ClipboardPaste className="size-4" aria-hidden="true" />
+                {isPastingOrder ? "Creating..." : "Create draft"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {lastBill ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 print:static print:bg-white print:p-0">
           <section className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-md border border-border bg-white shadow-xl print:max-h-none print:max-w-none print:border-0 print:shadow-none">
@@ -1272,9 +1404,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete }: PosIn
                 PDF
               </button>
               {lastBill.customer ? (
-                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => void shareWhatsApp()}>
+                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={shareWhatsApp}>
                   <MessageCircle className="size-4" aria-hidden="true" />
-                  WA
+                  Send WhatsApp
                 </button>
               ) : null}
               <button className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={dismissBillPreview}>New bill</button>

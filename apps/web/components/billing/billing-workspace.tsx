@@ -32,7 +32,7 @@ export function BillingWorkspace() {
           Invoice History
         </button>
       </div>
-      <PosInvoicePanel editingInvoice={editingInvoice} onEditComplete={() => setEditingInvoice(null)} />
+      <PosInvoicePanel editingInvoice={editingInvoice} onEditComplete={() => setEditingInvoice(null)} onDraftReady={setEditingInvoice} />
 
       {historyOpen ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/45">

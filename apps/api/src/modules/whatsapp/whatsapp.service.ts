@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { BillingService } from "../billing/billing.service.js";
 import { encryptWhatsappToken } from "./whatsapp.credentials.js";
 import { normalizeWhatsappPhone, queueWhatsappNotification } from "./whatsapp.notifications.js";
-import type { WhatsappEmbeddedSignupCompleteInput, WhatsappOrdersQuery, WhatsappTestMessageInput } from "./whatsapp.schema.js";
+import type { WhatsappEmbeddedSignupCompleteInput, WhatsappOrdersQuery, WhatsappPasteOrderInput, WhatsappTestMessageInput } from "./whatsapp.schema.js";
 
 export interface InboundWhatsappMessage {
   provider: string;
@@ -140,13 +140,15 @@ export class WhatsappService {
       };
     }
 
+    const isManualPaste = input.provider === "manual-paste";
     const invoice = await this.billingService.createInvoice(tenant, {
       customerId: customer.id,
       paymentMode: PaymentMode.CASH,
       billDiscount: 0,
       notes: buildInvoiceNotes(body, parsed.unmatched),
       verticalData: {
-        source: "WHATSAPP",
+        source: isManualPaste ? "WHATSAPP_MANUAL" : "WHATSAPP",
+        ...(isManualPaste ? { whatsappManual: true } : {}),
         whatsappOrderId: order.id,
         whatsappMessageId: message.id,
         whatsappFrom: phone,
@@ -223,6 +225,20 @@ export class WhatsappService {
       ...order,
       invoice: order.invoiceId ? invoiceById.get(order.invoiceId) ?? null : null,
     }));
+  }
+
+  async createManualPastedOrder(tenant: Tenant, input: WhatsappPasteOrderInput) {
+    return this.handleInboundMessage(tenant, {
+      provider: "manual-paste",
+      phone: input.phone,
+      ...(input.customerName ? { customerName: input.customerName } : {}),
+      body: input.body,
+      messageType: "text",
+      receivedAt: new Date(),
+      payload: {
+        source: "retailos-manual-paste",
+      },
+    });
   }
 
   async getIntegration(tenant: Tenant) {
