@@ -2,10 +2,27 @@
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
-import { AlertTriangle, CreditCard, LogOut, PanelLeftClose, PanelLeftOpen, ShieldAlert } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  CreditCard,
+  FileText,
+  History,
+  KeyRound,
+  LogOut,
+  MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Printer,
+  Settings,
+  ShieldAlert,
+  User,
+  Users,
+  Wifi,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
 import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
@@ -39,6 +56,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [impersonation, setImpersonation] = useState<StoredImpersonation | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
@@ -124,6 +143,32 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     };
   }, [router]);
 
+  useEffect(() => {
+    if (!accountMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountMenuOpen]);
+
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface text-sm font-medium text-slate-600">
@@ -138,6 +183,15 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const dashboard = dashboardItem(verticalConfig.navigation);
   const navGroups = groupedNavigation(verticalConfig.navigation);
   const sidebarWidthClass = sidebarCollapsed ? "lg:pl-20" : "lg:pl-64";
+  const accountLinks = [
+    { href: "/settings#shop-details", label: "Shop settings", description: "GST, address, and shop details", icon: Settings },
+    { href: "/settings#users", label: "Users & roles", description: "Owners, managers, staff, delivery", icon: Users },
+    { href: "/settings/whatsapp", label: "WhatsApp Business", description: "Orders and customer updates", icon: MessageCircle },
+    { href: "/settings/printer", label: "Printer setup", description: "Thermal printer and local agent", icon: Printer },
+    { href: "/settings/templates", label: "Invoice templates", description: "Thermal, A5, and A4 formats", icon: FileText },
+    { href: "/settings#password", label: "Change password", description: "Secure this login", icon: KeyRound },
+    { href: "/audit", label: "Audit log", description: "Track important activity", icon: History },
+  ] satisfies AccountMenuLink[];
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
@@ -221,15 +275,33 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               >
                 <span className={cn("block size-2.5 rounded-full", online ? "bg-emerald-500" : "bg-red-500")} />
               </div>
-              <div className="flex size-9 items-center justify-center rounded-md bg-slate-900 text-sm font-semibold text-white">{initials}</div>
-              <button
-                className="inline-flex size-9 items-center justify-center rounded-md border border-border text-slate-600 hover:bg-slate-50"
-                onClick={() => void handleLogout()}
-                title={impersonation ? "Exit support view" : "Logout"}
-                aria-label={impersonation ? "Exit support view" : "Logout"}
-              >
-                <LogOut className="size-4" aria-hidden="true" />
-              </button>
+              <div className="relative" ref={accountMenuRef}>
+                <button
+                  className="inline-flex h-9 items-center gap-2 rounded-md border border-transparent bg-slate-900 px-2 text-sm font-semibold text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                  onClick={() => setAccountMenuOpen((value) => !value)}
+                  aria-haspopup="menu"
+                  aria-expanded={accountMenuOpen}
+                  aria-label="Open account menu"
+                >
+                  <span className="flex size-7 items-center justify-center rounded bg-slate-950">{initials}</span>
+                  <ChevronDown className="size-3.5 text-slate-300" aria-hidden="true" />
+                </button>
+                {accountMenuOpen ? (
+                  <AccountMenu
+                    links={accountLinks}
+                    userName={userName}
+                    userEmail={session?.user?.email ?? null}
+                    tenantName={tenantName}
+                    online={online}
+                    impersonation={impersonation}
+                    onNavigate={() => setAccountMenuOpen(false)}
+                    onLogout={() => {
+                      setAccountMenuOpen(false);
+                      void handleLogout();
+                    }}
+                  />
+                ) : null}
+              </div>
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto border-t border-border px-2 py-2 lg:hidden" aria-label="Main navigation">
@@ -280,6 +352,103 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </div>
         ) : null}
         <main className="px-4 py-5 sm:px-6">{children}</main>
+      </div>
+    </div>
+  );
+}
+
+interface AccountMenuLink {
+  href: string;
+  label: string;
+  description: string;
+  icon: ComponentType<{ className?: string }>;
+}
+
+function AccountMenu({
+  links,
+  userName,
+  userEmail,
+  tenantName,
+  online,
+  impersonation,
+  onNavigate,
+  onLogout,
+}: Readonly<{
+  links: AccountMenuLink[];
+  userName: string;
+  userEmail: string | null;
+  tenantName: string;
+  online: boolean;
+  impersonation: StoredImpersonation | null;
+  onNavigate: () => void;
+  onLogout: () => void;
+}>) {
+  return (
+    <div
+      className="absolute right-0 top-11 z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-md border border-border bg-white text-slate-800 shadow-xl"
+      role="menu"
+      aria-label="Account menu"
+    >
+      <div className="border-b border-border p-3">
+        <div className="flex items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+            <User className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-slate-950">{userName}</div>
+            <div className="truncate text-xs text-slate-500">{userEmail ?? tenantName}</div>
+            {impersonation ? <div className="mt-1 text-xs font-medium text-amber-700">Support view is active</div> : null}
+          </div>
+        </div>
+      </div>
+      <div className="border-b border-border p-2">
+        <div className="flex items-center gap-3 rounded-md px-2 py-2 text-sm">
+          <span className={cn("flex size-8 items-center justify-center rounded-md", online ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700")}>
+            <Wifi className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <div className="font-medium text-slate-900">{online ? "Online" : "Offline"}</div>
+            <div className="text-xs text-slate-500">Network and sync status</div>
+          </div>
+        </div>
+      </div>
+      <div className="p-2">
+        {links.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className="flex items-center gap-3 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              role="menuitem"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-600">
+                <Icon className="size-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-slate-900">{item.label}</span>
+                <span className="block truncate text-xs text-slate-500">{item.description}</span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="border-t border-border p-2">
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-left text-sm text-red-700 hover:bg-red-50"
+          onClick={onLogout}
+          role="menuitem"
+        >
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-700">
+            <LogOut className="size-4" aria-hidden="true" />
+          </span>
+          <span>
+            <span className="block font-medium">{impersonation ? "Exit support view" : "Logout"}</span>
+            <span className="block text-xs text-red-500">{impersonation ? "Return to super admin" : "End this session"}</span>
+          </span>
+        </button>
       </div>
     </div>
   );

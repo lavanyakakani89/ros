@@ -145,7 +145,7 @@ export function SettingsPanel() {
           </span>
         </Link>
       </section>
-      <section className="rounded-md border border-border bg-white p-4">
+      <section id="shop-details" className="rounded-md border border-border bg-white p-4">
         <div className="mb-3">
           <div className="text-sm font-semibold text-slate-950">Shop details</div>
           <div className="text-xs text-slate-500">{verticalConfig?.displayName ?? settings?.tenant.vertical ?? "Retail"} | active modules from vertical config</div>
@@ -165,7 +165,7 @@ export function SettingsPanel() {
           </button>
         </form>
       </section>
-      <section className="rounded-md border border-border bg-white p-4">
+      <section id="users" className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Users</div>
         <div className="space-y-2">
           {(settings?.users ?? []).map((user) => (
@@ -231,7 +231,7 @@ function PasswordPanel() {
   }
 
   return (
-    <section className="rounded-md border border-border bg-white p-4">
+    <section id="password" className="rounded-md border border-border bg-white p-4">
       <div className="mb-3 text-sm font-semibold text-slate-950">Change password</div>
       {mutation.error ? <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{mutation.error.message}</div> : null}
       {message ? <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}

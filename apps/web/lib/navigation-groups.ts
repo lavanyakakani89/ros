@@ -5,7 +5,8 @@ export interface NavigationGroup {
   items: VerticalNavigationItem[];
 }
 
-const groupOrder = ["Sales", "Stock", "People", "Finance", "Insights & admin", "Operations"] as const;
+const groupOrder = ["Sales", "Stock", "People", "Finance", "Insights", "Operations"] as const;
+const accountNavigationHrefs = new Set(["/settings", "/audit"]);
 
 const groupByHref: Record<string, (typeof groupOrder)[number]> = {
   "/billing": "Sales",
@@ -24,9 +25,7 @@ const groupByHref: Record<string, (typeof groupOrder)[number]> = {
   "/suppliers": "People",
   "/payments": "Finance",
   "/expenses": "Finance",
-  "/reports": "Insights & admin",
-  "/audit": "Insights & admin",
-  "/settings": "Insights & admin",
+  "/reports": "Insights",
   "/restaurant": "Operations",
 };
 
@@ -36,7 +35,7 @@ export function dashboardItem(items: readonly VerticalNavigationItem[]): Vertica
 
 export function groupedNavigation(items: readonly VerticalNavigationItem[]): NavigationGroup[] {
   return groupOrder.flatMap((label) => {
-    const groupItems = items.filter((item) => item.href !== "/dashboard" && categoryForItem(item) === label);
+    const groupItems = items.filter((item) => item.href !== "/dashboard" && !accountNavigationHrefs.has(item.href) && categoryForItem(item) === label);
     return groupItems.length > 0 ? [{ label, items: groupItems }] : [];
   });
 }
