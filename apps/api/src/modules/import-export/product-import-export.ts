@@ -20,10 +20,12 @@ type ProductWithBatches = Product & {
 };
 type ProductImportData = Omit<Prisma.ProductUncheckedCreateInput, "tenantId">;
 
+const categoryCodeHeader = "Category/Sub Category Code";
+
 const commonColumns: readonly ExcelColumn[] = [
   { key: "sku", header: "Product ID", required: true, sample: "530" },
   { key: "name", header: "Product Name", required: true, sample: "Bajra Flour 1 KG" },
-  { key: "legacySubCategoryId", header: "Sub Category Code", required: true, sample: "SC001" },
+  { key: "legacySubCategoryId", header: categoryCodeHeader, required: true, sample: "C001 or SC001" },
   { key: "verticalData.category", header: "Category", required: true, sample: "Cold Pressed Oils" },
   { key: "hsnCode", header: "HSN Code", required: false },
   { key: "partGroup", header: "Part / Group", required: false },
@@ -178,7 +180,7 @@ async function parseProductRow(fastify: FastifyInstance, tenant: Tenant, row: Ex
   const name = getString(row, ["Product Name", "Menu Item Name"]);
   const sku = getString(row, ["Product ID", "Item Code"]);
   const barcode = getString(row, ["Barcode"]);
-  const legacySubCategoryId = getString(row, ["Sub Category Code", "Sub Category ID"]);
+  const categoryOrSubCategoryCode = getString(row, [categoryCodeHeader, "Sub Category Code", "Sub Category ID", "Category Code"]);
   const category = getString(row, ["Category"]);
   const salesUnit = getString(row, ["Sales Unit", "Unit"]);
   if (!name) {
@@ -187,8 +189,8 @@ async function parseProductRow(fastify: FastifyInstance, tenant: Tenant, row: Ex
   if (!sku) {
     throw new Error("Product ID is required");
   }
-  if (!legacySubCategoryId) {
-    throw new Error("Sub Category ID is required");
+  if (!categoryOrSubCategoryCode) {
+    throw new Error(`${categoryCodeHeader} is required`);
   }
   if (!salesUnit) {
     throw new Error("Sales Unit is required");
@@ -199,7 +201,7 @@ async function parseProductRow(fastify: FastifyInstance, tenant: Tenant, row: Ex
   if (!category) {
     throw new Error("Category is required");
   }
-  const categoryRecord = await resolveCategory(fastify, tenant.id, legacySubCategoryId, category);
+  const categoryRecord = await resolveCategory(fastify, tenant.id, categoryOrSubCategoryCode, category);
 
   const sellingPrice = getNumber(row, ["Retail Sale Price", "Menu Price"]);
   const mrp = getNumber(row, ["MRP", "Menu Price"]) ?? sellingPrice;
@@ -284,25 +286,25 @@ async function findExistingProduct(fastify: FastifyInstance, tenantId: string, b
   });
 }
 
-async function resolveCategory(fastify: FastifyInstance, tenantId: string, subCategoryCodeOrId: string, categoryName: string): Promise<{ id: string; code: string; name: string; parent: { name: string } | null }> {
+async function resolveCategory(fastify: FastifyInstance, tenantId: string, categoryCodeOrId: string, categoryName: string): Promise<{ id: string; code: string; name: string; parent: { name: string } | null }> {
   const category = await fastify.prisma.category.findFirst({
     where: {
       tenantId,
       isActive: true,
       OR: [
-        { code: subCategoryCodeOrId.toUpperCase() },
-        { id: subCategoryCodeOrId },
+        { code: categoryCodeOrId.toUpperCase() },
+        { id: categoryCodeOrId },
       ],
     },
     include: { parent: true },
   });
   if (!category) {
-    throw new Error(`Sub Category Code ${subCategoryCodeOrId} was not found`);
+    throw new Error(`${categoryCodeHeader} ${categoryCodeOrId} was not found`);
   }
 
   const expectedCategoryName = category.parent?.name ?? category.name;
   if (expectedCategoryName.trim().toLowerCase() !== categoryName.trim().toLowerCase()) {
-    throw new Error(`Sub Category Code ${subCategoryCodeOrId} is under Category ${expectedCategoryName}, not ${categoryName}`);
+    throw new Error(`${categoryCodeHeader} ${categoryCodeOrId} is under Category ${expectedCategoryName}, not ${categoryName}`);
   }
 
   return category;
@@ -340,7 +342,7 @@ function productToRow(product: ProductWithBatches): Record<string, unknown> {
     "Item Code": product.sku ?? "",
     "Product Name": product.name,
     "Menu Item Name": product.name,
-    "Sub Category Code": product.category?.code ?? product.legacySubCategoryId ?? "",
+    [categoryCodeHeader]: product.category?.code ?? product.legacySubCategoryId ?? "",
     "HSN Code": product.hsnCode ?? "",
     "SAC/HSN Code": product.hsnCode ?? "",
     "Part / Group": product.partGroup ?? "",

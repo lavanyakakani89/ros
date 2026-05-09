@@ -157,10 +157,10 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
   const mrp = requireNumber(payload.mrp, "MRP is required");
   const sellingPrice = requireNumber(payload.sellingPrice, "Retail sale price is required");
   const category = payload.verticalData?.category;
-    if (typeof category !== "string" || category.trim() === "") {
+  if (typeof category !== "string" || category.trim() === "") {
     throw new Error("Category is required");
   }
-  const subCategoryId = requireString(payload.legacySubCategoryId, "Sub category code is required");
+  const categoryCode = requireString(payload.legacySubCategoryId, "Category/Sub Category Code is required");
 
   return {
     name: requireString(payload.name, "Product name is required"),
@@ -173,8 +173,8 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     barcode: requireString(payload.barcode, "Barcode is required"),
     ...(payload.description ? { description: payload.description } : {}),
     ...(payload.partGroup ? { partGroup: payload.partGroup } : {}),
-    legacySubCategoryId: subCategoryId,
-    categoryId: subCategoryId,
+    legacySubCategoryId: categoryCode,
+    categoryId: categoryCode,
     ...(payload.purchasePrice !== undefined ? { purchasePrice: payload.purchasePrice } : {}),
     ...(payload.wholesalePrice !== undefined ? { wholesalePrice: payload.wholesalePrice } : {}),
     ...(payload.defaultDiscountPercent !== undefined ? { defaultDiscountPercent: payload.defaultDiscountPercent } : {}),
@@ -253,7 +253,7 @@ const requiredProductFieldKeys = [
 const importExportFields: readonly VerticalField[] = [
   { key: "verticalData.category", label: "Category", type: "text", required: true, vertical: true },
   { key: "description", label: "Description", type: "text", required: false },
-  { key: "legacySubCategoryId", label: "Sub category code", type: "text", required: true },
+  { key: "legacySubCategoryId", label: "Category/Sub Category Code", type: "text", required: true },
   { key: "partGroup", label: "Part / group", type: "text", required: false },
   { key: "wholesalePrice", label: "Wholesale price (₹)", type: "decimal", required: false },
   { key: "defaultDiscountPercent", label: "Discount %", type: "decimal", required: false },
@@ -280,7 +280,7 @@ function normalizeProductField(field: VerticalField): VerticalField {
     sku: { label: "Product ID", required: true },
     name: { label: "Product name", required: true },
     barcode: { label: "Barcode", required: true },
-    legacySubCategoryId: { label: "Sub category code", required: true },
+    legacySubCategoryId: { label: "Category/Sub Category Code", required: true },
     salesUnit: { label: "Sales unit", required: true },
     mrp: { label: "MRP", required: true },
     unit: { label: "Base unit", required: false },

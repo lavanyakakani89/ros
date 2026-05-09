@@ -177,6 +177,8 @@ const knownHeaderNames = new Set([
   "Contact No.",
   "Product ID",
   "Product Name",
+  "Category/Sub Category Code",
+  "Category Code",
   "Sub Category Code",
   "Sub Category ID",
   "Sales Unit",

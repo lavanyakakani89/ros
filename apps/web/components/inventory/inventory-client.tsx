@@ -204,7 +204,7 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
         <TextInput name="barcode" label="Barcode" defaultValue={product.barcode ?? ""} />
         <TextInput name="description" label="Description" defaultValue={product.description ?? ""} />
         <TextInput name="partGroup" label="Part / group" defaultValue={product.partGroup ?? ""} />
-        <TextInput name="legacySubCategoryId" label="Sub category ID" defaultValue={product.legacySubCategoryId ?? ""} />
+        <TextInput name="legacySubCategoryId" label="Category/Sub Category Code" defaultValue={product.legacySubCategoryId ?? ""} />
         <TextInput name="unit" label="Unit" defaultValue={product.unit} required />
         <TextInput name="mrp" label="MRP" type="number" defaultValue={String(product.mrp)} required />
         <TextInput name="sellingPrice" label="Selling price" type="number" defaultValue={String(product.sellingPrice)} required />

@@ -42,6 +42,7 @@ export class InventoryService {
       return input;
     }
 
+    const categoryCodeOrId = input.legacySubCategoryId;
     const categoryName = readCategoryName(input.verticalData);
     if (requireCategory && !categoryName) {
       throw new InventoryError("Category is required", 400);
@@ -52,18 +53,18 @@ export class InventoryService {
         tenantId,
         isActive: true,
         OR: [
-          { code: input.legacySubCategoryId.toUpperCase() },
-          { id: input.legacySubCategoryId },
+          { code: categoryCodeOrId.toUpperCase() },
+          { id: categoryCodeOrId },
         ],
       },
       include: { parent: true },
     });
     if (!category) {
-      throw new InventoryError(`Sub Category Code ${input.legacySubCategoryId} was not found`, 400);
+      throw new InventoryError(`Category/Sub Category Code ${categoryCodeOrId} was not found`, 400);
     }
     const expectedCategoryName = category.parent?.name ?? category.name;
     if (categoryName && expectedCategoryName.trim().toLowerCase() !== categoryName.trim().toLowerCase()) {
-      throw new InventoryError(`Sub Category Code ${input.legacySubCategoryId} is under Category ${expectedCategoryName}, not ${categoryName}`, 400);
+      throw new InventoryError(`Category/Sub Category Code ${categoryCodeOrId} is under Category ${expectedCategoryName}, not ${categoryName}`, 400);
     }
 
     return {
@@ -72,7 +73,7 @@ export class InventoryService {
       categoryId: category.id,
       verticalData: {
         ...(input.verticalData ?? {}),
-        category: categoryName ?? category.name,
+        category: categoryName ?? expectedCategoryName,
       },
     };
   }
