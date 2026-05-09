@@ -3,7 +3,7 @@ import net from "node:net";
 import { PaperSize, PrinterConn, RenderType, type InvoiceItem, type InvoiceTemplate, type PrinterConfig, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
-type InvoiceForPrint = {
+export type InvoiceForPrint = {
   id: string;
   invoiceNumber: string;
   invoiceDate: Date;
@@ -37,6 +37,41 @@ const paperColumns: Record<PaperSize, number> = {
 };
 
 const thermalPaperSizes = new Set<PaperSize>([PaperSize.THERMAL_2, PaperSize.THERMAL_3, PaperSize.THERMAL_4]);
+
+interface EscposTemplateConfig {
+  columns: number;
+  cut: boolean;
+  feedLinesBeforeCut: number;
+  showShopName: boolean;
+  showAddress: boolean;
+  showPhone: boolean;
+  showGstin: boolean;
+  showCustomer: boolean;
+  showSubtotal: boolean;
+  showDiscount: boolean;
+  showDiscountOnlyWhenPresent: boolean;
+  showCgst: boolean;
+  showSgst: boolean;
+  showPaid: boolean;
+  showDue: boolean;
+  showDueOnlyWhenPresent: boolean;
+  showBatch: boolean;
+  footerMessage: string;
+  labels: {
+    invoice: string;
+    date: string;
+    customer: string;
+    itemHeader: string;
+    amountHeader: string;
+    subtotal: string;
+    discount: string;
+    cgst: string;
+    sgst: string;
+    total: string;
+    paid: string;
+    due: string;
+  };
+}
 
 export async function getEffectiveTemplate(fastify: FastifyInstance, tenant: Tenant): Promise<InvoiceTemplate | null> {
   const tenantDefault = await fastify.prisma.invoiceTemplate.findFirst({
@@ -138,46 +173,52 @@ export async function testPrinterForTenant(input: {
 }
 
 export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate): { bytes: Buffer; text: string } {
-  const columns = getColumns(template);
+  const config = getEscposConfig(template);
+  const columns = config.columns;
   const lines: string[] = [
-    center(tenant.name, columns),
-    tenant.address ? center(tenant.address, columns) : "",
-    center(`Phone: ${tenant.phone}`, columns),
-    tenant.gstNumber ? center(`GSTIN: ${tenant.gstNumber}`, columns) : "",
+    config.showShopName ? center(tenant.name, columns) : "",
+    config.showAddress && tenant.address ? center(tenant.address, columns) : "",
+    config.showPhone ? center(`Phone: ${tenant.phone}`, columns) : "",
+    config.showGstin && tenant.gstNumber ? center(`GSTIN: ${tenant.gstNumber}`, columns) : "",
     rule(columns),
-    `Invoice: ${invoice.invoiceNumber}`,
-    `Date: ${invoice.invoiceDate.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`,
-    invoice.customer ? `Customer: ${invoice.customer.name} ${invoice.customer.phone}`.trim() : "",
+    `${config.labels.invoice}: ${invoice.invoiceNumber}`,
+    `${config.labels.date}: ${invoice.invoiceDate.toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`,
+    config.showCustomer && invoice.customer ? `${config.labels.customer}: ${invoice.customer.name} ${invoice.customer.phone}`.trim() : "",
     rule(columns),
-    twoCol("Item", "Amount", columns),
+    twoCol(config.labels.itemHeader, config.labels.amountHeader, columns),
     rule(columns),
-    ...invoice.items.flatMap((item) => itemLines(item, columns)),
+    ...invoice.items.flatMap((item) => itemLines(item, columns, config)),
     rule(columns),
-    twoCol("Subtotal", money(invoice.subtotal), columns),
-    invoice.totalDiscount.toNumber() > 0 ? twoCol("Discount", money(invoice.totalDiscount), columns) : "",
-    twoCol("CGST", money(invoice.totalCgst), columns),
-    twoCol("SGST", money(invoice.totalSgst), columns),
+    config.showSubtotal ? twoCol(config.labels.subtotal, money(invoice.subtotal), columns) : "",
+    config.showDiscount && (!config.showDiscountOnlyWhenPresent || invoice.totalDiscount.toNumber() > 0) ? twoCol(config.labels.discount, money(invoice.totalDiscount), columns) : "",
+    config.showCgst ? twoCol(config.labels.cgst, money(invoice.totalCgst), columns) : "",
+    config.showSgst ? twoCol(config.labels.sgst, money(invoice.totalSgst), columns) : "",
     rule(columns),
-    twoCol("TOTAL", money(invoice.grandTotal), columns),
-    twoCol("Paid", money(invoice.amountPaid), columns),
-    invoice.amountDue.toNumber() > 0 ? twoCol("Due", money(invoice.amountDue), columns) : "",
+    twoCol(config.labels.total, money(invoice.grandTotal), columns),
+    config.showPaid ? twoCol(config.labels.paid, money(invoice.amountPaid), columns) : "",
+    config.showDue && (!config.showDueOnlyWhenPresent || invoice.amountDue.toNumber() > 0) ? twoCol(config.labels.due, money(invoice.amountDue), columns) : "",
     rule(columns),
-    center("Thank you. Please visit again.", columns),
+    config.footerMessage ? center(config.footerMessage, columns) : "",
   ].filter(Boolean);
 
-  return buildEscposText(lines, template.paperSize);
+  return buildEscposText(lines, template.paperSize, {
+    columns,
+    cut: config.cut,
+    feedLinesBeforeCut: config.feedLinesBeforeCut,
+  });
 }
 
-export function buildEscposText(lines: string[], paperSize: PaperSize): { bytes: Buffer; text: string } {
-  const columns = paperColumns[paperSize];
+export function buildEscposText(lines: string[], paperSize: PaperSize, options: { columns?: number; cut?: boolean; feedLinesBeforeCut?: number } = {}): { bytes: Buffer; text: string } {
+  const columns = options.columns ?? paperColumns[paperSize];
   const text = `${lines.map((line) => fit(line, columns)).join("\n")}\n`;
   const reset = Buffer.from([0x1b, 0x40]);
-  const feedBeforeCut = Buffer.from([0x1b, 0x64, 0x06]);
+  const feedBeforeCut = Buffer.from([0x1b, 0x64, Math.max(Math.min(options.feedLinesBeforeCut ?? 6, 12), 0)]);
   const cut = Buffer.from([0x1d, 0x56, 0x00]);
+  const ending = (options.cut ?? true) ? Buffer.concat([feedBeforeCut, cut]) : feedBeforeCut;
 
   return {
     text,
-    bytes: Buffer.concat([reset, Buffer.from(text, "utf8"), feedBeforeCut, cut]),
+    bytes: Buffer.concat([reset, Buffer.from(text, "utf8"), ending]),
   };
 }
 
@@ -341,15 +382,57 @@ async function sendPrintNode(apiKey: string, printerId: string, bytes: Buffer): 
   }
 }
 
-function itemLines(item: InvoiceItem, columns: number): string[] {
+function itemLines(item: InvoiceItem, columns: number, config: EscposTemplateConfig): string[] {
   const quantity = Number(item.quantity).toString();
   const rate = money(item.sellingPrice);
   const total = money(item.total);
   const first = fit(item.productName, columns);
   const second = twoCol(`${quantity} ${item.unit} x ${rate}`, total, columns);
-  const batch = item.batchNumber ? `Batch: ${item.batchNumber}` : "";
+  const batch = config.showBatch && item.batchNumber ? `Batch: ${item.batchNumber}` : "";
 
   return [first, second, batch].filter(Boolean);
+}
+
+function getEscposConfig(template: InvoiceTemplate): EscposTemplateConfig {
+  const config = template.escposConfig;
+  const record = config && typeof config === "object" && !Array.isArray(config) ? config as Record<string, unknown> : {};
+  const labels = toRecord(record.labels);
+  const columns = getColumns(template);
+
+  return {
+    columns,
+    cut: booleanValue(record.cut, true),
+    feedLinesBeforeCut: numberValue(record.feedLinesBeforeCut, 6, 0, 12),
+    showShopName: booleanValue(record.showShopName, true),
+    showAddress: booleanValue(record.showAddress, true),
+    showPhone: booleanValue(record.showPhone, true),
+    showGstin: booleanValue(record.showGstin, true),
+    showCustomer: booleanValue(record.showCustomer, true),
+    showSubtotal: booleanValue(record.showSubtotal, true),
+    showDiscount: booleanValue(record.showDiscount, true),
+    showDiscountOnlyWhenPresent: booleanValue(record.showDiscountOnlyWhenPresent, true),
+    showCgst: booleanValue(record.showCgst, true),
+    showSgst: booleanValue(record.showSgst, true),
+    showPaid: booleanValue(record.showPaid, true),
+    showDue: booleanValue(record.showDue, true),
+    showDueOnlyWhenPresent: booleanValue(record.showDueOnlyWhenPresent, true),
+    showBatch: booleanValue(record.showBatch, false),
+    footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
+    labels: {
+      invoice: stringValue(labels.invoice, "Invoice"),
+      date: stringValue(labels.date, "Date"),
+      customer: stringValue(labels.customer, "Customer"),
+      itemHeader: stringValue(labels.itemHeader, "Item"),
+      amountHeader: stringValue(labels.amountHeader, "Amount"),
+      subtotal: stringValue(labels.subtotal, "Subtotal"),
+      discount: stringValue(labels.discount, "Discount"),
+      cgst: stringValue(labels.cgst, "CGST"),
+      sgst: stringValue(labels.sgst, "SGST"),
+      total: stringValue(labels.total, "TOTAL"),
+      paid: stringValue(labels.paid, "Paid"),
+      due: stringValue(labels.due, "Due"),
+    },
+  };
 }
 
 function getColumns(template: InvoiceTemplate): number {
@@ -362,6 +445,23 @@ function getColumns(template: InvoiceTemplate): number {
   }
 
   return paperColumns[template.paperSize];
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function numberValue(value: unknown, fallback: number, min: number, max: number): number {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? Math.max(Math.min(Math.trunc(nextValue), max), min) : fallback;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 function money(value: { toNumber: () => number }): string {

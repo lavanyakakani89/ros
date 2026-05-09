@@ -2,7 +2,7 @@ import { PaperSize, Prisma, RenderType } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 
-import { buildEscposText, getEffectiveTemplate } from "../printer/printer.service.js";
+import { buildEscposInvoice, getEffectiveTemplate, type InvoiceForPrint } from "../printer/printer.service.js";
 
 const templateIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -227,17 +227,7 @@ export const templatesRoutes: FastifyPluginCallback = (fastify, _options, done) 
     }
 
     if (template.renderType === RenderType.ESC_POS) {
-      const receipt = buildEscposText(
-        [
-          request.tenant.name,
-          "Receipt preview",
-          "Groundnut Oil 500ml     210.00",
-          "CGST 0.00 SGST 0.00",
-          "TOTAL                 210.00",
-          "Thank you",
-        ],
-        template.paperSize,
-      );
+      const receipt = buildEscposInvoice(request.tenant, mockInvoiceForPreview(), template);
 
       return {
         renderType: template.renderType,
@@ -257,6 +247,53 @@ export const templatesRoutes: FastifyPluginCallback = (fastify, _options, done) 
 
 function defaultPreviewHtml(shopName: string): string {
   return `<!doctype html><html><body><h1>${escapeHtml(shopName)}</h1><p>GST invoice preview</p></body></html>`;
+}
+
+function mockInvoiceForPreview(): InvoiceForPrint {
+  return {
+    id: "preview",
+    invoiceNumber: "INV-20260509-0001",
+    invoiceDate: new Date("2026-05-09T05:40:12.000Z"),
+    paymentMode: "CREDIT",
+    subtotal: decimal(900),
+    totalDiscount: decimal(0),
+    totalCgst: decimal(0),
+    totalSgst: decimal(0),
+    grandTotal: decimal(900),
+    amountPaid: decimal(0),
+    amountDue: decimal(900),
+    customer: {
+      name: "Chakravarthi Aravapalli",
+      phone: "91000126",
+    },
+    items: [
+      {
+        id: "preview-item",
+        tenantId: "preview-tenant",
+        invoiceId: "preview",
+        productId: "preview-product",
+        productName: "White Sesame Oil 1L",
+        quantity: decimal(2),
+        unit: "UNT",
+        mrp: decimal(450),
+        sellingPrice: decimal(450),
+        discount: decimal(0),
+        gstRate: decimal(0),
+        cgst: decimal(0),
+        sgst: decimal(0),
+        total: decimal(900),
+        batchNumber: null,
+        expiryDate: null,
+      },
+    ],
+  };
+}
+
+function decimal(value: number) {
+  return {
+    toNumber: () => value,
+    toString: () => value.toFixed(2),
+  } as never;
 }
 
 function escapeHtml(value: string): string {

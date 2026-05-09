@@ -102,15 +102,16 @@ export function TemplateSettings() {
     if (!selectedTemplate || selectedTemplate.isSystem) return;
 
     const form = new FormData(event.currentTarget);
+    const renderType = formString(form, "renderType") as RenderType;
     updateTemplate.mutate({
       id: selectedTemplate.id,
       payload: {
         name: formString(form, "name"),
         description: formString(form, "description") || null,
         paperSize: formString(form, "paperSize"),
-        renderType: formString(form, "renderType"),
+        renderType,
         htmlSource: formString(form, "htmlSource") || null,
-        escposConfig: parseJson(formString(form, "escposConfig")),
+        escposConfig: renderType === "ESC_POS" ? escposConfigFromForm(form, selectedTemplate.escposConfig) : parseJson(formString(form, "escposConfig")),
         uiConfig: parseJson(formString(form, "uiConfig")),
       },
     });
@@ -200,7 +201,7 @@ export function TemplateSettings() {
               <TextInput name="description" label="Description" defaultValue={selectedTemplate.description ?? ""} />
               <SelectInput name="paperSize" label="Paper size" defaultValue={selectedTemplate.paperSize} options={["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"]} />
               <SelectInput name="renderType" label="Render type" defaultValue={selectedTemplate.renderType} options={["ESC_POS", "HTML_PDF"]} />
-              <Textarea name="escposConfig" label="ESC/POS JSON" defaultValue={prettyJson(selectedTemplate.escposConfig)} />
+              {selectedTemplate.renderType === "ESC_POS" ? <EscposConfigEditor config={selectedTemplate.escposConfig} /> : <Textarea name="escposConfig" label="ESC/POS JSON" defaultValue={prettyJson(selectedTemplate.escposConfig)} />}
               <Textarea name="uiConfig" label="UI config JSON" defaultValue={prettyJson(selectedTemplate.uiConfig)} />
               <Textarea name="htmlSource" label="HTML/PDF template" defaultValue={selectedTemplate.htmlSource ?? ""} wide />
             </fieldset>
@@ -269,9 +270,119 @@ function Textarea({ name, label, defaultValue, wide }: Readonly<{ name: string; 
   );
 }
 
+function EscposConfigEditor({ config }: Readonly<{ config: unknown }>) {
+  const values = readEscposConfig(config);
+
+  return (
+    <div className="grid gap-3 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:col-span-2 md:grid-cols-3">
+      <div className="md:col-span-3 text-sm font-semibold text-emerald-950">Thermal receipt controls</div>
+      <NumberInput name="escposColumns" label="Columns" defaultValue={values.columns} min={24} max={64} />
+      <NumberInput name="escposFeedLinesBeforeCut" label="Feed before cut" defaultValue={values.feedLinesBeforeCut} min={0} max={12} />
+      <TextInput name="escposFooterMessage" label="Footer message" defaultValue={values.footerMessage} />
+      <CheckboxInput name="escposCut" label="Auto cut paper" defaultChecked={values.cut} />
+      <CheckboxInput name="escposShowAddress" label="Show address" defaultChecked={values.showAddress} />
+      <CheckboxInput name="escposShowPhone" label="Show phone" defaultChecked={values.showPhone} />
+      <CheckboxInput name="escposShowGstin" label="Show GSTIN" defaultChecked={values.showGstin} />
+      <CheckboxInput name="escposShowCustomer" label="Show customer" defaultChecked={values.showCustomer} />
+      <CheckboxInput name="escposShowDiscount" label="Show discount" defaultChecked={values.showDiscount} />
+      <CheckboxInput name="escposShowCgst" label="Show CGST" defaultChecked={values.showCgst} />
+      <CheckboxInput name="escposShowSgst" label="Show SGST" defaultChecked={values.showSgst} />
+      <CheckboxInput name="escposShowPaid" label="Show paid amount" defaultChecked={values.showPaid} />
+      <CheckboxInput name="escposShowDue" label="Show due amount" defaultChecked={values.showDue} />
+      <CheckboxInput name="escposShowBatch" label="Show batch line" defaultChecked={values.showBatch} />
+    </div>
+  );
+}
+
+function NumberInput({ name, label, defaultValue, min, max }: Readonly<{ name: string; label: string; defaultValue: number; min: number; max: number }>) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      <input name={name} type="number" min={min} max={max} defaultValue={defaultValue} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600" />
+    </label>
+  );
+}
+
+function CheckboxInput({ name, label, defaultChecked }: Readonly<{ name: string; label: string; defaultChecked: boolean }>) {
+  return (
+    <label className="flex h-10 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700">
+      <input name={name} type="checkbox" defaultChecked={defaultChecked} className="size-4 accent-emerald-600" />
+      {label}
+    </label>
+  );
+}
+
 function formString(form: FormData, key: string): string {
   const value = form.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+function formNumber(form: FormData, key: string, fallback: number, min: number, max: number): number {
+  const value = Number(formString(form, key));
+  return Number.isFinite(value) ? Math.max(Math.min(Math.trunc(value), max), min) : fallback;
+}
+
+function escposConfigFromForm(form: FormData, previous: unknown) {
+  const current = readEscposConfig(previous);
+  return {
+    ...current,
+    columns: formNumber(form, "escposColumns", current.columns, 24, 64),
+    feedLinesBeforeCut: formNumber(form, "escposFeedLinesBeforeCut", current.feedLinesBeforeCut, 0, 12),
+    footerMessage: formString(form, "escposFooterMessage"),
+    cut: form.has("escposCut"),
+    showAddress: form.has("escposShowAddress"),
+    showPhone: form.has("escposShowPhone"),
+    showGstin: form.has("escposShowGstin"),
+    showCustomer: form.has("escposShowCustomer"),
+    showDiscount: form.has("escposShowDiscount"),
+    showCgst: form.has("escposShowCgst"),
+    showSgst: form.has("escposShowSgst"),
+    showPaid: form.has("escposShowPaid"),
+    showDue: form.has("escposShowDue"),
+    showBatch: form.has("escposShowBatch"),
+  };
+}
+
+function readEscposConfig(value: unknown) {
+  const record = toRecord(value);
+  return {
+    columns: numberValue(record.columns, 42, 24, 64),
+    cut: booleanValue(record.cut, true),
+    feedLinesBeforeCut: numberValue(record.feedLinesBeforeCut, 6, 0, 12),
+    showShopName: booleanValue(record.showShopName, true),
+    showAddress: booleanValue(record.showAddress, true),
+    showPhone: booleanValue(record.showPhone, true),
+    showGstin: booleanValue(record.showGstin, true),
+    showCustomer: booleanValue(record.showCustomer, true),
+    showSubtotal: booleanValue(record.showSubtotal, true),
+    showDiscount: booleanValue(record.showDiscount, true),
+    showDiscountOnlyWhenPresent: booleanValue(record.showDiscountOnlyWhenPresent, true),
+    showCgst: booleanValue(record.showCgst, true),
+    showSgst: booleanValue(record.showSgst, true),
+    showPaid: booleanValue(record.showPaid, true),
+    showDue: booleanValue(record.showDue, true),
+    showDueOnlyWhenPresent: booleanValue(record.showDueOnlyWhenPresent, true),
+    showBatch: booleanValue(record.showBatch, false),
+    footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
+    labels: toRecord(record.labels),
+  };
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function numberValue(value: unknown, fallback: number, min: number, max: number): number {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? Math.max(Math.min(Math.trunc(nextValue), max), min) : fallback;
+}
+
+function stringValue(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 function parseJson(value: string): unknown {
