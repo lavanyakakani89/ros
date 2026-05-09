@@ -5,7 +5,7 @@ import { ArrowRight, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { createAuthenticatedApiClient, listProducts, type ProductRecord } from "@/lib/api-client";
+import { createAuthenticatedApiClient, listAllProducts, type ProductRecord } from "@/lib/api-client";
 import { getStoredTenant } from "@/lib/vertical-config";
 
 interface Quotation {
@@ -62,7 +62,7 @@ export function QuotationsClient() {
     queryKey: ["quotations"],
     queryFn: () => createAuthenticatedApiClient().get<{ data: Quotation[] }>("/quotations"),
   });
-  const productsQuery = useQuery({ queryKey: ["products", "quotation-search"], queryFn: () => listProducts() });
+  const productsQuery = useQuery({ queryKey: ["products", "quotation-search"], queryFn: () => listAllProducts() });
   const customersQuery = useQuery({
     queryKey: ["customers", "quotations", customerSearch],
     enabled: customerSearch.trim().length >= 2,

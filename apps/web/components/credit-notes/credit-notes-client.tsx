@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Plus } from "lucide-react";
 import { useState } from "react";
 
-import { createAuthenticatedApiClient, listProducts } from "@/lib/api-client";
+import { createAuthenticatedApiClient, listAllProducts } from "@/lib/api-client";
 
 interface CreditNote {
   id: string;
@@ -28,7 +28,7 @@ export function CreditNotesClient() {
     queryKey: ["credit-notes"],
     queryFn: () => createAuthenticatedApiClient().get<{ data: CreditNote[] }>("/credit-notes"),
   });
-  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
+  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listAllProducts() });
   const createCn = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/credit-notes", payload),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["credit-notes"] }); setShowForm(false); setLines([{ productId: "", quantity: 1, discount: 0 }]); },

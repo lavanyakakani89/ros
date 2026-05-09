@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
-import { createAuthenticatedApiClient, listProducts } from "@/lib/api-client";
+import { createAuthenticatedApiClient, listAllProducts } from "@/lib/api-client";
 
 interface PurchaseReturn {
   id: string;
@@ -32,7 +32,7 @@ export function PurchaseReturnsClient() {
     queryKey: ["suppliers"],
     queryFn: () => createAuthenticatedApiClient().get<{ data: Array<{ id: string; name: string }> }>("/suppliers?limit=100"),
   });
-  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
+  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listAllProducts() });
 
   const createReturn = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/purchase-returns", payload),

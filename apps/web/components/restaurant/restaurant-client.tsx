@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChefHat, Plus, Table, UtensilsCrossed } from "lucide-react";
 import { useState } from "react";
 
-import { createAuthenticatedApiClient, listProducts } from "@/lib/api-client";
+import { createAuthenticatedApiClient, listAllProducts } from "@/lib/api-client";
 
 type TabType = "tables" | "kot" | "menu" | "modifiers";
 
@@ -61,7 +61,7 @@ export function RestaurantClient() {
   const tablesQuery = useQuery({ queryKey: ["restaurant-tables"], queryFn: () => createAuthenticatedApiClient().get<RestaurantTable[]>("/restaurant/tables") });
   const kotsQuery = useQuery({ queryKey: ["restaurant-kots"], queryFn: () => createAuthenticatedApiClient().get<KOT[]>("/restaurant/kots?status=PENDING,PREPARING,READY"), enabled: tab === "kot" });
   const menuCatsQuery = useQuery({ queryKey: ["restaurant-menu-cats"], queryFn: () => createAuthenticatedApiClient().get<MenuCategory[]>("/restaurant/menu-categories"), enabled: tab === "menu" });
-  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listProducts(), enabled: tab === "kot" });
+  const productsQuery = useQuery({ queryKey: ["products"], queryFn: () => listAllProducts(), enabled: tab === "kot" });
 
   const createTable = useMutation({
     mutationFn: (p: object) => createAuthenticatedApiClient().post("/restaurant/tables", p),

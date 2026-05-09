@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { ProductFieldForm } from "@/components/inventory/product-field-form";
 import { StatStrip } from "@/components/shared/stat-strip";
-import { createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
+import { createAuthenticatedApiClient, downloadApiFile, listAllProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
@@ -24,7 +24,7 @@ export function InventoryClient() {
   const [importStatus, setImportStatus] = useState("");
   const productsQuery = useQuery({
     queryKey: ["products", lowStockOnly],
-    queryFn: () => listProducts({ lowStock: lowStockOnly }),
+    queryFn: () => listAllProducts({ lowStock: lowStockOnly }),
   });
   const expiringQuery = useQuery({
     queryKey: ["expiring-products"],

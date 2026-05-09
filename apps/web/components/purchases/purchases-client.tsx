@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Save } from "lucide-react";
 import { useState } from "react";
 
-import { createAuthenticatedApiClient, listProducts, type PaginatedResponse } from "@/lib/api-client";
+import { createAuthenticatedApiClient, listAllProducts, type PaginatedResponse } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 
 interface SupplierRecord {
@@ -42,7 +42,7 @@ export function PurchasesClient() {
   });
   const productsQuery = useQuery({
     queryKey: ["products-for-po"],
-    queryFn: () => listProducts(),
+    queryFn: () => listAllProducts(),
   });
   const createOrder = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/purchase-orders", payload),

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listAllProducts, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
@@ -177,7 +177,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   const productsQuery = useQuery({
     queryKey: ["products", "billing"],
-    queryFn: () => listProducts(),
+    queryFn: () => listAllProducts(),
   });
   const customersQuery = useQuery({
     queryKey: ["customers", "billing", customerSearch],

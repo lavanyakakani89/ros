@@ -219,13 +219,50 @@ export async function downloadApiFile(path: string, filename: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
-export async function listProducts(options: { lowStock?: boolean } = {}): Promise<PaginatedResponse<ProductRecord>> {
-  const query = new URLSearchParams({ limit: "100" });
+export async function listProducts(options: { lowStock?: boolean; page?: number; limit?: number; search?: string } = {}): Promise<PaginatedResponse<ProductRecord>> {
+  const query = new URLSearchParams({ limit: String(options.limit ?? 100) });
+  if (options.page) {
+    query.set("page", String(options.page));
+  }
+  if (options.search) {
+    query.set("search", options.search);
+  }
   if (options.lowStock) {
     query.set("lowStock", "true");
   }
 
   return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>(`/inventory/products?${query.toString()}`);
+}
+
+export async function listAllProducts(options: { lowStock?: boolean; search?: string; pageSize?: number } = {}): Promise<PaginatedResponse<ProductRecord>> {
+  const limit = options.pageSize ?? 100;
+  const allProducts: ProductRecord[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const request: { lowStock?: boolean; page: number; limit: number; search?: string } = { page, limit };
+    if (options.lowStock !== undefined) {
+      request.lowStock = options.lowStock;
+    }
+    if (options.search !== undefined) {
+      request.search = options.search;
+    }
+    const result = await listProducts(request);
+    allProducts.push(...result.data);
+    total = result.total;
+    if (result.data.length === 0) {
+      break;
+    }
+    page += 1;
+  } while (allProducts.length < total);
+
+  return {
+    data: allProducts,
+    page: 1,
+    limit: allProducts.length,
+    total,
+  };
 }
 
 export async function createProduct(payload: ProductPayload): Promise<ProductRecord> {
