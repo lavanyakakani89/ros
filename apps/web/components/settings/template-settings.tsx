@@ -285,6 +285,20 @@ function EscposConfigEditor({ config }: Readonly<{ config: unknown }>) {
       <TextInput name="escposLogoText" label="Logo text" defaultValue={values.logoText} />
       <TextInput name="escposNote" label="Receipt note" defaultValue={values.note} />
       <TextInput name="escposFooterMessage" label="Footer message" defaultValue={values.footerMessage} />
+      <div className="md:col-span-3 border-t border-emerald-100 pt-3 text-sm font-semibold text-emerald-950">Detailed receipt spacing</div>
+      <NumberInput name="escposHeaderBlankLines" label="Header blank lines" defaultValue={values.spacing.headerBlankLines} min={0} max={5} />
+      <NumberInput name="escposItemSerialWidth" label="SR width" defaultValue={values.spacing.itemSerialWidth} min={3} max={10} />
+      <NumberInput name="escposItemNameWidth" label="Item width" defaultValue={values.spacing.itemNameWidth} min={8} max={40} />
+      <NumberInput name="escposItemQtyWidth" label="Qty width" defaultValue={values.spacing.itemQtyWidth} min={5} max={12} />
+      <NumberInput name="escposItemPriceWidth" label="Price width" defaultValue={values.spacing.itemPriceWidth} min={5} max={12} />
+      <NumberInput name="escposItemAmountWidth" label="Amount width" defaultValue={values.spacing.itemAmountWidth} min={6} max={14} />
+      <NumberInput name="escposLineGapBetweenItems" label="Blank lines between items" defaultValue={values.spacing.lineGapBetweenItems} min={0} max={3} />
+      <NumberInput name="escposSummaryItemWidth" label="Summary item width" defaultValue={values.spacing.summaryItemWidth} min={8} max={24} />
+      <NumberInput name="escposSummaryQtyWidth" label="Summary qty width" defaultValue={values.spacing.summaryQtyWidth} min={8} max={20} />
+      <NumberInput name="escposSummaryAmountLabelWidth" label="Summary label width" defaultValue={values.spacing.summaryAmountLabelWidth} min={7} max={16} />
+      <NumberInput name="escposSummaryAmountWidth" label="Summary amount width" defaultValue={values.spacing.summaryAmountWidth} min={7} max={16} />
+      <NumberInput name="escposBeforeFooterBlankLines" label="Before footer blank lines" defaultValue={values.spacing.beforeFooterBlankLines} min={0} max={5} />
+      <div className="md:col-span-3 border-t border-emerald-100 pt-3 text-sm font-semibold text-emerald-950">Visible fields</div>
       <CheckboxInput name="escposCut" label="Auto cut paper" defaultChecked={values.cut} />
       <CheckboxInput name="escposShowAddress" label="Show address" defaultChecked={values.showAddress} />
       <CheckboxInput name="escposShowPhone" label="Show phone" defaultChecked={values.showPhone} />
@@ -341,6 +355,20 @@ function escposConfigFromForm(form: FormData, previous: unknown) {
     logoText: formString(form, "escposLogoText"),
     note: formString(form, "escposNote"),
     footerMessage: formString(form, "escposFooterMessage"),
+    spacing: {
+      headerBlankLines: formNumber(form, "escposHeaderBlankLines", current.spacing.headerBlankLines, 0, 5),
+      itemSerialWidth: formNumber(form, "escposItemSerialWidth", current.spacing.itemSerialWidth, 3, 10),
+      itemNameWidth: formNumber(form, "escposItemNameWidth", current.spacing.itemNameWidth, 8, 40),
+      itemQtyWidth: formNumber(form, "escposItemQtyWidth", current.spacing.itemQtyWidth, 5, 12),
+      itemPriceWidth: formNumber(form, "escposItemPriceWidth", current.spacing.itemPriceWidth, 5, 12),
+      itemAmountWidth: formNumber(form, "escposItemAmountWidth", current.spacing.itemAmountWidth, 6, 14),
+      lineGapBetweenItems: formNumber(form, "escposLineGapBetweenItems", current.spacing.lineGapBetweenItems, 0, 3),
+      summaryItemWidth: formNumber(form, "escposSummaryItemWidth", current.spacing.summaryItemWidth, 8, 24),
+      summaryQtyWidth: formNumber(form, "escposSummaryQtyWidth", current.spacing.summaryQtyWidth, 8, 20),
+      summaryAmountLabelWidth: formNumber(form, "escposSummaryAmountLabelWidth", current.spacing.summaryAmountLabelWidth, 7, 16),
+      summaryAmountWidth: formNumber(form, "escposSummaryAmountWidth", current.spacing.summaryAmountWidth, 7, 16),
+      beforeFooterBlankLines: formNumber(form, "escposBeforeFooterBlankLines", current.spacing.beforeFooterBlankLines, 0, 5),
+    },
     cut: form.has("escposCut"),
     showAddress: form.has("escposShowAddress"),
     showPhone: form.has("escposShowPhone"),
@@ -382,7 +410,26 @@ function readEscposConfig(value: unknown) {
     note: stringValue(record.note, ""),
     currencyLabel: stringValue(record.currencyLabel, "Rs"),
     footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
+    spacing: readEscposSpacing(record.spacing),
     labels: toRecord(record.labels),
+  };
+}
+
+function readEscposSpacing(value: unknown) {
+  const spacing = toRecord(value);
+  return {
+    headerBlankLines: numberValue(spacing.headerBlankLines, 1, 0, 5),
+    itemSerialWidth: numberValue(spacing.itemSerialWidth, 4, 3, 10),
+    itemNameWidth: numberValue(spacing.itemNameWidth, 16, 8, 40),
+    itemQtyWidth: numberValue(spacing.itemQtyWidth, 7, 5, 12),
+    itemPriceWidth: numberValue(spacing.itemPriceWidth, 7, 5, 12),
+    itemAmountWidth: numberValue(spacing.itemAmountWidth, 8, 6, 14),
+    lineGapBetweenItems: numberValue(spacing.lineGapBetweenItems, 0, 0, 3),
+    summaryItemWidth: numberValue(spacing.summaryItemWidth, 12, 8, 24),
+    summaryQtyWidth: numberValue(spacing.summaryQtyWidth, 12, 8, 20),
+    summaryAmountLabelWidth: numberValue(spacing.summaryAmountLabelWidth, 9, 7, 16),
+    summaryAmountWidth: numberValue(spacing.summaryAmountWidth, 9, 7, 16),
+    beforeFooterBlankLines: numberValue(spacing.beforeFooterBlankLines, 1, 0, 5),
   };
 }
 

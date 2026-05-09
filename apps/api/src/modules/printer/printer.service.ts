@@ -63,6 +63,20 @@ interface EscposTemplateConfig {
   note: string;
   currencyLabel: string;
   footerMessage: string;
+  spacing: {
+    headerBlankLines: number;
+    itemSerialWidth: number;
+    itemNameWidth: number;
+    itemQtyWidth: number;
+    itemPriceWidth: number;
+    itemAmountWidth: number;
+    lineGapBetweenItems: number;
+    summaryItemWidth: number;
+    summaryQtyWidth: number;
+    summaryAmountLabelWidth: number;
+    summaryAmountWidth: number;
+    beforeFooterBlankLines: number;
+  };
   labels: {
     invoice: string;
     date: string;
@@ -226,25 +240,48 @@ function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, te
   const customerName = invoice.customer?.name ?? "Walk-in";
   const customerPhone = invoice.customer?.phone ?? "";
   const customerAddress = invoice.customer?.address ?? "";
+  const itemWidths = normalizedColumnWidths(
+    [
+      config.spacing.itemSerialWidth,
+      config.spacing.itemNameWidth,
+      config.spacing.itemQtyWidth,
+      config.spacing.itemPriceWidth,
+      config.spacing.itemAmountWidth,
+    ],
+    columns,
+    1,
+    [3, 8, 5, 5, 6],
+  );
+  const summaryWidths = normalizedColumnWidths(
+    [
+      config.spacing.summaryItemWidth,
+      config.spacing.summaryQtyWidth,
+      config.spacing.summaryAmountLabelWidth,
+      config.spacing.summaryAmountWidth,
+    ],
+    columns,
+    0,
+    [8, 8, 7, 7],
+  );
   const lines: string[] = [
     ...(config.logoText ? wrapCentered(config.logoText, columns) : []),
     config.showShopName ? center(tenant.name, columns) : "",
     ...(config.showAddress && tenant.address ? wrapCentered(tenant.address, columns) : []),
     config.showPhone && phone ? center(`CALL : ${phone}`, columns) : "",
     config.fssaiNumber ? center(`FSSAI - ${config.fssaiNumber}`, columns) : "",
-    "",
+    ...blankLines(config.spacing.headerBlankLines),
     twoCol(`${config.labels.invoice} : ${invoice.invoiceNumber}`, `${config.labels.date} :${formatDateOnly(invoice.invoiceDate)}`, columns),
     ...(config.showCustomer ? wrapTextWithPrefix("Name : ", customerName, columns) : []),
     ...(config.showCustomer && customerPhone ? wrapTextWithPrefix("Ph No : ", customerPhone, columns) : []),
     ...(config.showCustomer && customerAddress ? wrapTextWithPrefix("Address : ", customerAddress, columns) : []),
     rule(columns),
-    fixedColumns(["SR", "Item", "QTY.", "Price", "Amount"], [4, 16, 7, 7, 8], [false, false, true, true, true]),
+    fixedColumns(["SR", "Item", "QTY.", "Price", "Amount"], itemWidths, [false, false, true, true, true]),
     rule(columns),
-    ...invoice.items.flatMap((item, index) => detailedItemLines(item, index + 1, columns)),
+    ...invoice.items.flatMap((item, index) => detailedItemLines(item, index + 1, columns, itemWidths, config.spacing.lineGapBetweenItems)),
     rule(columns),
     fixedColumns(
       [`Item : ${String(invoice.items.length)}`, `QTY : ${formatSummaryQuantity(totalQuantity)}`, "AMOUNT :", money(invoice.subtotal)],
-      [12, 12, 9, 9],
+      summaryWidths,
       [false, false, true, true],
     ),
     rule(columns),
@@ -253,7 +290,7 @@ function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, te
     twoCol("GRAND TOTAL", `${config.currencyLabel} ${money(invoice.grandTotal)}`, columns),
     rule(columns),
     amountInWords(invoice.grandTotal.toNumber()),
-    "",
+    ...blankLines(config.spacing.beforeFooterBlankLines),
     ...(config.note ? wrapTextWithPrefix("Note: ", config.note, columns) : []),
     config.footerMessage ? center(config.footerMessage, columns) : "",
   ].filter((line) => line !== "");
@@ -481,6 +518,7 @@ function getEscposConfig(template: InvoiceTemplate): EscposTemplateConfig {
     note: stringValue(record.note, ""),
     currencyLabel: stringValue(record.currencyLabel, "Rs"),
     footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
+    spacing: spacingConfig(record.spacing),
     labels: {
       invoice: stringValue(labels.invoice, "Invoice"),
       date: stringValue(labels.date, "Date"),
@@ -527,20 +565,38 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
 }
 
+function spacingConfig(value: unknown): EscposTemplateConfig["spacing"] {
+  const spacing = toRecord(value);
+  return {
+    headerBlankLines: numberValue(spacing.headerBlankLines, 1, 0, 5),
+    itemSerialWidth: numberValue(spacing.itemSerialWidth, 4, 3, 10),
+    itemNameWidth: numberValue(spacing.itemNameWidth, 16, 8, 40),
+    itemQtyWidth: numberValue(spacing.itemQtyWidth, 7, 5, 12),
+    itemPriceWidth: numberValue(spacing.itemPriceWidth, 7, 5, 12),
+    itemAmountWidth: numberValue(spacing.itemAmountWidth, 8, 6, 14),
+    lineGapBetweenItems: numberValue(spacing.lineGapBetweenItems, 0, 0, 3),
+    summaryItemWidth: numberValue(spacing.summaryItemWidth, 12, 8, 24),
+    summaryQtyWidth: numberValue(spacing.summaryQtyWidth, 12, 8, 20),
+    summaryAmountLabelWidth: numberValue(spacing.summaryAmountLabelWidth, 9, 7, 16),
+    summaryAmountWidth: numberValue(spacing.summaryAmountWidth, 9, 7, 16),
+    beforeFooterBlankLines: numberValue(spacing.beforeFooterBlankLines, 1, 0, 5),
+  };
+}
+
 function money(value: { toNumber: () => number }): string {
   return value.toNumber().toFixed(2);
 }
 
-function detailedItemLines(item: InvoiceItem, serial: number, columns: number): string[] {
+function detailedItemLines(item: InvoiceItem, serial: number, columns: number, widths: number[], lineGap: number): string[] {
   const itemPrefix = `${String(serial)}.  `;
   const itemLines = wrapTextWithPrefix(itemPrefix, item.productName, columns);
   const amountLine = fixedColumns(
     ["", formatItemQuantity(item.quantity.toNumber()), money(item.sellingPrice), money(item.total)],
-    [19, 8, 7, 8],
+    [(widths[0] ?? 4) + (widths[1] ?? 16), widths[2] ?? 7, widths[3] ?? 7, widths[4] ?? 8],
     [false, true, true, true],
   );
 
-  return [...itemLines, amountLine];
+  return [...itemLines, amountLine, ...blankLines(lineGap)];
 }
 
 function fixedColumns(values: string[], widths: number[], rightAlign: boolean[]): string {
@@ -549,6 +605,32 @@ function fixedColumns(values: string[], widths: number[], rightAlign: boolean[])
     const text = fit(value, width);
     return rightAlign[index] ? text.padStart(width, " ") : text.padEnd(width, " ");
   }).join("").trimEnd();
+}
+
+function normalizedColumnWidths(widths: number[], columns: number, flexibleIndex: number, minimums: number[]): number[] {
+  const result = widths.map((width, index) => Math.max(Math.trunc(width), minimums[index] ?? 1));
+  const total = result.reduce((sum, width) => sum + width, 0);
+
+  if (total < columns) {
+    result[flexibleIndex] = (result[flexibleIndex] ?? 1) + columns - total;
+    return result;
+  }
+
+  let overflow = total - columns;
+  for (const index of [flexibleIndex, ...result.map((_, itemIndex) => itemIndex).filter((itemIndex) => itemIndex !== flexibleIndex)]) {
+    const min = minimums[index] ?? 1;
+    const reducible = Math.max((result[index] ?? min) - min, 0);
+    const reduction = Math.min(reducible, overflow);
+    result[index] = (result[index] ?? min) - reduction;
+    overflow -= reduction;
+    if (overflow <= 0) break;
+  }
+
+  return result;
+}
+
+function blankLines(count: number): string[] {
+  return Array.from({ length: Math.max(Math.min(Math.trunc(count), 5), 0) }, () => " ");
 }
 
 function formatDateOnly(value: Date): string {
