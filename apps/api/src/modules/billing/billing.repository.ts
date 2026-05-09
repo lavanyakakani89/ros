@@ -2,6 +2,14 @@ import { InvoiceStatus, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
 
+export interface StockWarning {
+  productId: string;
+  productName: string;
+  available: number;
+  requested: number;
+  shortage: number;
+}
+
 export class BillingRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -172,6 +180,8 @@ export class BillingRepository {
       const amountDue = Math.max(roundMoney(input.totals.grandTotal - amountPaid), 0);
       const nextStatus = resolveEditedInvoiceStatus(invoice.status, amountPaid, input.totals.grandTotal);
 
+      const stockWarnings: StockWarning[] = [];
+
       if (stockAffectsInvoice(nextStatus)) {
         const newStockByProduct = aggregateCreateInvoiceItems(input.items);
         const products = await tx.product.findMany({
@@ -187,9 +197,19 @@ export class BillingRepository {
 
         for (const [productId, quantity] of newStockByProduct) {
           const product = productById.get(productId);
-          if (!product || product.currentStock.toNumber() + 0.0005 < quantity) {
-            const productName = input.items.find((item) => item.productId === productId)?.productName ?? "product";
-            throw new Error(`Insufficient stock for ${productName}`);
+          if (!product) {
+            throw new Error("Product not found");
+          }
+
+          const available = product.currentStock.toNumber();
+          if (available + 0.0005 < quantity) {
+            stockWarnings.push({
+              productId,
+              productName: product.name,
+              available,
+              requested: quantity,
+              shortage: roundQuantity(quantity - available),
+            });
           }
         }
 
@@ -235,13 +255,18 @@ export class BillingRepository {
         },
       };
 
-      return tx.invoice.update({
+      const updatedInvoice = await tx.invoice.update({
         where: {
           id: input.invoiceId,
         },
         data,
         include: invoiceInclude,
       });
+
+      return {
+        ...updatedInvoice,
+        stockWarnings,
+      };
     });
   }
 
@@ -272,11 +297,24 @@ export class BillingRepository {
         },
       });
       const productById = new Map(products.map((product) => [product.id, product]));
+      const stockWarnings: StockWarning[] = [];
 
       for (const item of invoice.items) {
         const product = productById.get(item.productId);
-        if (!product || product.currentStock.lt(item.quantity)) {
-          throw new Error(`Insufficient stock for ${item.productName}`);
+        if (!product) {
+          throw new Error("Product not found");
+        }
+
+        const available = product.currentStock.toNumber();
+        const requested = item.quantity.toNumber();
+        if (available + 0.0005 < requested) {
+          stockWarnings.push({
+            productId: item.productId,
+            productName: item.productName,
+            available,
+            requested,
+            shortage: roundQuantity(requested - available),
+          });
         }
       }
 
@@ -293,7 +331,7 @@ export class BillingRepository {
         })),
       );
 
-      return tx.invoice.update({
+      const updatedInvoice = await tx.invoice.update({
         where: {
           id: invoiceId,
         },
@@ -302,6 +340,11 @@ export class BillingRepository {
         },
         include: invoiceInclude,
       });
+
+      return {
+        ...updatedInvoice,
+        stockWarnings,
+      };
     });
   }
 

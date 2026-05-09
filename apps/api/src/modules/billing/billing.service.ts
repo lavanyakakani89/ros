@@ -77,13 +77,22 @@ export class BillingService {
     };
 
     const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount);
-    const invoice = await this.repository.replaceInvoice({
-      tenantId: tenant.id,
-      invoiceId,
-      invoice: merged,
-      totals: calculated.totals,
-      items: calculated.items,
-    });
+    let invoice: Awaited<ReturnType<BillingRepository["replaceInvoice"]>>;
+    try {
+      invoice = await this.repository.replaceInvoice({
+        tenantId: tenant.id,
+        invoiceId,
+        invoice: merged,
+        totals: calculated.totals,
+        items: calculated.items,
+      });
+    } catch (error) {
+      if (error instanceof BillingError) {
+        throw error;
+      }
+
+      throw new BillingError(error instanceof Error ? error.message : "Unable to update invoice", 409);
+    }
 
     if (!invoice) {
       throw new BillingError("Invoice not found", 404);

@@ -30,6 +30,7 @@ type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH" | "LOCAL_AGENT";
 type InvoiceLineRecord = NonNullable<InvoiceRecord["items"]>[number];
+type StatusTone = "green" | "amber" | "red";
 
 interface SplitEntry {
   mode: PaymentMode;
@@ -73,6 +74,21 @@ interface PrinterResult {
   bytesBase64?: string;
   printerName?: string | null;
   agentUrl?: string | null;
+}
+
+interface StockWarning {
+  productId: string;
+  productName: string;
+  available: number;
+  requested: number;
+  shortage: number;
+}
+
+interface InvoiceMutationResult {
+  id: string;
+  invoiceNumber: string;
+  grandTotal: string | number;
+  stockWarnings?: StockWarning[];
 }
 
 interface LastBill {
@@ -124,7 +140,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [gstEnabled, setGstEnabled] = useState(true);
   const [queueCounts, setQueueCounts] = useState({ pending: 0, syncing: 0, failed: 0 });
   const [status, setStatus] = useState<string | null>(null);
-  const [statusTone, setStatusTone] = useState<"green" | "red">("green");
+  const [statusTone, setStatusTone] = useState<StatusTone>("green");
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerHighlightIndex, setCustomerHighlightIndex] = useState(0);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
@@ -387,9 +403,38 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
   }
 
-  function notify(message: string, tone: "green" | "red" = "green") {
+  function notify(message: string, tone: StatusTone = "green") {
     setStatus(message);
     setStatusTone(tone);
+  }
+
+  function collectStockWarnings(activeLines: Array<{ productId: string; productName: string; quantity: number }>): StockWarning[] {
+    return activeLines.flatMap((line) => {
+      const product = products.find((item) => item.id === line.productId);
+      if (!product) return [];
+
+      const available = decimalToNumber(product.currentStock);
+      if (line.quantity <= available + 0.0005) return [];
+
+      return [{
+        productId: line.productId,
+        productName: line.productName,
+        available,
+        requested: line.quantity,
+        shortage: Math.max(line.quantity - available, 0),
+      }];
+    });
+  }
+
+  function showStockWarnings(warnings: StockWarning[]) {
+    if (warnings.length === 0) return;
+
+    const summary = warnings
+      .slice(0, 3)
+      .map((warning) => `${warning.productName}: stock ${warning.available.toFixed(3)}, billed ${warning.requested.toFixed(3)}`)
+      .join(" | ");
+    const extra = warnings.length > 3 ? ` | ${String(warnings.length - 3)} more item(s)` : "";
+    notify(`Invoice saved with stock warning. ${summary}${extra}`, "amber");
   }
 
   function insertProduct(product: ProductRecord) {
@@ -596,13 +641,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       return;
     }
 
-    const outOfStockLine = isEditMode ? undefined : activeLines.find((line) => {
-      const product = products.find((item) => item.id === line.productId);
-      return product ? line.quantity > decimalToNumber(product.currentStock) : false;
-    });
-    if (outOfStockLine) {
-      notify(`${outOfStockLine.productName} does not have enough stock. Adjust stock or quantity before confirming.`, "red");
-      return;
+    const localStockWarnings = collectStockWarnings(activeLines);
+    if (localStockWarnings.length > 0) {
+      showStockWarnings(localStockWarnings);
     }
 
     const billLevelDiscount = Math.min(totals.billLevelDiscount, totals.subtotal);
@@ -649,7 +690,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       }
 
       if (editingInvoice) {
-        const updated = await createAuthenticatedApiClient().put<{ id: string; invoiceNumber: string; grandTotal: string | number }>(
+        const updated = await createAuthenticatedApiClient().put<InvoiceMutationResult>(
           `/billing/invoices/${editingInvoice.id}`,
           invoicePayload,
         );
@@ -669,7 +710,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           pdfViewUrl,
         };
         setLastBill(nextBill);
-        await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+        if (outputOk) {
+          showStockWarnings(updated.stockWarnings ?? localStockWarnings);
+        }
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["invoices"] }),
           queryClient.invalidateQueries({ queryKey: ["products"] }),
@@ -678,8 +722,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         return;
       }
 
-      const created = await createAuthenticatedApiClient().post<{ id: string; invoiceNumber: string; grandTotal: string | number }>("/billing/invoices", invoicePayload);
-      const confirmed = await createAuthenticatedApiClient().post<{ id: string; invoiceNumber: string; grandTotal: string | number }>(`/billing/invoices/${created.id}/confirm`, {});
+      const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices", invoicePayload);
+      const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
 
       if (useSplit) {
         for (const entry of splitEntries.filter((item) => item.amount > 0)) {
@@ -728,7 +772,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         pdfViewUrl,
       };
       setLastBill(nextBill);
-      await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
+      const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
+      if (outputOk) {
+        showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
+      }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
     } catch (error) {
       if (!isEditMode && isNetworkError(error)) {
@@ -789,7 +836,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
   }
 
-  async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string, actionLabel = "Invoice confirmed") {
+  async function handleConfiguredInvoiceOutput(invoiceId: string, invoiceNumber: string, actionLabel = "Invoice confirmed"): Promise<boolean> {
     try {
       const printer =
         printerQuery.data?.printer ??
@@ -801,19 +848,21 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       if (!printer?.isActive || printer.connectionType === "NONE") {
         await downloadInvoicePdf(invoiceId, invoiceNumber);
         notify(`${actionLabel}. PDF downloaded.`);
-        return;
+        return true;
       }
 
       const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${invoiceId}/print`, {});
       const handled = await handlePrinterResult(result, actionLabel, invoiceNumber);
       if (handled) {
-        return;
+        return true;
       }
 
       await downloadInvoicePdf(invoiceId, invoiceNumber);
       notify(`${result.message || "Printer not available."} PDF downloaded instead.`);
+      return true;
     } catch (error) {
       notify(`${actionLabel}. Output failed: ${error instanceof Error ? error.message : "PDF or printer failed."}`, "red");
+      return false;
     }
   }
 
@@ -1251,7 +1300,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         </div>
 
         {status ? (
-          <div className={`mt-3 rounded-md border px-3 py-2 text-sm ${statusTone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>{status}</div>
+          <div className={`mt-3 rounded-md border px-3 py-2 text-sm ${statusTone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : statusTone === "amber" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-800"}`}>{status}</div>
         ) : null}
 
         {lastBill ? (
