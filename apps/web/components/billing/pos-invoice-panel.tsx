@@ -197,11 +197,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   );
   const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults.slice(0, 4) : [];
   const productResults = useMemo(() => {
-    const term = barcodeInput.trim().toLowerCase();
-    if (!term) return [];
+    const search = buildProductSearchTerm(barcodeInput);
+    if (!search.value) return [];
     return products
-      .filter((product) => matchesProductSearch(product, term, productSearchMode))
-      .sort((left, right) => productMatchRank(left, term) - productMatchRank(right, term))
+      .filter((product) => matchesProductSearch(product, search, productSearchMode))
+      .sort((left, right) => productMatchRank(left, search) - productMatchRank(right, search) || left.name.localeCompare(right.name))
       .slice(0, 6);
   }, [barcodeInput, productSearchMode, products]);
 
@@ -484,8 +484,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     if (event.key !== "Enter" || !barcodeInput.trim()) return;
     const code = barcodeInput.trim();
     const codeLower = code.toLowerCase();
+    const search = buildProductSearchTerm(barcodeInput);
     const exactProduct = products.find((item) => exactProductIdentifierMatch(item, codeLower));
-    const product = exactProduct ?? productResults[productHighlightIndex] ?? products.find((item) => item.name.toLowerCase().includes(codeLower));
+    const product =
+      exactProduct ??
+      productResults[productHighlightIndex] ??
+      products.find((item) => matchesProductSearch(item, search, productSearchMode));
     if (!product) {
       notify(`No product found for ${code}`, "red");
       setBarcodeInput("");
@@ -1477,10 +1481,38 @@ function SummaryRow({ label, value }: Readonly<{ label: string; value: number }>
   );
 }
 
-function matchesProductSearch(product: ProductRecord, term: string, mode: ProductSearchMode): boolean {
-  const name = product.name.toLowerCase();
-  const sku = (product.sku ?? "").toLowerCase();
-  const barcode = (product.barcode ?? "").toLowerCase();
+interface ProductSearchTerm {
+  value: string;
+  tokens: string[];
+  trailingSpace: boolean;
+}
+
+function buildProductSearchTerm(input: string): ProductSearchTerm {
+  const value = normalizeProductSearchText(input);
+  return {
+    value,
+    tokens: value ? value.split(" ") : [],
+    trailingSpace: /\s$/.test(input),
+  };
+}
+
+function normalizeProductSearchText(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function productNameParts(product: ProductRecord) {
+  const normalizedName = normalizeProductSearchText(product.name);
+  return {
+    normalizedName,
+    words: normalizedName ? normalizedName.split(" ") : [],
+  };
+}
+
+function matchesProductSearch(product: ProductRecord, search: ProductSearchTerm, mode: ProductSearchMode): boolean {
+  const { normalizedName, words } = productNameParts(product);
+  const sku = normalizeProductSearchText(product.sku ?? "");
+  const barcode = normalizeProductSearchText(product.barcode ?? "");
+  const term = search.value;
 
   if (mode === "BARCODE") {
     return barcode.includes(term);
@@ -1491,39 +1523,66 @@ function matchesProductSearch(product: ProductRecord, term: string, mode: Produc
   }
 
   if (mode === "AUTO") {
-    return name.includes(term) || sku.includes(term) || barcode.includes(term);
+    return productNameMatches(normalizedName, words, search) || sku.includes(term) || barcode.includes(term);
   }
 
-  return name.includes(term);
+  return productNameMatches(normalizedName, words, search);
 }
 
 function exactProductIdentifierMatch(product: ProductRecord, term: string): boolean {
   return (product.barcode ?? "").trim().toLowerCase() === term || (product.sku ?? "").trim().toLowerCase() === term;
 }
 
-function productMatchRank(product: ProductRecord, term: string): number {
-  const name = product.name.toLowerCase();
-  const sku = (product.sku ?? "").toLowerCase();
-  const barcode = (product.barcode ?? "").toLowerCase();
+function productNameMatches(normalizedName: string, words: string[], search: ProductSearchTerm): boolean {
+  if (!search.value) return false;
+  if (search.trailingSpace && search.tokens.length === 1) {
+    return words.includes(search.value);
+  }
+  if (normalizedName.includes(search.value)) return true;
+  return wordsContainOrderedPrefixes(words, search.tokens);
+}
+
+function wordsContainOrderedPrefixes(words: string[], tokens: string[]): boolean {
+  if (tokens.length === 0) return false;
+  let wordIndex = 0;
+  for (const token of tokens) {
+    const matchIndex = words.findIndex((word, index) => index >= wordIndex && word.startsWith(token));
+    if (matchIndex === -1) return false;
+    wordIndex = matchIndex + 1;
+  }
+  return true;
+}
+
+function productMatchRank(product: ProductRecord, search: ProductSearchTerm): number {
+  const { normalizedName, words } = productNameParts(product);
+  const sku = normalizeProductSearchText(product.sku ?? "");
+  const barcode = normalizeProductSearchText(product.barcode ?? "");
+  const term = search.value;
+  const firstWord = words[0] ?? "";
 
   if (barcode === term) return 0;
   if (sku === term) return 1;
-  if (name === term) return 2;
-  if (barcode.startsWith(term)) return 3;
-  if (sku.startsWith(term)) return 4;
-  if (name.startsWith(term)) return 5;
-  return 6;
+  if (normalizedName === term) return 2;
+  if (search.trailingSpace && firstWord === term) return 3;
+  if (firstWord === term) return 4;
+  if (barcode.startsWith(term)) return 5;
+  if (sku.startsWith(term)) return 6;
+  if (firstWord.startsWith(term)) return 7;
+  if (words.includes(term)) return 8;
+  if (words.some((word) => word.startsWith(term))) return 9;
+  if (normalizedName.includes(term)) return 10;
+  return 11;
 }
 
 function productMatchLabel(product: ProductRecord, input: string, mode: ProductSearchMode): string {
-  const term = input.trim().toLowerCase();
-  const sku = (product.sku ?? "").toLowerCase();
-  const barcode = (product.barcode ?? "").toLowerCase();
-  const name = product.name.toLowerCase();
+  const term = buildProductSearchTerm(input).value;
+  const sku = normalizeProductSearchText(product.sku ?? "");
+  const barcode = normalizeProductSearchText(product.barcode ?? "");
+  const { normalizedName } = productNameParts(product);
 
   if (barcode && barcode.includes(term)) return "Barcode";
   if (sku && sku.includes(term)) return "SKU";
-  if (name.includes(term)) return "Name";
+  if (normalizedName.includes(term)) return "Name";
   return PRODUCT_SEARCH_MODES.find((item) => item.value === mode)?.label ?? "Match";
 }
 
