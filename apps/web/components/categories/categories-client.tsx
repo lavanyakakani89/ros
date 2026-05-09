@@ -22,6 +22,7 @@ export function CategoriesClient() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [parentId, setParentId] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
 
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -33,16 +34,21 @@ export function CategoriesClient() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["categories"] });
       setName(""); setDescription(""); setParentId("");
+      setMessage(null);
     },
   });
 
   const deleteCategory = useMutation({
     mutationFn: (id: string) => createAuthenticatedApiClient().delete(`/categories/${id}`),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["categories"] }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      setMessage(null);
+    },
   });
 
   const categories = categoriesQuery.data ?? [];
   const rootCategories = categories.filter((c) => !c.parentId);
+  const error = categoriesQuery.error ?? createCategory.error ?? deleteCategory.error;
 
   function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -53,6 +59,8 @@ export function CategoriesClient() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold text-slate-950">Product Categories</h1>
+      {message ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}
+      {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error instanceof Error ? error.message : "Request failed"}</div> : null}
 
       <form onSubmit={handleSubmit} className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Create category</div>
@@ -61,7 +69,7 @@ export function CategoriesClient() {
           <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)" className="h-10 flex-1 min-w-[160px] rounded-md border border-border px-3 text-sm" />
           <select value={parentId} onChange={(e) => setParentId(e.target.value)} className="h-10 rounded-md border border-border px-3 text-sm">
             <option value="">Root category</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
+            {rootCategories.map((c) => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
           </select>
           <button type="submit" disabled={createCategory.isPending} className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white disabled:opacity-50">
             <Plus className="size-4" />Add
@@ -76,10 +84,10 @@ export function CategoriesClient() {
         ) : (
           <div className="divide-y divide-border">
             {rootCategories.map((cat) => (
-              <CategoryRow key={cat.id} category={cat} depth={0} allCategories={categories} onDelete={(id) => deleteCategory.mutate(id)} />
+              <CategoryRow key={cat.id} category={cat} depth={0} allCategories={categories} isDeleting={deleteCategory.isPending} onDelete={(id) => deleteCategory.mutate(id)} />
             ))}
             {categories.filter((c) => c.parentId && !rootCategories.find((r) => r.id === c.parentId)).map((cat) => (
-              <CategoryRow key={cat.id} category={cat} depth={1} allCategories={categories} onDelete={(id) => deleteCategory.mutate(id)} />
+              <CategoryRow key={cat.id} category={cat} depth={1} allCategories={categories} isDeleting={deleteCategory.isPending} onDelete={(id) => deleteCategory.mutate(id)} />
             ))}
           </div>
         )}
@@ -88,10 +96,11 @@ export function CategoriesClient() {
   );
 }
 
-function CategoryRow({ category, depth, allCategories, onDelete }: {
+function CategoryRow({ category, depth, allCategories, isDeleting, onDelete }: {
   category: Category;
   depth: number;
   allCategories: Category[];
+  isDeleting: boolean;
   onDelete: (id: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -122,12 +131,12 @@ function CategoryRow({ category, depth, allCategories, onDelete }: {
             </div>
           </div>
         </div>
-        <button onClick={() => onDelete(category.id)} className="text-red-400 hover:text-red-600">
+        <button onClick={() => onDelete(category.id)} disabled={isDeleting} className="text-red-400 hover:text-red-600 disabled:opacity-40">
           <Trash2 className="size-4" />
         </button>
       </div>
       {children.map((child) => (
-        <CategoryRow key={child.id} category={child} depth={depth + 1} allCategories={allCategories} onDelete={onDelete} />
+        <CategoryRow key={child.id} category={child} depth={depth + 1} allCategories={allCategories} isDeleting={isDeleting} onDelete={onDelete} />
       ))}
     </>
   );
