@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Save, Trash2, Upload } from "lucide-react";
+import { Download, FileSpreadsheet, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { useState } from "react";
 
 import { ProductFieldForm } from "@/components/inventory/product-field-form";
@@ -21,10 +21,15 @@ interface ProductBatch {
 export function InventoryClient() {
   const queryClient = useQueryClient();
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [search, setSearch] = useState("");
   const [importStatus, setImportStatus] = useState("");
+  const searchTerm = search.trim();
   const productsQuery = useQuery({
-    queryKey: ["products", lowStockOnly],
-    queryFn: () => listAllProducts({ lowStock: lowStockOnly }),
+    queryKey: ["products", lowStockOnly, searchTerm],
+    queryFn: () => listAllProducts({
+      lowStock: lowStockOnly,
+      ...(searchTerm ? { search: searchTerm } : {}),
+    }),
   });
   const expiringQuery = useQuery({
     queryKey: ["expiring-products"],
@@ -89,15 +94,24 @@ export function InventoryClient() {
             </div>
             {importStatus ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{importStatus}</div> : null}
             {importProducts.error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{importProducts.error.message}</div> : null}
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product name, Product ID, barcode" className="h-10 w-full rounded-md border border-border px-9 text-sm outline-none focus:border-emerald-600" />
+              {search ? (
+                <button type="button" aria-label="Clear product search" className="absolute right-2 top-1/2 inline-flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => setSearch("")}>
+                  <X className="size-4" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
           </div>
-          <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} />
+          <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} hasSearch={Boolean(searchTerm)} />
         </section>
       </div>
     </>
   );
 }
 
-function ProductList({ products, loading, error }: Readonly<{ products: ProductRecord[]; loading: boolean; error: Error | null }>) {
+function ProductList({ products, loading, error, hasSearch }: Readonly<{ products: ProductRecord[]; loading: boolean; error: Error | null; hasSearch: boolean }>) {
   const queryClient = useQueryClient();
   const verticalConfig = getStoredVerticalConfig();
   const updateProduct = useMutation({
@@ -124,7 +138,7 @@ function ProductList({ products, loading, error }: Readonly<{ products: ProductR
   return (
     <div className="divide-y divide-border">
       {products.length === 0 ? (
-        <div className="p-4 text-sm text-slate-500">No products yet. Add your first item from the form.</div>
+        <div className="p-4 text-sm text-slate-500">{hasSearch ? "No products found." : "No products yet. Add your first item from the form."}</div>
       ) : (
         products.map((product) => (
           <ProductRow
