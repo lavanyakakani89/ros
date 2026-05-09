@@ -15,7 +15,7 @@ export type InvoiceForPrint = {
   grandTotal: { toNumber: () => number };
   amountPaid: { toNumber: () => number };
   amountDue: { toNumber: () => number };
-  customer?: { name: string; phone: string } | null;
+  customer?: { name: string; phone: string; address?: string | null } | null;
   items: InvoiceItem[];
 };
 
@@ -56,6 +56,12 @@ interface EscposTemplateConfig {
   showDue: boolean;
   showDueOnlyWhenPresent: boolean;
   showBatch: boolean;
+  layout: "STANDARD" | "SIVSAN_DETAILED_3IN";
+  alternatePhone: string;
+  fssaiNumber: string;
+  logoText: string;
+  note: string;
+  currencyLabel: string;
   footerMessage: string;
   labels: {
     invoice: string;
@@ -174,6 +180,11 @@ export async function testPrinterForTenant(input: {
 
 export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate): { bytes: Buffer; text: string } {
   const config = getEscposConfig(template);
+
+  if (config.layout === "SIVSAN_DETAILED_3IN") {
+    return buildSivsanDetailedInvoice(tenant, invoice, template, config);
+  }
+
   const columns = config.columns;
   const lines: string[] = [
     config.showShopName ? center(tenant.name, columns) : "",
@@ -200,6 +211,52 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
     rule(columns),
     config.footerMessage ? center(config.footerMessage, columns) : "",
   ].filter(Boolean);
+
+  return buildEscposText(lines, template.paperSize, {
+    columns,
+    cut: config.cut,
+    feedLinesBeforeCut: config.feedLinesBeforeCut,
+  });
+}
+
+function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate, config: EscposTemplateConfig): { bytes: Buffer; text: string } {
+  const columns = config.columns;
+  const totalQuantity = invoice.items.reduce((sum, item) => sum + item.quantity.toNumber(), 0);
+  const phone = [tenant.phone, config.alternatePhone].filter(Boolean).join(" / ");
+  const customerName = invoice.customer?.name ?? "Walk-in";
+  const customerPhone = invoice.customer?.phone ?? "";
+  const customerAddress = invoice.customer?.address ?? "";
+  const lines: string[] = [
+    ...(config.logoText ? wrapCentered(config.logoText, columns) : []),
+    config.showShopName ? center(tenant.name, columns) : "",
+    ...(config.showAddress && tenant.address ? wrapCentered(tenant.address, columns) : []),
+    config.showPhone && phone ? center(`CALL : ${phone}`, columns) : "",
+    config.fssaiNumber ? center(`FSSAI - ${config.fssaiNumber}`, columns) : "",
+    "",
+    twoCol(`${config.labels.invoice} : ${invoice.invoiceNumber}`, `${config.labels.date} :${formatDateOnly(invoice.invoiceDate)}`, columns),
+    ...(config.showCustomer ? wrapTextWithPrefix("Name : ", customerName, columns) : []),
+    ...(config.showCustomer && customerPhone ? wrapTextWithPrefix("Ph No : ", customerPhone, columns) : []),
+    ...(config.showCustomer && customerAddress ? wrapTextWithPrefix("Address : ", customerAddress, columns) : []),
+    rule(columns),
+    fixedColumns(["SR", "Item", "QTY.", "Price", "Amount"], [4, 16, 7, 7, 8], [false, false, true, true, true]),
+    rule(columns),
+    ...invoice.items.flatMap((item, index) => detailedItemLines(item, index + 1, columns)),
+    rule(columns),
+    fixedColumns(
+      [`Item : ${String(invoice.items.length)}`, `QTY : ${formatSummaryQuantity(totalQuantity)}`, "AMOUNT :", money(invoice.subtotal)],
+      [12, 12, 9, 9],
+      [false, false, true, true],
+    ),
+    rule(columns),
+    twoCol("DISC. AMOUNT :", money(invoice.totalDiscount), columns),
+    rule(columns),
+    twoCol("GRAND TOTAL", `${config.currencyLabel} ${money(invoice.grandTotal)}`, columns),
+    rule(columns),
+    amountInWords(invoice.grandTotal.toNumber()),
+    "",
+    ...(config.note ? wrapTextWithPrefix("Note: ", config.note, columns) : []),
+    config.footerMessage ? center(config.footerMessage, columns) : "",
+  ].filter((line) => line !== "");
 
   return buildEscposText(lines, template.paperSize, {
     columns,
@@ -417,6 +474,12 @@ function getEscposConfig(template: InvoiceTemplate): EscposTemplateConfig {
     showDue: booleanValue(record.showDue, true),
     showDueOnlyWhenPresent: booleanValue(record.showDueOnlyWhenPresent, true),
     showBatch: booleanValue(record.showBatch, false),
+    layout: stringValue(record.layout, "STANDARD") === "SIVSAN_DETAILED_3IN" ? "SIVSAN_DETAILED_3IN" : "STANDARD",
+    alternatePhone: stringValue(record.alternatePhone, ""),
+    fssaiNumber: stringValue(record.fssaiNumber, ""),
+    logoText: stringValue(record.logoText, ""),
+    note: stringValue(record.note, ""),
+    currencyLabel: stringValue(record.currencyLabel, "Rs"),
     footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
     labels: {
       invoice: stringValue(labels.invoice, "Invoice"),
@@ -466,6 +529,117 @@ function stringValue(value: unknown, fallback: string): string {
 
 function money(value: { toNumber: () => number }): string {
   return value.toNumber().toFixed(2);
+}
+
+function detailedItemLines(item: InvoiceItem, serial: number, columns: number): string[] {
+  const itemPrefix = `${String(serial)}.  `;
+  const itemLines = wrapTextWithPrefix(itemPrefix, item.productName, columns);
+  const amountLine = fixedColumns(
+    ["", formatItemQuantity(item.quantity.toNumber()), money(item.sellingPrice), money(item.total)],
+    [19, 8, 7, 8],
+    [false, true, true, true],
+  );
+
+  return [...itemLines, amountLine];
+}
+
+function fixedColumns(values: string[], widths: number[], rightAlign: boolean[]): string {
+  return values.map((value, index) => {
+    const width = widths[index] ?? value.length;
+    const text = fit(value, width);
+    return rightAlign[index] ? text.padStart(width, " ") : text.padEnd(width, " ");
+  }).join("").trimEnd();
+}
+
+function formatDateOnly(value: Date): string {
+  return value.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).replaceAll("/", "-");
+}
+
+function formatItemQuantity(value: number): string {
+  return value.toFixed(3);
+}
+
+function formatSummaryQuantity(value: number): string {
+  return value.toFixed(2);
+}
+
+function wrapCentered(value: string, columns: number): string[] {
+  return wrapText(value, columns).map((line) => center(line, columns));
+}
+
+function wrapTextWithPrefix(prefix: string, value: string, columns: number): string[] {
+  const available = Math.max(columns - prefix.length, 1);
+  const wrapped = wrapText(value, available);
+
+  if (wrapped.length === 0) {
+    return [prefix.trimEnd()];
+  }
+
+  return wrapped.map((line, index) => index === 0 ? `${prefix}${line}` : `${" ".repeat(prefix.length)}${line}`);
+}
+
+function wrapText(value: string, columns: number): string[] {
+  const words = value.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > columns && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function amountInWords(value: number): string {
+  const rounded = Math.round(value);
+  if (rounded <= 0) {
+    return "RUPEES ZERO ONLY";
+  }
+
+  return `RUPEES ${numberToIndianWords(rounded).toUpperCase()} ONLY`;
+}
+
+function numberToIndianWords(value: number): string {
+  const ones = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+  const tens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+  const twoDigitWords = (nextValue: number): string => {
+    if (nextValue < 20) return ones[nextValue] ?? "";
+    const ten = tens[Math.floor(nextValue / 10)] ?? "";
+    const one = ones[nextValue % 10] ?? "";
+    return `${ten}${nextValue % 10 ? ` ${one}` : ""}`.trim();
+  };
+  const threeDigitWords = (nextValue: number): string => {
+    const hundred = Math.floor(nextValue / 100);
+    const rest = nextValue % 100;
+    const hundredWord = ones[hundred] ?? "";
+    return [hundred ? `${hundredWord} hundred` : "", rest ? twoDigitWords(rest) : ""].filter(Boolean).join(" ");
+  };
+  const parts = [
+    { label: "crore", value: Math.floor(value / 10000000) },
+    { label: "lakh", value: Math.floor((value % 10000000) / 100000) },
+    { label: "thousand", value: Math.floor((value % 100000) / 1000) },
+    { label: "", value: value % 1000 },
+  ];
+
+  return parts
+    .map((part) => part.value ? `${part.value < 100 ? twoDigitWords(part.value) : threeDigitWords(part.value)} ${part.label}`.trim() : "")
+    .filter(Boolean)
+    .join(" ");
 }
 
 function rule(columns: number): string {

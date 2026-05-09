@@ -276,8 +276,14 @@ function EscposConfigEditor({ config }: Readonly<{ config: unknown }>) {
   return (
     <div className="grid gap-3 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:col-span-2 md:grid-cols-3">
       <div className="md:col-span-3 text-sm font-semibold text-emerald-950">Thermal receipt controls</div>
+      <SelectInput name="escposLayout" label="Receipt layout" defaultValue={values.layout} options={["STANDARD", "SIVSAN_DETAILED_3IN"]} />
       <NumberInput name="escposColumns" label="Columns" defaultValue={values.columns} min={24} max={64} />
       <NumberInput name="escposFeedLinesBeforeCut" label="Feed before cut" defaultValue={values.feedLinesBeforeCut} min={0} max={12} />
+      <TextInput name="escposAlternatePhone" label="Alternate phone" defaultValue={values.alternatePhone} />
+      <TextInput name="escposFssaiNumber" label="FSSAI number" defaultValue={values.fssaiNumber} />
+      <TextInput name="escposCurrencyLabel" label="Currency label" defaultValue={values.currencyLabel} />
+      <TextInput name="escposLogoText" label="Logo text" defaultValue={values.logoText} />
+      <TextInput name="escposNote" label="Receipt note" defaultValue={values.note} />
       <TextInput name="escposFooterMessage" label="Footer message" defaultValue={values.footerMessage} />
       <CheckboxInput name="escposCut" label="Auto cut paper" defaultChecked={values.cut} />
       <CheckboxInput name="escposShowAddress" label="Show address" defaultChecked={values.showAddress} />
@@ -326,8 +332,14 @@ function escposConfigFromForm(form: FormData, previous: unknown) {
   const current = readEscposConfig(previous);
   return {
     ...current,
+    layout: formString(form, "escposLayout") || current.layout,
     columns: formNumber(form, "escposColumns", current.columns, 24, 64),
     feedLinesBeforeCut: formNumber(form, "escposFeedLinesBeforeCut", current.feedLinesBeforeCut, 0, 12),
+    alternatePhone: formString(form, "escposAlternatePhone"),
+    fssaiNumber: formString(form, "escposFssaiNumber"),
+    currencyLabel: formString(form, "escposCurrencyLabel") || "Rs",
+    logoText: formString(form, "escposLogoText"),
+    note: formString(form, "escposNote"),
     footerMessage: formString(form, "escposFooterMessage"),
     cut: form.has("escposCut"),
     showAddress: form.has("escposShowAddress"),
@@ -363,6 +375,12 @@ function readEscposConfig(value: unknown) {
     showDue: booleanValue(record.showDue, true),
     showDueOnlyWhenPresent: booleanValue(record.showDueOnlyWhenPresent, true),
     showBatch: booleanValue(record.showBatch, false),
+    layout: stringValue(record.layout, "STANDARD"),
+    alternatePhone: stringValue(record.alternatePhone, ""),
+    fssaiNumber: stringValue(record.fssaiNumber, ""),
+    logoText: stringValue(record.logoText, ""),
+    note: stringValue(record.note, ""),
+    currencyLabel: stringValue(record.currencyLabel, "Rs"),
     footerMessage: stringValue(record.footerMessage, "Thank you. Please visit again."),
     labels: toRecord(record.labels),
   };
