@@ -9,6 +9,8 @@ import {
   ArrowRight,
   Bell,
   Clock3,
+  Eye,
+  EyeOff,
   IndianRupee,
   Package,
   Plus,
@@ -132,20 +134,21 @@ export function DashboardHome() {
   const maxSales = Math.max(...(s?.dailySales ?? []).map((day) => day.sales), 1);
 
   const kpis = [
-    { label: "Today's sales", value: money(todaySales?.netSales ?? 0), change: `${String(todaySales?.invoiceCount ?? 0)} bills today`, icon: IndianRupee, tone: "emerald" },
-    { label: "7-day sales", value: money(s?.netSales ?? 0), change: `${String(s?.invoiceCount ?? 0)} bills in range`, icon: Receipt, tone: "blue" },
+    { label: "Today's sales", value: money(todaySales?.netSales ?? 0), change: `${String(todaySales?.invoiceCount ?? 0)} bills today`, icon: IndianRupee, tone: "emerald", private: true },
+    { label: "7-day sales", value: money(s?.netSales ?? 0), change: `${String(s?.invoiceCount ?? 0)} bills in range`, icon: Receipt, tone: "blue", private: true },
     { label: "Outstanding dues", value: money(s?.due ?? 0), change: "Customer credit", icon: AlertTriangle, tone: "amber" },
     { label: "Low stock items", value: String(inv?.lowStockCount ?? 0), change: "Needs reorder", icon: Package, tone: "red" },
     { label: "Open deliveries", value: String(pendingDeliveryCount), change: failedDeliveryCount > 0 ? `${String(failedDeliveryCount)} failed` : "Pending or assigned", icon: Clock3, tone: "blue" },
     { label: "Offline invoices", value: String(offlineInvoices.pending + offlineInvoices.syncing + offlineInvoices.failed), change: offlineInvoices.failed > 0 ? `${String(offlineInvoices.failed)} failed sync` : "Queued locally", icon: Bell, tone: offlineInvoices.failed > 0 ? "red" : "slate" },
-    { label: "Gross profit", value: money(pnl?.grossProfit ?? 0), change: `${pnl ? pnl.grossMarginPct.toFixed(1) : "0.0"}% margin`, icon: TrendingUp, tone: "violet" },
-    { label: "Stock value", value: money(inv?.stockValue ?? 0), change: "Inventory holding", icon: Package, tone: "slate" },
+    { label: "Gross profit", value: money(pnl?.grossProfit ?? 0), change: `${pnl ? pnl.grossMarginPct.toFixed(1) : "0.0"}% margin`, icon: TrendingUp, tone: "violet", private: true },
+    { label: "Stock value", value: money(inv?.stockValue ?? 0), change: "Inventory holding", icon: Package, tone: "slate", private: true },
   ] as const;
+  const greeting = greetingForNow();
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-slate-950">Good morning, {tenantName}</h1>
+        <h1 className="text-xl font-semibold text-slate-950">{greeting}, {tenantName}</h1>
         <p className="text-sm text-slate-500">{formatToday()} | {verticalConfig.displayName}</p>
       </div>
 
@@ -315,8 +318,10 @@ function KpiCard({
     change: string;
     icon: ElementType;
     tone: "amber" | "blue" | "emerald" | "red" | "slate" | "violet";
+    private?: boolean;
   };
 }>) {
+  const [revealed, setRevealed] = useState(!item.private);
   const toneClass = {
     amber: "bg-amber-50 text-amber-700",
     blue: "bg-blue-50 text-blue-700",
@@ -332,10 +337,22 @@ function KpiCard({
         <div className={`flex size-10 items-center justify-center rounded-md ${toneClass}`}>
           <item.icon className="size-5" aria-hidden="true" />
         </div>
-        <div className="min-w-0">
-          <div className="truncate text-xs text-slate-500">{item.label}</div>
-          <div className="mt-1 text-lg font-semibold text-slate-950">{item.value}</div>
-          <div className="text-xs text-slate-400">{item.change}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="truncate text-xs text-slate-500">{item.label}</div>
+            {item.private ? (
+              <button
+                type="button"
+                aria-label={revealed ? `Hide ${item.label}` : `Show ${item.label}`}
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => setRevealed((value) => !value)}
+              >
+                {revealed ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-1 text-lg font-semibold text-slate-950">{revealed ? item.value : "••••"}</div>
+          <div className="text-xs text-slate-400">{revealed ? item.change : "Hidden"}</div>
         </div>
       </div>
     </div>
@@ -457,4 +474,22 @@ function formatToday(): string {
     month: "short",
     year: "numeric",
   }).format(new Date());
+}
+
+function greetingForNow(): string {
+  const hour = Number(new Intl.DateTimeFormat("en-IN", {
+    hour: "numeric",
+    hour12: false,
+    timeZone: "Asia/Kolkata",
+  }).format(new Date()));
+
+  if (hour < 12) {
+    return "Good morning";
+  }
+
+  if (hour < 17) {
+    return "Good afternoon";
+  }
+
+  return "Good evening";
 }
