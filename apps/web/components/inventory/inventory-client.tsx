@@ -24,6 +24,8 @@ export function InventoryClient() {
   const [search, setSearch] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const searchTerm = search.trim();
+  const verticalConfig = getStoredVerticalConfig();
+  const supportsExpiryAlerts = Boolean(verticalConfig?.expiryAlerts?.enabled);
   const productsQuery = useQuery({
     queryKey: ["products", lowStockOnly, searchTerm],
     queryFn: () => listAllProducts({
@@ -34,6 +36,7 @@ export function InventoryClient() {
   const expiringQuery = useQuery({
     queryKey: ["expiring-products"],
     queryFn: () => createAuthenticatedApiClient().get<unknown[]>("/inventory/products/expiring?days=30"),
+    enabled: supportsExpiryAlerts,
     retry: false,
   });
   const products = productsQuery.data?.data ?? [];
@@ -53,7 +56,7 @@ export function InventoryClient() {
         items={[
           { label: "Active products", value: String(productsQuery.data?.total ?? products.length), tone: "blue" },
           { label: "Low stock", value: String(lowStockCount), tone: "amber" },
-          { label: "Expiring soon", value: String(expiringQuery.data?.length ?? 0), tone: "emerald" },
+          ...(supportsExpiryAlerts ? [{ label: "Expiring soon", value: String(expiringQuery.data?.length ?? 0), tone: "emerald" as const }] : []),
           { label: "Stock value", value: `₹${stockValue.toFixed(2)}`, tone: "slate" },
         ]}
       />
