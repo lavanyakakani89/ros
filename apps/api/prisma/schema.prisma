@@ -1340,6 +1340,7 @@ enum LicensePlan {
 }
 
 enum BillingCycle {
+  DEMO
   ONE_TIME
   MONTHLY
   QUARTERLY

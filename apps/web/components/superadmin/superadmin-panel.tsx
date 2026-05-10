@@ -10,7 +10,7 @@ const apiBaseUrl =
 
 const verticals = ["PHARMACY", "GROCERY", "FASHION", "HARDWARE", "ELECTRONICS", "RESTAURANT"] as const;
 const plans = ["STARTER", "STANDARD", "PROFESSIONAL", "ENTERPRISE"] as const;
-const cycles = ["ONE_TIME", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "TWO_YEARLY", "THREE_YEARLY"] as const;
+const cycles = ["DEMO", "ONE_TIME", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "TWO_YEARLY", "THREE_YEARLY"] as const;
 const adminRoles = ["OWNER", "MANAGER", "SUPPORT"] as const;
 const paperSizes = ["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"] as const;
 const renderTypes = ["ESC_POS", "HTML_PDF"] as const;
@@ -261,6 +261,11 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   async function createShop() {
     setError(null);
     const normalizedSlug = shopForm.tenantSlug.trim().toLowerCase();
+    const validationError = validateShopForm({ ...shopForm, tenantSlug: normalizedSlug });
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
     if (shops.some((shop) => shop.slug === normalizedSlug)) {
       setError("Shop slug already exists. Use a different slug.");
@@ -517,7 +522,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               <TextInput label="Owner name" value={shopForm.ownerName} onChange={(value) => updateShopField("ownerName", value)} required />
               <TextInput label="Owner email" type="email" value={shopForm.ownerEmail} onChange={(value) => updateShopField("ownerEmail", value)} required />
               <TextInput label="Owner username" value={shopForm.ownerUsername} onChange={(value) => updateShopField("ownerUsername", value)} />
-              <TextInput label="Owner password" type="password" value={shopForm.ownerPassword} onChange={(value) => updateShopField("ownerPassword", value)} required />
+              <TextInput label="Owner password" type="password" value={shopForm.ownerPassword} onChange={(value) => updateShopField("ownerPassword", value)} minLength={8} required />
               <SelectInput label="Plan" value={shopForm.plan} options={plans} onChange={(value) => updateShopField("plan", value)} />
               <SelectInput label="Billing cycle" value={shopForm.billingCycle} options={cycles} onChange={(value) => updateShopField("billingCycle", value)} />
               <TextInput label="Amount paid" type="number" value={shopForm.amountPaid} onChange={(value) => updateShopField("amountPaid", value)} />
@@ -726,17 +731,51 @@ function statusClass(status: ShopRecord["status"]): string {
   return `${base} bg-red-950 text-red-200`;
 }
 
+function validateShopForm(form: CreateShopForm): string | null {
+  if (form.tenantName.trim().length < 2) {
+    return "Shop name must be at least 2 characters.";
+  }
+
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(form.tenantSlug.trim())) {
+    return "Shop slug can use lowercase letters, numbers, and single hyphens only.";
+  }
+
+  if (form.phone.trim().length < 10) {
+    return "Shop phone must be at least 10 digits.";
+  }
+
+  if (form.ownerName.trim().length < 2) {
+    return "Owner name must be at least 2 characters.";
+  }
+
+  if (form.ownerUsername.trim() && /\s/.test(form.ownerUsername.trim())) {
+    return "Owner username cannot contain spaces.";
+  }
+
+  if (form.ownerUsername.trim() && form.ownerUsername.trim().length < 3) {
+    return "Owner username must be at least 3 characters.";
+  }
+
+  if (form.ownerPassword.length < 8) {
+    return "Owner password must be at least 8 characters.";
+  }
+
+  return null;
+}
+
 function TextInput({
   label,
   value,
   onChange,
   required,
+  minLength,
   type = "text",
 }: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
+  minLength?: number;
   type?: "email" | "number" | "password" | "text";
 }>) {
   return (
@@ -748,6 +787,7 @@ function TextInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         required={required}
+        minLength={minLength}
       />
     </label>
   );
@@ -774,12 +814,20 @@ function SelectInput({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {formatSelectOption(option)}
           </option>
         ))}
       </select>
     </label>
   );
+}
+
+function formatSelectOption(option: string): string {
+  return option
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function TextAreaInput({
@@ -840,8 +888,8 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
-    throw new Error(body?.error ?? body?.message ?? "Request failed");
+    const body = (await response.json().catch(() => null)) as { error?: string; message?: string; issues?: Array<{ field?: string; message?: string }> } | null;
+    throw new Error(readApiError(body));
   }
 
   return response.json() as Promise<T>;
@@ -849,6 +897,32 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 function cleanPayload(input: object) {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== "")) as Record<string, string | number>;
+}
+
+function readApiError(body: { error?: string; message?: string; issues?: Array<{ field?: string; message?: string }> } | null): string {
+  if (body?.issues?.length) {
+    return body.issues
+      .slice(0, 3)
+      .map((issue) => `${fieldLabel(issue.field ?? "")}: ${issue.message ?? "Invalid value"}`)
+      .join("; ");
+  }
+
+  return body?.error ?? body?.message ?? "Request failed";
+}
+
+function fieldLabel(field: string): string {
+  if (!field) {
+    return "Request";
+  }
+
+  return field
+    .replace(/\.(\d+)\./g, " $1 ")
+    .replace(/\./g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function slugify(value: string): string {
