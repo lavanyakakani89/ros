@@ -1,6 +1,28 @@
 import { VerticalType } from "@prisma/client";
 import { z } from "zod";
 
+import { loginIdentifierPattern, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
+
+const loginIdentifierSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(254)
+  .regex(loginIdentifierPattern, "Use a username or email without spaces")
+  .transform(normalizeLoginIdentifier);
+
+const optionalUsernameSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z
+    .string()
+    .trim()
+    .min(3)
+    .max(254)
+    .regex(loginIdentifierPattern, "Username cannot contain spaces")
+    .transform(normalizeLoginIdentifier)
+    .optional(),
+);
+
 export const registerSchema = z.object({
   tenantName: z.string().trim().min(2),
   tenantSlug: z
@@ -15,15 +37,26 @@ export const registerSchema = z.object({
   address: z.string().trim().min(3).optional(),
   ownerName: z.string().trim().min(2),
   ownerEmail: z.string().trim().email().toLowerCase(),
+  ownerUsername: optionalUsernameSchema,
   ownerPhone: z.string().trim().min(10).max(16).optional(),
   password: z.string().min(8).max(128),
 });
 
-export const loginSchema = z.object({
-  tenantSlug: z.string().trim().min(3).toLowerCase(),
-  email: z.string().trim().email().toLowerCase(),
-  password: z.string().min(1),
-});
+export const loginSchema = z
+  .object({
+    tenantSlug: z.string().trim().min(3).toLowerCase(),
+    identifier: loginIdentifierSchema.optional(),
+    email: loginIdentifierSchema.optional(),
+    password: z.string().min(1),
+  })
+  .refine((value) => value.identifier || value.email, {
+    message: "Username or email is required",
+    path: ["identifier"],
+  })
+  .transform(({ email, identifier, ...value }) => ({
+    ...value,
+    identifier: identifier ?? email ?? "",
+  }));
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(32),

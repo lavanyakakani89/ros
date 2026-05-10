@@ -45,10 +45,10 @@ export class AuthService {
   }
 
   async login(input: LoginInput): Promise<AuthResponse> {
-    const user = await this.repository.findUserForLogin(input.tenantSlug, input.email);
+    const user = await this.repository.findUserForLogin(input.tenantSlug, input.identifier);
 
     if (!user || !(await verify(user.passwordHash, input.password))) {
-      throw new AuthError("Invalid email or password", 401);
+      throw new AuthError("Invalid username/email or password", 401);
     }
 
     if (user.tenant.status === "SUSPENDED") {
@@ -143,6 +143,7 @@ function toAuthUser(user: UserWithTenant) {
     tenantId: user.tenantId,
     name: user.name,
     email: user.email,
+    username: user.username,
     role: user.role,
   };
 }

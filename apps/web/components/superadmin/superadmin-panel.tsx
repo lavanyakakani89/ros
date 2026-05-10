@@ -108,6 +108,7 @@ interface CreateShopForm {
   address: string;
   ownerName: string;
   ownerEmail: string;
+  ownerUsername: string;
   ownerPhone: string;
   ownerPassword: string;
   plan: string;
@@ -145,6 +146,7 @@ const emptyShopForm: CreateShopForm = {
   address: "",
   ownerName: "",
   ownerEmail: "",
+  ownerUsername: "",
   ownerPhone: "",
   ownerPassword: "",
   plan: "STARTER",
@@ -514,6 +516,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               <TextInput label="Phone" value={shopForm.phone} onChange={(value) => updateShopField("phone", value)} required />
               <TextInput label="Owner name" value={shopForm.ownerName} onChange={(value) => updateShopField("ownerName", value)} required />
               <TextInput label="Owner email" type="email" value={shopForm.ownerEmail} onChange={(value) => updateShopField("ownerEmail", value)} required />
+              <TextInput label="Owner username" value={shopForm.ownerUsername} onChange={(value) => updateShopField("ownerUsername", value)} />
               <TextInput label="Owner password" type="password" value={shopForm.ownerPassword} onChange={(value) => updateShopField("ownerPassword", value)} required />
               <SelectInput label="Plan" value={shopForm.plan} options={plans} onChange={(value) => updateShopField("plan", value)} />
               <SelectInput label="Billing cycle" value={shopForm.billingCycle} options={cycles} onChange={(value) => updateShopField("billingCycle", value)} />

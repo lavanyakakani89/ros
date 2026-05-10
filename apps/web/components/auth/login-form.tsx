@@ -22,7 +22,7 @@ export function LoginForm() {
     try {
       const auth = await login({
         tenantSlug: getFormString(form, "tenantSlug"),
-        email: getFormString(form, "email"),
+        identifier: getFormString(form, "identifier"),
         password: getFormString(form, "password"),
       });
       const verticalConfig = await getCurrentVerticalConfig();
@@ -44,8 +44,8 @@ export function LoginForm() {
         <input name="tenantSlug" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="your-shop-slug" required />
       </label>
       <label className="block text-sm font-medium text-slate-700">
-        Email
-        <input name="email" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="owner@example.com" type="email" required />
+        Username or email
+        <input name="identifier" className="mt-1 h-10 w-full rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="owner or owner@example.com" autoComplete="username" required />
       </label>
       <label className="block text-sm font-medium text-slate-700">
         Password

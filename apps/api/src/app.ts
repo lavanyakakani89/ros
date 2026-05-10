@@ -179,6 +179,10 @@ function uniqueConstraintMessage(error: Prisma.PrismaClientKnownRequestError): s
     return "Email already exists. Use a different email.";
   }
 
+  if (target.includes("username")) {
+    return "Username already exists. Use a different username.";
+  }
+
   if (target.includes("phone")) {
     return "Phone number already exists. Use a different phone number.";
   }

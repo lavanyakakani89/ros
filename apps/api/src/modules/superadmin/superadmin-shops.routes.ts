@@ -3,6 +3,7 @@ import { BillingCycle, LicensePlan, SuperAdminRole, TenantStatus, UserRole, Vert
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 import { z } from "zod";
 
+import { defaultUsername, loginIdentifierPattern, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
 import { requireRole, requireSuperAdmin } from "./superadmin-auth.routes.js";
 
 const shopQuerySchema = z.object({
@@ -27,6 +28,17 @@ const createShopSchema = z.object({
   address: z.string().trim().min(3).optional(),
   ownerName: z.string().trim().min(2),
   ownerEmail: z.string().trim().email().toLowerCase(),
+  ownerUsername: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z
+      .string()
+      .trim()
+      .min(3)
+      .max(254)
+      .regex(loginIdentifierPattern, "Username cannot contain spaces")
+      .transform(normalizeLoginIdentifier)
+      .optional(),
+  ),
   ownerPhone: z.string().trim().min(10).max(16).optional(),
   ownerPassword: z.string().min(8).max(128),
   plan: z.nativeEnum(LicensePlan).default(LicensePlan.STARTER),
@@ -154,6 +166,7 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
             id: true,
             name: true,
             email: true,
+            username: true,
             role: true,
             isActive: true,
             createdAt: true,
@@ -216,6 +229,7 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
             tenantId: tenant.id,
             name: input.ownerName,
             email: input.ownerEmail,
+            username: defaultUsername(input.ownerUsername ?? input.ownerEmail),
             phone: input.ownerPhone ?? input.phone,
             passwordHash: await hash(input.ownerPassword),
             role: UserRole.OWNER,

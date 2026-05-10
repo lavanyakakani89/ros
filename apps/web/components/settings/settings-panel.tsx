@@ -27,6 +27,7 @@ interface UserRecord {
   id: string;
   name: string;
   email: string;
+  username?: string | null;
   phone?: string | null;
   role: "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
   isActive: boolean;
@@ -102,6 +103,7 @@ export function SettingsPanel() {
       {
         name: formString(form, "name"),
         email: formString(form, "email"),
+        username: formString(form, "username") || undefined,
         phone: formString(form, "phone") || undefined,
         role: formString(form, "role") || "STAFF",
         password: formString(form, "password"),
@@ -172,7 +174,10 @@ export function SettingsPanel() {
             <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
               <div>
                 <div className="text-sm font-medium text-slate-950">{user.name}</div>
-                <div className="text-xs text-slate-500">{user.email} | {user.role} | {user.isActive ? "Active" : "Inactive"}</div>
+                <div className="text-xs text-slate-500">
+                  {user.username ? `@${user.username} | ` : null}
+                  {user.email} | {user.role} | {user.isActive ? "Active" : "Inactive"}
+                </div>
               </div>
               <div className="flex gap-2">
                 <select
@@ -192,9 +197,10 @@ export function SettingsPanel() {
             </div>
           ))}
         </div>
-        <form className="mt-4 grid gap-3 md:grid-cols-5" onSubmit={handleUserSubmit}>
+        <form className="mt-4 grid gap-3 md:grid-cols-6" onSubmit={handleUserSubmit}>
           <TextInput name="name" label="Name" required />
           <TextInput name="email" label="Email" type="email" required />
+          <TextInput name="username" label="Username" />
           <TextInput name="phone" label="Phone" />
           <label className="block text-sm font-medium text-slate-700">
             Role
@@ -203,7 +209,7 @@ export function SettingsPanel() {
             </select>
           </label>
           <TextInput name="password" label="Password" type="password" required />
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-5" disabled={createUser.isPending}>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-6" disabled={createUser.isPending}>
             <UserPlus className="size-4" aria-hidden="true" />
             Add user
           </button>

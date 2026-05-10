@@ -38,6 +38,7 @@ export function RegisterForm({ initialVertical }: Readonly<{ initialVertical: Te
         phone: getFormString(form, "phone"),
         ownerName: getFormString(form, "ownerName"),
         ownerEmail: getFormString(form, "ownerEmail"),
+        ownerUsername: getFormString(form, "ownerUsername") || undefined,
         ownerPhone: getFormString(form, "phone"),
         password: getFormString(form, "password"),
       });
@@ -65,6 +66,7 @@ export function RegisterForm({ initialVertical }: Readonly<{ initialVertical: Te
       <input name="phone" className="h-10 rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="Phone" required />
       <input name="ownerName" className="h-10 rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="Owner name" required />
       <input name="ownerEmail" className="h-10 rounded-md border border-border px-3 outline-none focus:border-emerald-600" placeholder="Email" type="email" required />
+      <input name="ownerUsername" className="h-10 rounded-md border border-border px-3 outline-none focus:border-emerald-600 sm:col-span-2" placeholder="Login username (optional, email is used if blank)" autoComplete="username" />
       <input name="password" className="h-10 rounded-md border border-border px-3 outline-none focus:border-emerald-600 sm:col-span-2" placeholder="Password" type="password" minLength={8} required />
       {error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 sm:col-span-2">{error}</div> : null}
       <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 text-sm font-semibold text-white sm:col-span-2" disabled={loading}>

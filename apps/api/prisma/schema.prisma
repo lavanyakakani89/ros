@@ -88,6 +88,7 @@ model User {
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
   name          String
   email         String
+  username      String?
   phone         String?
   passwordHash  String         @map("password_hash")
   role          UserRole       @default(STAFF)
@@ -97,6 +98,7 @@ model User {
   appNotifications AppNotification[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, username])
   @@index([tenantId])
   @@map("users")
 }

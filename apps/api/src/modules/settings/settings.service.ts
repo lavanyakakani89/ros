@@ -2,6 +2,7 @@ import { hash, verify } from "@node-rs/argon2";
 import { UserRole, type PrismaClient, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
+import { defaultUsername, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
 import type { ChangePasswordInput, CreateUserInput, UpdateTenantInput, UpdateUserInput } from "./settings.schema.js";
 
 export class SettingsError extends Error {
@@ -66,6 +67,8 @@ export class SettingsService {
 
   async createUser(tenant: Tenant, currentUser: { role: UserRole }, input: CreateUserInput) {
     ensureManager(currentUser.role);
+    const username = defaultUsername(input.username ?? input.email);
+    await this.ensureLoginIdentifiersAvailable(tenant.id, [input.email, username]);
 
     try {
       return await this.prisma.user.create({
@@ -73,6 +76,7 @@ export class SettingsService {
           tenantId: tenant.id,
           name: input.name,
           email: input.email,
+          username,
           passwordHash: await hashPassword(input.password),
           role: input.role,
           ...(input.phone ? { phone: input.phone } : {}),
@@ -91,6 +95,10 @@ export class SettingsService {
       throw new SettingsError("You cannot deactivate your own account", 409);
     }
 
+    if (input.username !== undefined) {
+      await this.ensureLoginIdentifiersAvailable(tenant.id, [input.username], userId);
+    }
+
     const result = await this.prisma.user.updateMany({
       where: {
         id: userId,
@@ -98,6 +106,7 @@ export class SettingsService {
       },
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.username !== undefined ? { username: normalizeLoginIdentifier(input.username) } : {}),
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.role !== undefined ? { role: input.role } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
@@ -168,6 +177,29 @@ export class SettingsService {
       status: "ok",
     };
   }
+
+  private async ensureLoginIdentifiersAvailable(tenantId: string, rawIdentifiers: string[], excludeUserId?: string): Promise<void> {
+    const identifiers = [...new Set(rawIdentifiers.map(normalizeLoginIdentifier).filter(Boolean))];
+
+    if (identifiers.length === 0) {
+      return;
+    }
+
+    const conflict = await this.prisma.user.findFirst({
+      where: {
+        tenantId,
+        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+        OR: identifiers.flatMap((identifier) => [{ email: identifier }, { username: identifier }]),
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (conflict) {
+      throw new SettingsError("Username or email already exists. Use a different login name.", 409);
+    }
+  }
 }
 
 const userSelect = {
@@ -175,6 +207,7 @@ const userSelect = {
   tenantId: true,
   name: true,
   email: true,
+  username: true,
   phone: true,
   role: true,
   isActive: true,

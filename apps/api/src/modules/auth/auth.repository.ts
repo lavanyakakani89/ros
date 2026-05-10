@@ -1,6 +1,7 @@
 import type { PrismaClient, RefreshToken, User } from "@prisma/client";
 import { UserRole } from "@prisma/client";
 
+import { defaultUsername, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
 import type { RegisterInput } from "./auth.types.js";
 
 export interface UserWithTenant extends User {
@@ -40,6 +41,7 @@ export class AuthRepository {
           tenantId: tenant.id,
           name: input.ownerName,
           email: input.ownerEmail,
+          username: defaultUsername(input.ownerUsername ?? input.ownerEmail),
           ...(input.ownerPhone ? { phone: input.ownerPhone } : {}),
           passwordHash,
           role: UserRole.OWNER,
@@ -57,10 +59,12 @@ export class AuthRepository {
     });
   }
 
-  async findUserForLogin(tenantSlug: string, email: string): Promise<UserWithTenant | null> {
+  async findUserForLogin(tenantSlug: string, identifier: string): Promise<UserWithTenant | null> {
+    const normalizedIdentifier = normalizeLoginIdentifier(identifier);
+
     return this.prisma.user.findFirst({
       where: {
-        email,
+        OR: [{ email: normalizedIdentifier }, { username: normalizedIdentifier }],
         isActive: true,
         tenant: {
           slug: tenantSlug,

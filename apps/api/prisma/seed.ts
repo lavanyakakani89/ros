@@ -35,6 +35,7 @@ async function main() {
       tenantId: tenant.id,
       name: "Demo Owner",
       email: "owner@demo-pharmacy.test",
+      username: "owner@demo-pharmacy.test",
       phone: "+919999999998",
       passwordHash,
       role: UserRole.OWNER,

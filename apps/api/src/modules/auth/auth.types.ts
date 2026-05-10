@@ -5,6 +5,7 @@ export interface AuthUser {
   tenantId: string;
   name: string;
   email: string;
+  username?: string | null;
   role: UserRole;
 }
 
@@ -28,13 +29,14 @@ export interface RegisterInput {
   address?: string | undefined;
   ownerName: string;
   ownerEmail: string;
+  ownerUsername?: string | undefined;
   ownerPhone?: string | undefined;
   password: string;
 }
 
 export interface LoginInput {
   tenantSlug: string;
-  email: string;
+  identifier: string;
   password: string;
 }
 

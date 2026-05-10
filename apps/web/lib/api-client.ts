@@ -15,6 +15,7 @@ export interface AuthUser {
   tenantId: string;
   name: string;
   email: string;
+  username?: string | null;
   role: string;
 }
 
@@ -29,6 +30,7 @@ export interface RegisterPayload {
   phone: string;
   ownerName: string;
   ownerEmail: string;
+  ownerUsername?: string | undefined;
   ownerPhone?: string;
   password: string;
 }
@@ -87,7 +89,7 @@ export interface PaginatedResponse<T> {
   total: number;
 }
 
-export async function login(payload: { tenantSlug: string; email: string; password: string }): Promise<AuthResponse> {
+export async function login(payload: { tenantSlug: string; identifier: string; password: string }): Promise<AuthResponse> {
   return postJson<AuthResponse>("/auth/login", payload);
 }
 
