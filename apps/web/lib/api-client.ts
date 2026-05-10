@@ -333,9 +333,31 @@ function clearBrowserSession() {
 
 async function readApiError(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { error?: string; message?: string };
+    const body = (await response.json()) as { error?: string; message?: string; issues?: Array<{ field?: string; message?: string }> };
+    if (body.issues?.length) {
+      return body.issues
+        .slice(0, 3)
+        .map((issue) => `${fieldLabel(issue.field ?? "")}: ${issue.message ?? "Invalid value"}`)
+        .join("; ");
+    }
+
     return body.error ?? body.message ?? "Request failed";
   } catch {
     return "Request failed";
   }
+}
+
+function fieldLabel(field: string): string {
+  if (!field) {
+    return "Request";
+  }
+
+  return field
+    .replace(/\.(\d+)\./g, " $1 ")
+    .replace(/\./g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
 }

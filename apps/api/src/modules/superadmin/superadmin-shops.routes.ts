@@ -14,33 +14,33 @@ const shopQuerySchema = z.object({
 });
 
 const createShopSchema = z.object({
-  tenantName: z.string().trim().min(2),
+  tenantName: z.string().trim().min(2, "Shop name must be at least 2 characters"),
   tenantSlug: z
     .string()
     .trim()
-    .min(3)
-    .max(48)
+    .min(3, "Shop slug must be at least 3 characters")
+    .max(48, "Shop slug must be 48 characters or less")
     .toLowerCase()
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Shop slug can use lowercase letters, numbers, and single hyphens only"),
   vertical: z.nativeEnum(VerticalType),
-  phone: z.string().trim().min(10).max(16),
-  gstNumber: z.string().trim().min(15).max(15).optional(),
-  address: z.string().trim().min(3).optional(),
-  ownerName: z.string().trim().min(2),
-  ownerEmail: z.string().trim().email().toLowerCase(),
+  phone: z.string().trim().min(10, "Shop phone must be at least 10 digits").max(16, "Shop phone must be 16 digits or less"),
+  gstNumber: z.string().trim().min(15, "GST number must be 15 characters").max(15, "GST number must be 15 characters").optional(),
+  address: z.string().trim().min(3, "Address must be at least 3 characters").optional(),
+  ownerName: z.string().trim().min(2, "Owner name must be at least 2 characters"),
+  ownerEmail: z.string().trim().email("Owner email must be a valid email address").toLowerCase(),
   ownerUsername: z.preprocess(
     (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
     z
       .string()
       .trim()
-      .min(3)
-      .max(254)
+      .min(3, "Owner username must be at least 3 characters")
+      .max(254, "Owner username must be 254 characters or less")
       .regex(loginIdentifierPattern, "Username cannot contain spaces")
       .transform(normalizeLoginIdentifier)
       .optional(),
   ),
-  ownerPhone: z.string().trim().min(10).max(16).optional(),
-  ownerPassword: z.string().min(8).max(128),
+  ownerPhone: z.string().trim().min(10, "Owner phone must be at least 10 digits").max(16, "Owner phone must be 16 digits or less").optional(),
+  ownerPassword: z.string().min(8, "Owner password must be at least 8 characters").max(128, "Owner password must be 128 characters or less"),
   plan: z.nativeEnum(LicensePlan).default(LicensePlan.STARTER),
   billingCycle: z.nativeEnum(BillingCycle).default(BillingCycle.YEARLY),
   startDate: z.coerce.date().optional(),

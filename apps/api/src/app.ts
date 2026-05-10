@@ -66,12 +66,14 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   fastify.setErrorHandler((error, _request, reply) => {
     if (error instanceof ZodError) {
+      const issues = error.issues.map((issue) => ({
+        field: issue.path.join("."),
+        message: issue.message,
+      }));
+
       return reply.status(400).send({
-        error: "Validation failed",
-        issues: error.issues.map((issue) => ({
-          field: issue.path.join("."),
-          message: issue.message,
-        })),
+        error: validationIssueSummary(issues),
+        issues,
       });
     }
 
@@ -165,6 +167,32 @@ export async function buildServer(): Promise<FastifyInstance> {
   }
 
   return fastify;
+}
+
+function validationIssueSummary(issues: Array<{ field: string; message: string }>): string {
+  if (issues.length === 0) {
+    return "Validation failed";
+  }
+
+  return issues
+    .slice(0, 3)
+    .map((issue) => `${fieldLabel(issue.field)}: ${issue.message}`)
+    .join("; ");
+}
+
+function fieldLabel(field: string): string {
+  if (!field) {
+    return "Request";
+  }
+
+  return field
+    .replace(/\.(\d+)\./g, " $1 ")
+    .replace(/\./g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function uniqueConstraintMessage(error: Prisma.PrismaClientKnownRequestError): string {
