@@ -615,8 +615,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       return;
     }
 
-    const paymentMode = paymentModeOverride ?? (useSplit ? splitEntries[0]?.mode ?? "CASH" : selectedPaymentMode);
-    setSelectedPaymentMode(paymentMode);
+    const splitPaymentEntries = normalizedSplitEntries();
+    const paymentMode = useSplit ? splitPaymentEntries[0]?.mode ?? "CASH" : paymentModeOverride ?? selectedPaymentMode;
+    if (!useSplit) {
+      setSelectedPaymentMode(paymentMode);
+    }
     const customerId = selectedCustomer?.id;
     const deliveryPayload = deliveryRequired && selectedCustomer
       ? {
@@ -645,6 +648,18 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       return;
     }
 
+    if (useSplit) {
+      const splitAmount = splitPaymentEntries.reduce((sum, entry) => sum + entry.amount, 0);
+      if (splitPaymentEntries.length === 0) {
+        notify("Add at least one split payment row.", "red");
+        return;
+      }
+      if (Math.abs(splitAmount - totals.grandTotal) > 0.01) {
+        notify(`Split payment total must match grand total. Remaining ₹${(totals.grandTotal - splitAmount).toFixed(2)}`, "red");
+        return;
+      }
+    }
+
     const localStockWarnings = collectStockWarnings(activeLines);
     if (localStockWarnings.length > 0) {
       showStockWarnings(localStockWarnings);
@@ -657,6 +672,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       couponDiscount,
       loyaltyRedeem,
       ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
+      ...(useSplit ? { splitPayments: splitPaymentEntries } : {}),
     };
     const invoicePayload = {
       paymentMode,
@@ -682,7 +698,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           notify("Invoice edits need internet because stock and payments must be reconciled immediately.", "red");
           return;
         }
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries);
         clearBill();
         return;
       }
@@ -730,7 +746,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
 
       if (useSplit) {
-        for (const entry of splitEntries.filter((item) => item.amount > 0)) {
+        for (const entry of splitPaymentEntries.filter((item) => item.mode !== "CREDIT")) {
           await createAuthenticatedApiClient().post("/payments", {
             invoiceId: created.id,
             amount: entry.amount,
@@ -783,7 +799,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
     } catch (error) {
       if (!isEditMode && isNetworkError(error)) {
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries);
         clearBill();
         return;
       }
@@ -798,12 +814,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     invoicePayload: object,
     deliveryPayload: { customerId: string; deliveryAddress: string; notes?: string } | undefined,
     paymentMode: PaymentMode,
+    splitPayments: SplitEntry[] = [],
   ) {
     await queueInvoice(
       {
         invoice: invoicePayload,
         ...(deliveryPayload ? { delivery: deliveryPayload } : {}),
-        autoPay: { mode: paymentMode },
+        ...(splitPayments.length > 0 ? { splitPayments } : { autoPay: { mode: paymentMode } }),
       },
       getStoredTenant()?.slug ?? "local-tenant",
     );
@@ -937,6 +954,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   function splitTotal(): number {
     return splitEntries.reduce((sum, entry) => sum + entry.amount, 0);
+  }
+
+  function normalizedSplitEntries(): SplitEntry[] {
+    return splitEntries
+      .map((entry) => ({
+        mode: entry.mode,
+        amount: roundMoney(entry.amount || 0),
+      }))
+      .filter((entry) => entry.amount > 0);
   }
 
   function createBillPreviewSnapshot(
@@ -1266,7 +1292,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <button className="text-left text-sm font-medium text-emerald-700" onClick={() => setSplitEntries((current) => [...current, { mode: "CASH", amount: 0 }])}>Add payment mode</button>
             {Math.abs(splitTotal() - totals.grandTotal) > 0.01 ? (
               <div className="text-xs text-amber-600">Split total ₹{splitTotal().toFixed(2)} | Remaining ₹{(totals.grandTotal - splitTotal()).toFixed(2)}</div>
-            ) : null}
+            ) : <div className="text-xs text-emerald-700">Split total matches the bill. Any payment button will record these split rows.</div>}
           </div>
         ) : null}
 
@@ -1291,8 +1317,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         <div className="mt-4 grid grid-cols-2 gap-2">
           {PAYMENT_SHORTCUTS.map((shortcut) => (
             <button key={shortcut.mode} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 disabled:opacity-50" onClick={() => void confirmInvoice(shortcut.mode)} disabled={isSubmitting || lines.length === 0}>
-              <span className="block">{isEditMode ? `Save ${shortcut.label}` : shortcut.label}</span>
-              <span className="text-xs font-medium text-emerald-700">{shortcut.displayKey}</span>
+              <span className="block">{useSplit ? "Confirm split" : isEditMode ? `Save ${shortcut.label}` : shortcut.label}</span>
+              <span className="text-xs font-medium text-emerald-700">{useSplit ? "Uses split rows" : shortcut.displayKey}</span>
             </button>
           ))}
         </div>
