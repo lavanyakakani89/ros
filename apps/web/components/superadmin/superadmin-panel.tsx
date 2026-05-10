@@ -10,7 +10,7 @@ const apiBaseUrl =
 
 const verticals = ["PHARMACY", "GROCERY", "FASHION", "HARDWARE", "ELECTRONICS", "RESTAURANT"] as const;
 const plans = ["STARTER", "STANDARD", "PROFESSIONAL", "ENTERPRISE"] as const;
-const cycles = ["ONE_TIME", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "TWO_YEARLY", "THREE_YEARLY"] as const;
+const cycles = ["DEMO", "ONE_TIME", "MONTHLY", "QUARTERLY", "HALF_YEARLY", "YEARLY", "TWO_YEARLY", "THREE_YEARLY"] as const;
 const adminRoles = ["OWNER", "MANAGER", "SUPPORT"] as const;
 const paperSizes = ["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"] as const;
 const renderTypes = ["ESC_POS", "HTML_PDF"] as const;
@@ -814,12 +814,20 @@ function SelectInput({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {formatSelectOption(option)}
           </option>
         ))}
       </select>
     </label>
   );
+}
+
+function formatSelectOption(option: string): string {
+  return option
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function TextAreaInput({

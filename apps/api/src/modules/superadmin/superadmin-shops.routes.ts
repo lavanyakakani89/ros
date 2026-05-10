@@ -197,7 +197,7 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
       const input = createShopSchema.parse(request.body);
       const actor = getSuperAdmin(request);
       const startDate = input.startDate ?? new Date();
-      const expiryDate = input.expiryDate ?? addMonths(startDate, defaultCycleMonths(input.billingCycle));
+      const expiryDate = input.expiryDate ?? defaultCycleExpiryDate(startDate, input.billingCycle);
       const existingTenant = await fastify.prisma.tenant.findUnique({
         where: {
           slug: input.tenantSlug,
@@ -408,21 +408,29 @@ function addMonths(date: Date, months: number): Date {
   return next;
 }
 
-function defaultCycleMonths(cycle: BillingCycle): number {
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function defaultCycleExpiryDate(startDate: Date, cycle: BillingCycle): Date {
   switch (cycle) {
+    case BillingCycle.DEMO:
+      return addDays(startDate, 10);
     case BillingCycle.MONTHLY:
-      return 1;
+      return addMonths(startDate, 1);
     case BillingCycle.QUARTERLY:
-      return 3;
+      return addMonths(startDate, 3);
     case BillingCycle.HALF_YEARLY:
-      return 6;
+      return addMonths(startDate, 6);
     case BillingCycle.TWO_YEARLY:
-      return 24;
+      return addMonths(startDate, 24);
     case BillingCycle.THREE_YEARLY:
-      return 36;
+      return addMonths(startDate, 36);
     case BillingCycle.ONE_TIME:
     case BillingCycle.YEARLY:
-      return 12;
+      return addMonths(startDate, 12);
   }
 }
 

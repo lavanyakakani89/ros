@@ -1194,7 +1194,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                       {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
                       {aboveMrp ? <div className="mt-1 text-xs font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
                     </td>
-                    <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="0.001" step="0.001" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: Number(event.target.value) })} /></td>
+                    <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="1" step="1" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: normalizeBillingQuantity(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
                     {gstEnabled ? <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td> : null}
@@ -1610,6 +1610,12 @@ function productSearchPlaceholder(mode: ProductSearchMode): string {
   if (mode === "SKU") return "Scan or type SKU + Enter";
   if (mode === "AUTO") return "Scan barcode/SKU, or type product name + Enter";
   return "Type product name, or scan exact barcode/SKU + Enter";
+}
+
+function normalizeBillingQuantity(value: string): number {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity <= 0) return 1;
+  return quantity;
 }
 
 function lineTotal(line: { quantity: number; sellingPrice: number; discount: number; gstRate: number }, gstEnabled = true): number {
