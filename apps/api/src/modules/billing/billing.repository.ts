@@ -15,6 +15,20 @@ interface SplitPaymentInput {
   amount: number;
 }
 
+interface ExistingPaymentInput {
+  id: string;
+  mode: PaymentMode;
+  amount: Prisma.Decimal;
+  createdBy: string;
+}
+
+interface EditedPaymentState {
+  paymentMode: PaymentMode;
+  amountPaid: number;
+  amountDue: number;
+  status: InvoiceStatus;
+}
+
 export class BillingRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -148,6 +162,7 @@ export class BillingRepository {
     invoice: CreateInvoiceInput;
     totals: InvoiceTotals;
     items: Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput[];
+    updatedBy?: string;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findFirst({
@@ -181,13 +196,20 @@ export class BillingRepository {
         }
       }
 
-      const amountPaid = roundMoney(invoice.payments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0));
-      const amountDue = Math.max(roundMoney(input.totals.grandTotal - amountPaid), 0);
-      const nextStatus = resolveEditedInvoiceStatus(invoice.status, amountPaid, input.totals.grandTotal);
+      const paymentState = await reconcileEditedInvoicePayments(tx, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        status: invoice.status,
+        selectedPaymentMode: input.invoice.paymentMode,
+        grandTotal: input.totals.grandTotal,
+        verticalData: input.invoice.verticalData,
+        existingPayments: invoice.payments,
+        ...(input.updatedBy ? { updatedBy: input.updatedBy } : {}),
+      });
 
       const stockWarnings: StockWarning[] = [];
 
-      if (stockAffectsInvoice(nextStatus)) {
+      if (stockAffectsInvoice(paymentState.status)) {
         const newStockByProduct = aggregateCreateInvoiceItems(input.items);
         const products = await tx.product.findMany({
           where: {
@@ -240,16 +262,16 @@ export class BillingRepository {
       });
 
       const data: Prisma.InvoiceUncheckedUpdateInput = {
-        paymentMode: input.invoice.paymentMode,
+        paymentMode: paymentState.paymentMode,
         subtotal: input.totals.subtotal,
         totalDiscount: input.totals.totalDiscount,
         totalCgst: input.totals.totalCgst,
         totalSgst: input.totals.totalSgst,
         totalIgst: 0,
         grandTotal: input.totals.grandTotal,
-        amountPaid,
-        amountDue,
-        status: nextStatus,
+        amountPaid: paymentState.amountPaid,
+        amountDue: paymentState.amountDue,
+        status: paymentState.status,
         customerId: input.invoice.customerId ?? null,
         dueDate: input.invoice.dueDate ?? null,
         notes: input.invoice.notes ?? null,
@@ -461,7 +483,7 @@ function endOfDay(date: Date): Date {
   return result;
 }
 
-function readSplitPayments(verticalData: Prisma.JsonValue): SplitPaymentInput[] {
+function readSplitPayments(verticalData: unknown): SplitPaymentInput[] {
   const data = asRecord(verticalData);
   const rawPayments = Array.isArray(data?.splitPayments) ? data.splitPayments : [];
   return rawPayments.flatMap((payment): SplitPaymentInput[] => {
@@ -477,6 +499,130 @@ function readSplitPayments(verticalData: Prisma.JsonValue): SplitPaymentInput[] 
       amount: roundMoney(amount),
     }];
   });
+}
+
+async function reconcileEditedInvoicePayments(
+  tx: Prisma.TransactionClient,
+  input: {
+    tenantId: string;
+    invoiceId: string;
+    status: InvoiceStatus;
+    selectedPaymentMode: PaymentMode;
+    grandTotal: number;
+    verticalData: unknown;
+    existingPayments: ExistingPaymentInput[];
+    updatedBy?: string;
+  },
+): Promise<EditedPaymentState> {
+  const existingAmountPaid = roundMoney(input.existingPayments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0));
+
+  if (input.status === InvoiceStatus.DRAFT || input.status === InvoiceStatus.CANCELLED) {
+    return {
+      paymentMode: input.selectedPaymentMode,
+      amountPaid: existingAmountPaid,
+      amountDue: Math.max(roundMoney(input.grandTotal - existingAmountPaid), 0),
+      status: input.status,
+    };
+  }
+
+  const splitPayments = readSplitPayments(input.verticalData);
+  if (splitPayments.length > 0) {
+    const payableSplitPayments = splitPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
+    const amountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + payment.amount, 0));
+    if (amountPaid > input.grandTotal + 0.01) {
+      throw new Error("Split payment amount cannot exceed invoice total");
+    }
+
+    await tx.payment.deleteMany({
+      where: {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+    });
+
+    if (payableSplitPayments.length > 0) {
+      await tx.payment.createMany({
+        data: payableSplitPayments.map((payment) => ({
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          amount: payment.amount,
+          mode: payment.mode,
+          createdBy: input.updatedBy ?? input.existingPayments[0]?.createdBy ?? "invoice-edit",
+        })),
+      });
+    }
+
+    const amountDue = Math.max(roundMoney(input.grandTotal - amountPaid), 0);
+    return {
+      paymentMode: payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode ?? input.selectedPaymentMode,
+      amountPaid,
+      amountDue,
+      status: amountDue <= 0.01
+        ? InvoiceStatus.PAID
+        : amountPaid > 0
+          ? InvoiceStatus.PARTIAL
+          : InvoiceStatus.CONFIRMED,
+    };
+  }
+
+  if (input.selectedPaymentMode === PaymentMode.CREDIT) {
+    await tx.payment.deleteMany({
+      where: {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+    });
+
+    return {
+      paymentMode: PaymentMode.CREDIT,
+      amountPaid: 0,
+      amountDue: input.grandTotal,
+      status: InvoiceStatus.CONFIRMED,
+    };
+  }
+
+  const amountPaid = roundMoney(input.grandTotal);
+  if (input.existingPayments.length === 1 && input.existingPayments[0]) {
+    const existingPayment = input.existingPayments[0];
+    await tx.payment.update({
+      where: {
+        id: existingPayment.id,
+      },
+      data: {
+        amount: amountPaid,
+        mode: input.selectedPaymentMode,
+        ...(existingPayment.mode !== input.selectedPaymentMode
+          ? {
+              referenceNumber: null,
+              razorpayId: null,
+            }
+          : {}),
+      },
+    });
+  } else {
+    await tx.payment.deleteMany({
+      where: {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+    });
+    await tx.payment.create({
+      data: {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        amount: amountPaid,
+        mode: input.selectedPaymentMode,
+        createdBy: input.updatedBy ?? input.existingPayments[0]?.createdBy ?? "invoice-edit",
+      },
+    });
+  }
+
+  return {
+    paymentMode: input.selectedPaymentMode,
+    amountPaid,
+    amountDue: 0,
+    status: InvoiceStatus.PAID,
+  };
 }
 
 function parsePaymentMode(value: unknown): PaymentMode | undefined {
@@ -500,22 +646,6 @@ const invoiceInclude = {
 
 function stockAffectsInvoice(status: InvoiceStatus): boolean {
   return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.CANCELLED;
-}
-
-function resolveEditedInvoiceStatus(status: InvoiceStatus, amountPaid: number, grandTotal: number): InvoiceStatus {
-  if (status === InvoiceStatus.DRAFT || status === InvoiceStatus.CANCELLED) {
-    return status;
-  }
-
-  if (amountPaid + 0.01 >= grandTotal) {
-    return InvoiceStatus.PAID;
-  }
-
-  if (amountPaid > 0) {
-    return InvoiceStatus.PARTIAL;
-  }
-
-  return InvoiceStatus.CONFIRMED;
 }
 
 function aggregateExistingInvoiceItems(items: Array<{ productId: string; quantity: Prisma.Decimal }>): Map<string, number> {

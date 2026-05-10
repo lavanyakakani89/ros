@@ -51,7 +51,7 @@ export class BillingService {
     return invoice;
   }
 
-  async updateInvoice(tenant: Tenant, invoiceId: string, input: UpdateInvoiceInput) {
+  async updateInvoice(tenant: Tenant, invoiceId: string, input: UpdateInvoiceInput, updatedBy = "system") {
     const existing = await this.getInvoice(tenant, invoiceId);
     const merged: CreateInvoiceInput = {
       paymentMode: input.paymentMode ?? existing.paymentMode,
@@ -85,6 +85,7 @@ export class BillingService {
         invoice: merged,
         totals: calculated.totals,
         items: calculated.items,
+        updatedBy,
       });
     } catch (error) {
       if (error instanceof BillingError) {

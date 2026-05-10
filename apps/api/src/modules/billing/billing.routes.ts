@@ -26,7 +26,7 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.put("/api/billing/invoices/:id", async (request, reply) => {
     const params = invoiceIdParamsSchema.parse(request.params);
     const input = updateInvoiceSchema.parse(request.body);
-    return handleBilling(reply, () => service.updateInvoice(request.tenant, params.id, input));
+    return handleBilling(reply, () => service.updateInvoice(request.tenant, params.id, input, request.user.userId));
   });
 
   fastify.post("/api/billing/invoices/:id/confirm", async (request, reply) => {
