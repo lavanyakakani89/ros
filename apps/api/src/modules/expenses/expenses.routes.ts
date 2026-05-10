@@ -9,20 +9,37 @@ const createSchema = z.object({
   notes: z.string().optional(),
 });
 
+function parseDateFilter(value: string | undefined) {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed;
+}
+
+function getNextDate(value: Date) {
+  const next = new Date(value);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
 export const expensesRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.get("/api/expenses", async (request) => {
     const { page, limit, from, to, category } = z.object({
       page: z.coerce.number().default(1),
       limit: z.coerce.number().max(100).default(25),
-      from: z.coerce.date().optional(),
-      to: z.coerce.date().optional(),
+      from: z.string().optional(),
+      to: z.string().optional(),
       category: z.string().optional(),
     }).parse(request.query);
+
+    const fromDate = parseDateFilter(from);
+    const toDate = parseDateFilter(to);
+    const toExclusive = toDate ? getNextDate(toDate) : undefined;
 
     const where = {
       tenantId: request.tenant.id,
       ...(category ? { category } : {}),
-      ...(from || to ? { paidAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+      ...(fromDate || toExclusive ? { paidAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toExclusive ? { lt: toExclusive } : {}) } } : {}),
     };
 
     const [total, data] = await Promise.all([
