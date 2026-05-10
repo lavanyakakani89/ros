@@ -114,6 +114,13 @@ export function SettingsPanel() {
     );
   }
 
+  function handleUsernameSubmit(event: React.SyntheticEvent<HTMLFormElement>, userId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setMessage(null);
+    updateUser.mutate({ id: userId, payload: { username: formString(form, "username") } });
+  }
+
   return (
     <div className="space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
@@ -179,7 +186,19 @@ export function SettingsPanel() {
                   {user.email} | {user.role} | {user.isActive ? "Active" : "Inactive"}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <form className="flex gap-2" onSubmit={(event) => handleUsernameSubmit(event, user.id)}>
+                  <input
+                    name="username"
+                    className="h-9 w-40 rounded-md border border-border px-2 text-sm"
+                    defaultValue={user.username ?? ""}
+                    placeholder="Login username"
+                    required
+                  />
+                  <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" type="submit">
+                    Save username
+                  </button>
+                </form>
                 <select
                   className="h-9 rounded-md border border-border px-2 text-sm"
                   value={user.role}
