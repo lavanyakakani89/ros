@@ -6,17 +6,25 @@ param(
 $ErrorActionPreference = "Stop"
 
 $node = (Get-Command node -ErrorAction Stop).Source
+$powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 $server = Join-Path $AgentDir "dist\server.js"
 
 if (-not (Test-Path $server)) {
   throw "Build the print agent first: corepack pnpm --filter @retailos/print-agent build"
 }
 
-$action = New-ScheduledTaskAction -Execute $node -Argument "`"$server`"" -WorkingDirectory $AgentDir
+$encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(
+  "Set-Location -LiteralPath '$AgentDir'; & '$node' '$server'"
+))
+$action = New-ScheduledTaskAction `
+  -Execute $powershell `
+  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand $encodedCommand" `
+  -WorkingDirectory $AgentDir
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
+  -Hidden `
   -ExecutionTimeLimit (New-TimeSpan -Days 30) `
   -RestartCount 3 `
   -RestartInterval (New-TimeSpan -Minutes 1)
