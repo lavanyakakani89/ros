@@ -207,11 +207,8 @@ export class BillingService {
     const lineTaxableBases = items.map((item) => getTaxableBaseBeforeBillDiscount(item, productById.get(item.productId)));
     const totalTaxableBase = lineTaxableBases.reduce((sum, value) => sum + value, 0);
     const cappedBillDiscount = Math.min(roundMoney(billDiscount), totalTaxableBase);
-    const invoiceItems = items.map((item, index) => {
-      const lineTaxableBase = lineTaxableBases[index] ?? 0;
-      const billDiscountShare = totalTaxableBase > 0 ? roundMoney(cappedBillDiscount * (lineTaxableBase / totalTaxableBase)) : 0;
-      return createInvoiceItem(tenant, item, productById.get(item.productId), billDiscountShare);
-    });
+    const billDiscountShares = allocateBillDiscountShares(lineTaxableBases, cappedBillDiscount);
+    const invoiceItems = items.map((item, index) => createInvoiceItem(tenant, item, productById.get(item.productId), billDiscountShares[index] ?? 0));
     const totals = invoiceItems.reduce<InvoiceTotals>(
       (accumulator, item) => ({
         subtotal: roundMoney(accumulator.subtotal + Number(item.sellingPrice) * Number(item.quantity)),
@@ -353,6 +350,46 @@ function getTaxableBaseBeforeBillDiscount(input: InvoiceItemInput, product: Prod
   const gross = sellingPrice * input.quantity;
   const lineDiscount = input.discountPercent !== undefined ? roundMoney(gross * (input.discountPercent / 100)) : (input.discount ?? 0);
   return Math.max(gross - lineDiscount, 0);
+}
+
+function allocateBillDiscountShares(lineTaxableBases: number[], billDiscount: number): number[] {
+  const cappedDiscount = roundMoney(Math.max(billDiscount, 0));
+  const totalTaxableBase = lineTaxableBases.reduce((sum, value) => sum + Math.max(value, 0), 0);
+  if (cappedDiscount <= 0 || totalTaxableBase <= 0) {
+    return lineTaxableBases.map(() => 0);
+  }
+
+  let allocated = 0;
+  const lastDiscountableIndex = findLastDiscountableIndex(lineTaxableBases);
+
+  return lineTaxableBases.map((lineTaxableBase, index) => {
+    if (lineTaxableBase <= 0) {
+      return 0;
+    }
+
+    const remaining = roundMoney(cappedDiscount - allocated);
+    if (remaining <= 0) {
+      return 0;
+    }
+
+    if (index === lastDiscountableIndex) {
+      return Math.min(remaining, roundMoney(lineTaxableBase));
+    }
+
+    const share = Math.min(roundMoney(cappedDiscount * (lineTaxableBase / totalTaxableBase)), roundMoney(lineTaxableBase), remaining);
+    allocated = roundMoney(allocated + share);
+    return share;
+  });
+}
+
+function findLastDiscountableIndex(values: number[]): number {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if ((values[index] ?? 0) > 0) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function roundMoney(value: number): number {
