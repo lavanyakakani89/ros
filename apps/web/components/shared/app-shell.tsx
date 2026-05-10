@@ -180,6 +180,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const tenantName = tenant?.name ?? "RetailOS";
   const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
   const initials = getInitials(userName);
+  const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
+  const environmentLabel = appEnvironment === "production" ? null : appEnvironment.toUpperCase();
   const dashboard = dashboardItem(verticalConfig.navigation);
   const navGroups = groupedNavigation(verticalConfig.navigation);
   const sidebarWidthClass = sidebarCollapsed ? "lg:pl-20" : "lg:pl-64";
@@ -262,7 +264,14 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 {sidebarCollapsed ? <PanelLeftOpen className="size-4" aria-hidden="true" /> : <PanelLeftClose className="size-4" aria-hidden="true" />}
               </button>
               <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-slate-900">{tenantName}</div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="truncate text-sm font-semibold text-slate-900">{tenantName}</div>
+                  {environmentLabel ? (
+                    <span className="shrink-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      {environmentLabel}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="truncate text-xs text-slate-500">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"} | ₹</div>
               </div>
             </div>

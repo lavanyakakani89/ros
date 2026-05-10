@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - develop
 
 permissions:
   contents: read
@@ -72,3 +73,6 @@ jobs:
 
       - name: Validate production compose
         run: docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config
+
+      - name: Validate testing compose
+        run: docker compose --env-file .env.testing.example -f infra/docker-compose.test.yml config

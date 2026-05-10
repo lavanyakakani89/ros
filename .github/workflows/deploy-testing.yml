@@ -1,0 +1,154 @@
+name: Deploy Testing
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retailos-testing
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify build before testing deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      DATABASE_URL: postgresql://retailos:password@localhost:5432/retailos
+      REDIS_URL: redis://:password@localhost:6379
+      JWT_SECRET: ci-only-jwt-secret
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_APP_NAME: RetailOS Testing
+      NEXT_PUBLIC_APP_ENV: testing
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: retailos
+          POSTGRES_USER: retailos
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U retailos -d retailos"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @retailos/api prisma:generate
+
+      - name: Apply migrations to CI database
+        run: pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Verify RLS policies
+        run: pnpm --filter @retailos/api prisma:verify-rls
+
+      - name: Lint, typecheck, and test
+        run: pnpm check
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Validate testing compose
+        run: docker compose --env-file .env.testing.example -f infra/docker-compose.test.yml config
+
+  deploy:
+    name: Deploy to testing VPS stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: verify
+    environment: testing
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      PROD_DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
+      HEALTH_URL: ${{ secrets.DEPLOY_TEST_HEALTH_URL }}
+
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -Eeuo pipefail
+          DEPLOY_HOST="${DEPLOY_HOST:-66.42.79.12}"
+          DEPLOY_USER="${DEPLOY_USER:-root}"
+          PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
+          DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
+          HEALTH_URL="${HEALTH_URL:-http://66.42.79.12:3100/api/health}"
+
+          if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
+            echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, as a repository secret or testing environment secret named DEPLOY_SSH_KEY."
+            exit 1
+          fi
+
+          if printf '%s' "$DEPLOY_SSH_KEY" | grep -q '\\n'; then
+            DEPLOY_SSH_KEY="$(printf '%b' "$DEPLOY_SSH_KEY")"
+          fi
+
+          {
+            echo "DEPLOY_HOST=$DEPLOY_HOST"
+            echo "DEPLOY_USER=$DEPLOY_USER"
+            echo "PROD_DEPLOY_PATH=$PROD_DEPLOY_PATH"
+            echo "DEPLOY_TEST_PATH=$DEPLOY_TEST_PATH"
+            echo "HEALTH_URL=$HEALTH_URL"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; then
+            echo "::error::DEPLOY_SSH_KEY is present but is not a valid OpenSSH private key."
+            exit 1
+          fi
+          ssh-keygen -lf ~/.ssh/id_ed25519.pub
+          ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy latest develop on testing stack
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+            set -Eeuo pipefail
+            if [ ! -d '$DEPLOY_TEST_PATH/.git' ]; then
+              git clone '$PROD_DEPLOY_PATH' '$DEPLOY_TEST_PATH'
+            fi
+            cd '$DEPLOY_TEST_PATH'
+            DEPLOY_BRANCH='develop' DEPLOY_REF='origin/develop' bash infra/deploy-testing.sh
+          "
+
+      - name: Health check
+        run: |
+          for attempt in {1..30}; do
+            if curl -fsS "$HEALTH_URL"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Testing health check failed: $HEALTH_URL" >&2
+          exit 1

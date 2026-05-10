@@ -1,0 +1,18 @@
+:80 {
+  encode zstd gzip
+
+  @pwaAssets path /sw.js /workbox-* /fallback-* /manifest.json
+  header @pwaAssets Cache-Control "no-cache, no-store, must-revalidate"
+
+  handle /api/* {
+    reverse_proxy api:3001
+  }
+
+  handle /health {
+    reverse_proxy api:3001
+  }
+
+  handle {
+    reverse_proxy web:3000
+  }
+}
