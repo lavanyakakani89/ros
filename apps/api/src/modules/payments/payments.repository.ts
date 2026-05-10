@@ -33,6 +33,22 @@ export class PaymentsRepository {
 
       const amountDue = invoice.amountDue.toNumber();
       if (input.amount > amountDue) {
+        const existingPayment = await tx.payment.findFirst({
+          where: {
+            tenantId,
+            invoiceId: input.invoiceId,
+            mode: input.mode,
+            amount: input.amount,
+          },
+        });
+
+        if (existingPayment && amountDue <= 0.01) {
+          return {
+            payment: existingPayment,
+            invoice,
+          };
+        }
+
         throw new Error("Payment amount cannot exceed invoice amount due");
       }
 

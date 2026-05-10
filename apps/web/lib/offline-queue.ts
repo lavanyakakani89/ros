@@ -89,15 +89,7 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
       const envelope = readEnvelope(invoice.payload);
       const created = await apiClient.post<{ id: string; grandTotal?: string | number }>("/billing/invoices", envelope.invoice);
       await apiClient.post(`/billing/invoices/${created.id}/confirm`, {});
-      if (envelope.splitPayments?.length) {
-        for (const payment of envelope.splitPayments.filter((item) => item.amount > 0 && item.mode !== "CREDIT")) {
-          await apiClient.post("/payments", {
-            invoiceId: created.id,
-            amount: payment.amount,
-            mode: payment.mode,
-          });
-        }
-      } else if (envelope.autoPay?.mode && envelope.autoPay.mode !== "CREDIT") {
+      if (!envelope.splitPayments?.length && envelope.autoPay?.mode && envelope.autoPay.mode !== "CREDIT") {
         await apiClient.post("/payments", {
           invoiceId: created.id,
           amount: Number(created.grandTotal ?? 0),

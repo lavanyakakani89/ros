@@ -745,15 +745,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices", invoicePayload);
       const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
 
-      if (useSplit) {
-        for (const entry of splitPaymentEntries.filter((item) => item.mode !== "CREDIT")) {
-          await createAuthenticatedApiClient().post("/payments", {
-            invoiceId: created.id,
-            amount: entry.amount,
-            mode: entry.mode,
-          });
-        }
-      } else if (paymentMode !== "CREDIT") {
+      if (!useSplit && paymentMode !== "CREDIT") {
         await createAuthenticatedApiClient().post("/payments", {
           invoiceId: created.id,
           amount: Number(confirmed.grandTotal),

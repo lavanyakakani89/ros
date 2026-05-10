@@ -1,4 +1,4 @@
-import { InvoiceStatus, Prisma, type PrismaClient } from "@prisma/client";
+import { InvoiceStatus, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
 
@@ -8,6 +8,11 @@ export interface StockWarning {
   available: number;
   requested: number;
   shortage: number;
+}
+
+interface SplitPaymentInput {
+  mode: PaymentMode;
+  amount: number;
 }
 
 export class BillingRepository {
@@ -270,7 +275,7 @@ export class BillingRepository {
     });
   }
 
-  async confirmInvoice(tenantId: string, invoiceId: string) {
+  async confirmInvoice(tenantId: string, invoiceId: string, confirmedBy = "system") {
     return this.prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findFirst({
         where: {
@@ -331,12 +336,50 @@ export class BillingRepository {
         })),
       );
 
+      const splitPayments = readSplitPayments(invoice.verticalData);
+      const payableSplitPayments = splitPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
+      const splitAmountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + payment.amount, 0));
+      if (splitAmountPaid > invoice.grandTotal.toNumber() + 0.01) {
+        throw new Error("Split payment amount cannot exceed invoice total");
+      }
+
+      if (payableSplitPayments.length > 0) {
+        await tx.payment.createMany({
+          data: payableSplitPayments.map((payment) => ({
+            tenantId,
+            invoiceId,
+            amount: payment.amount,
+            mode: payment.mode,
+            createdBy: confirmedBy,
+          })),
+        });
+      }
+
+      const splitPaymentMode = payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode;
+      const splitAmountDue = splitPayments.length > 0
+        ? Math.max(roundMoney(invoice.grandTotal.toNumber() - splitAmountPaid), 0)
+        : invoice.amountDue.toNumber();
+      const nextStatus = splitPayments.length > 0
+        ? splitAmountDue <= 0.01
+          ? InvoiceStatus.PAID
+          : splitAmountPaid > 0
+            ? InvoiceStatus.PARTIAL
+            : InvoiceStatus.CONFIRMED
+        : InvoiceStatus.CONFIRMED;
+
       const updatedInvoice = await tx.invoice.update({
         where: {
           id: invoiceId,
         },
         data: {
-          status: InvoiceStatus.CONFIRMED,
+          status: nextStatus,
+          ...(splitPayments.length > 0
+            ? {
+                amountPaid: splitAmountPaid,
+                amountDue: splitAmountDue,
+                ...(splitPaymentMode ? { paymentMode: splitPaymentMode } : {}),
+              }
+            : {}),
         },
         include: invoiceInclude,
       });
@@ -416,6 +459,36 @@ function endOfDay(date: Date): Date {
   const result = new Date(date);
   result.setHours(23, 59, 59, 999);
   return result;
+}
+
+function readSplitPayments(verticalData: Prisma.JsonValue): SplitPaymentInput[] {
+  const data = asRecord(verticalData);
+  const rawPayments = Array.isArray(data?.splitPayments) ? data.splitPayments : [];
+  return rawPayments.flatMap((payment): SplitPaymentInput[] => {
+    const record = asRecord(payment);
+    const mode = parsePaymentMode(record?.mode);
+    const amount = typeof record?.amount === "number" ? record.amount : Number(record?.amount);
+    if (!mode || !Number.isFinite(amount) || amount <= 0) {
+      return [];
+    }
+
+    return [{
+      mode,
+      amount: roundMoney(amount),
+    }];
+  });
+}
+
+function parsePaymentMode(value: unknown): PaymentMode | undefined {
+  return typeof value === "string" && Object.values(PaymentMode).includes(value as PaymentMode)
+    ? value as PaymentMode
+    : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 const invoiceInclude = {

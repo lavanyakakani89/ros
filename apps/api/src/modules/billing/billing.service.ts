@@ -101,9 +101,9 @@ export class BillingService {
     return invoice;
   }
 
-  async confirmInvoice(tenant: Tenant, invoiceId: string) {
+  async confirmInvoice(tenant: Tenant, invoiceId: string, confirmedBy = "system") {
     try {
-      const invoice = await this.repository.confirmInvoice(tenant.id, invoiceId);
+      const invoice = await this.repository.confirmInvoice(tenant.id, invoiceId, confirmedBy);
       if (!invoice) {
         throw new BillingError("Draft invoice not found", 404);
       }
