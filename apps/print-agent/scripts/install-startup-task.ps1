@@ -5,20 +5,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$node = (Get-Command node -ErrorAction Stop).Source
-$powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
+$wscript = (Get-Command wscript.exe -ErrorAction Stop).Source
 $server = Join-Path $AgentDir "dist\server.js"
+$launcher = Join-Path $AgentDir "scripts\start-hidden.vbs"
 
 if (-not (Test-Path $server)) {
   throw "Build the print agent first: corepack pnpm --filter @retailos/print-agent build"
 }
 
-$encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes(
-  "Set-Location -LiteralPath '$AgentDir'; & '$node' '$server'"
-))
 $action = New-ScheduledTaskAction `
-  -Execute $powershell `
-  -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand $encodedCommand" `
+  -Execute $wscript `
+  -Argument "//B //Nologo `"$launcher`"" `
   -WorkingDirectory $AgentDir
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet `
