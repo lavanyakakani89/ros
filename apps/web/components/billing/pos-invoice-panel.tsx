@@ -220,10 +220,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const subtotal = itemTotals.reduce((sum, item) => sum + item.gross, 0);
     const lineDiscount = itemTotals.reduce((sum, item) => sum + item.discountAmount, 0);
     const totalTaxable = itemTotals.reduce((sum, item) => sum + item.taxable, 0);
-    const billLevelDiscount = Math.min(Math.max(billDiscount, 0) + couponDiscount + loyaltyRedeem, totalTaxable);
+    const billLevelDiscount = roundMoney(Math.min(Math.max(billDiscount, 0) + couponDiscount + loyaltyRedeem, totalTaxable));
+    const billDiscountShares = allocateBillDiscountShares(itemTotals.map((item) => item.taxable), billLevelDiscount);
     const taxTotals = itemTotals.reduce(
-      (accumulator, item) => {
-        const share = totalTaxable > 0 ? roundMoney(billLevelDiscount * (item.taxable / totalTaxable)) : 0;
+      (accumulator, item, index) => {
+        const share = billDiscountShares[index] ?? 0;
         const taxableAfterBillDiscount = Math.max(item.taxable - share, 0);
         const gst = gstEnabled ? taxableAfterBillDiscount * (item.gstRate / 100) : 0;
         return {
@@ -237,7 +238,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const cgst = taxTotals.cgst;
     const sgst = taxTotals.sgst;
     const grandTotal = taxTotals.grandTotal;
-    return { subtotal, lineDiscount, billLevelDiscount, discount: lineDiscount + billLevelDiscount, cgst, sgst, grandTotal };
+    return { subtotal: roundMoney(subtotal), lineDiscount: roundMoney(lineDiscount), billLevelDiscount, discount: roundMoney(lineDiscount + billLevelDiscount), cgst, sgst, grandTotal };
   }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled]);
   const changeDue = selectedPaymentMode === "CASH" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
 
@@ -1621,6 +1622,46 @@ function lineTotal(line: { quantity: number; sellingPrice: number; discount: num
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function allocateBillDiscountShares(lineTaxableBases: number[], billDiscount: number): number[] {
+  const cappedDiscount = roundMoney(Math.max(billDiscount, 0));
+  const totalTaxableBase = lineTaxableBases.reduce((sum, value) => sum + Math.max(value, 0), 0);
+  if (cappedDiscount <= 0 || totalTaxableBase <= 0) {
+    return lineTaxableBases.map(() => 0);
+  }
+
+  let allocated = 0;
+  const lastDiscountableIndex = findLastDiscountableIndex(lineTaxableBases);
+
+  return lineTaxableBases.map((lineTaxableBase, index) => {
+    if (lineTaxableBase <= 0) {
+      return 0;
+    }
+
+    const remaining = roundMoney(cappedDiscount - allocated);
+    if (remaining <= 0) {
+      return 0;
+    }
+
+    if (index === lastDiscountableIndex) {
+      return Math.min(remaining, roundMoney(lineTaxableBase));
+    }
+
+    const share = Math.min(roundMoney(cappedDiscount * (lineTaxableBase / totalTaxableBase)), roundMoney(lineTaxableBase), remaining);
+    allocated = roundMoney(allocated + share);
+    return share;
+  });
+}
+
+function findLastDiscountableIndex(values: number[]): number {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if ((values[index] ?? 0) > 0) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function decimalToNumber(value: string | number): number {
