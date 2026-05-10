@@ -31,6 +31,9 @@ model Tenant {
   invoiceCounters    InvoiceCounter[]
   invoiceItems       InvoiceItem[]
   deliveries         Delivery[]
+  deliveryRoutes     DeliveryRoute[]
+  deliveryRouteStops DeliveryRouteStop[]
+  deliveryLocationPings DeliveryLocationPing[]
   payments           Payment[]
   suppliers          Supplier[]
   purchaseOrders     PurchaseOrder[]
@@ -586,6 +589,15 @@ model Delivery {
   customerId      String         @map("customer_id")
   customer        Customer       @relation(fields: [customerId], references: [id])
   deliveryAddress String         @map("delivery_address")
+  latitude        Decimal?       @db.Decimal(10, 7)
+  longitude       Decimal?       @db.Decimal(10, 7)
+  geocodingStatus DeliveryGeocodingStatus @default(PENDING) @map("geocoding_status")
+  geocodingProvider String?      @map("geocoding_provider")
+  geocodedAt      DateTime?      @map("geocoded_at")
+  timeWindowStart DateTime?      @map("time_window_start")
+  timeWindowEnd   DateTime?      @map("time_window_end")
+  priority        Int            @default(0)
+  weightKg        Decimal?       @map("weight_kg") @db.Decimal(10, 3)
   status          DeliveryStatus @default(PENDING)
   assignedTo      String?        @map("assigned_to")
   scheduledAt     DateTime?      @map("scheduled_at")
@@ -593,9 +605,20 @@ model Delivery {
   notes           String?
   createdAt       DateTime       @default(now()) @map("created_at")
   proofs          DeliveryProof[]
+  routeStop       DeliveryRouteStop?
+  locationPings   DeliveryLocationPing[]
 
   @@index([tenantId, status])
+  @@index([tenantId, assignedTo, status])
+  @@index([tenantId, latitude, longitude])
   @@map("deliveries")
+}
+
+enum DeliveryGeocodingStatus {
+  PENDING
+  GEOCODED
+  FAILED
+  MANUAL
 }
 
 enum DeliveryStatus {
@@ -605,6 +628,76 @@ enum DeliveryStatus {
   DELIVERED
   FAILED
   CANCELLED
+}
+
+enum DeliveryRouteStatus {
+  DRAFT
+  OPTIMIZED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+model DeliveryRoute {
+  id                   String              @id @default(cuid())
+  tenantId             String              @map("tenant_id")
+  tenant               Tenant              @relation(fields: [tenantId], references: [id])
+  assignedTo           String              @map("assigned_to")
+  routeDate            DateTime            @default(now()) @map("route_date")
+  status               DeliveryRouteStatus @default(OPTIMIZED)
+  depotLatitude        Decimal?            @map("depot_latitude") @db.Decimal(10, 7)
+  depotLongitude       Decimal?            @map("depot_longitude") @db.Decimal(10, 7)
+  totalDistanceMeters  Int?                @map("total_distance_meters")
+  totalDurationSeconds Int?                @map("total_duration_seconds")
+  routeGeometry        Json?               @map("route_geometry")
+  optimizationProvider String?             @map("optimization_provider")
+  optimizedAt          DateTime?           @map("optimized_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  stops                DeliveryRouteStop[]
+
+  @@index([tenantId, assignedTo, routeDate])
+  @@index([tenantId, status])
+  @@map("delivery_routes")
+}
+
+model DeliveryRouteStop {
+  id                    String        @id @default(cuid())
+  tenantId              String        @map("tenant_id")
+  tenant                Tenant        @relation(fields: [tenantId], references: [id])
+  routeId               String        @map("route_id")
+  route                 DeliveryRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  deliveryId            String        @unique @map("delivery_id")
+  delivery              Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  sequence              Int
+  eta                   DateTime?
+  distanceMeters        Int?          @map("distance_meters")
+  durationSeconds       Int?          @map("duration_seconds")
+  createdAt             DateTime      @default(now()) @map("created_at")
+
+  @@unique([routeId, sequence])
+  @@index([tenantId, routeId])
+  @@index([tenantId, deliveryId])
+  @@map("delivery_route_stops")
+}
+
+model DeliveryLocationPing {
+  id             String    @id @default(cuid())
+  tenantId       String    @map("tenant_id")
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  userId         String    @map("user_id")
+  deliveryId     String?   @map("delivery_id")
+  delivery       Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+  latitude       Decimal   @db.Decimal(10, 7)
+  longitude      Decimal   @db.Decimal(10, 7)
+  accuracyMeters Decimal?  @map("accuracy_meters") @db.Decimal(10, 2)
+  batteryPct     Int?      @map("battery_pct")
+  capturedAt     DateTime  @map("captured_at")
+  syncedAt       DateTime  @default(now()) @map("synced_at")
+
+  @@index([tenantId, userId, capturedAt])
+  @@index([tenantId, deliveryId, capturedAt])
+  @@map("delivery_location_pings")
 }
 
 enum DeliveryProofType {

@@ -1,8 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, MessageCircle, Smartphone, Truck } from "lucide-react";
+import { Camera, MessageCircle, Route, Smartphone, Truck } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
@@ -47,6 +48,7 @@ const fallbackDeliveries: DeliveryItem[] = [];
 
 export function DeliveryBoard() {
   const queryClient = useQueryClient();
+  const [routeMessage, setRouteMessage] = useState<string | null>(null);
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const deliveriesQuery = useQuery({
     queryKey: ["deliveries"],
@@ -73,6 +75,14 @@ export function DeliveryBoard() {
     mutationFn: ({ id, userId }: { id: string; userId: string }) => createAuthenticatedApiClient().post(`/delivery/${id}/assign`, { userId }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
   });
+  const optimizeRoutes = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<{ provider: string; warnings: string[]; routes: unknown[] }>("/delivery/routes/optimize", {}),
+    onSuccess: async (result) => {
+      setRouteMessage(`Optimized ${String(result.routes.length)} route(s) using ${result.provider}.${result.warnings.length ? ` ${result.warnings.join(" ")}` : ""}`);
+      await queryClient.invalidateQueries({ queryKey: ["deliveries"] });
+    },
+    onError: (error) => setRouteMessage(error instanceof Error ? error.message : "Route optimization failed."),
+  });
 
   const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
@@ -97,11 +107,22 @@ export function DeliveryBoard() {
         <div>
           <div className="text-sm font-semibold text-emerald-950">Delivery Android app</div>
           <div className="text-xs text-emerald-700">Delivery users can install the mobile PWA and see only their assigned orders.</div>
+          {routeMessage ? <div className="mt-1 text-xs font-medium text-emerald-900">{routeMessage}</div> : null}
         </div>
-        <Link href="/delivery-app" className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white">
-          <Smartphone className="size-4" aria-hidden="true" />
-          Open app
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 text-sm font-semibold text-emerald-800 disabled:opacity-50"
+            disabled={optimizeRoutes.isPending}
+            onClick={() => optimizeRoutes.mutate()}
+          >
+            <Route className="size-4" aria-hidden="true" />
+            Optimize routes
+          </button>
+          <Link href="/delivery-app" className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white">
+            <Smartphone className="size-4" aria-hidden="true" />
+            Open app
+          </Link>
+        </div>
       </div>
       <div className="grid gap-4 lg:grid-cols-4">
       {statuses.map((status) => {

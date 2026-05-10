@@ -7,11 +7,15 @@ import {
   assignDeliverySchema,
   createDeliveryProofFieldsSchema,
   createDeliverySchema,
+  deliveryLocationPingSchema,
   deliveryAgentParamsSchema,
   deliveryIdParamsSchema,
   deliveryListQuerySchema,
+  deliveryMobileSyncSchema,
   deliveryProofParamsSchema,
   notificationIdParamsSchema,
+  optimizeDeliveryRoutesSchema,
+  updateDeliveryLocationSchema,
   updateDeliveryStatusSchema,
 } from "./delivery.schema.js";
 import { DeliveryError, DeliveryService, type DeliveryActor } from "./delivery.service.js";
@@ -33,6 +37,15 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return handleDelivery(reply, () => Promise.resolve(service.listMyDeliveries(request.tenant, getActor(request))));
   });
 
+  fastify.get("/api/delivery/mobile/sync", async (request, reply) => {
+    return handleDelivery(reply, () => service.getMobileSync(request.tenant, getActor(request)));
+  });
+
+  fastify.post("/api/delivery/mobile/sync", async (request, reply) => {
+    const input = deliveryMobileSyncSchema.parse(request.body);
+    return handleDelivery(reply, () => service.syncMobile(request.tenant, getActor(request), input));
+  });
+
   fastify.get("/api/delivery/me/notifications", async (request, reply) => {
     return handleDelivery(reply, () => Promise.resolve(service.listMyNotifications(request.tenant, getActor(request))));
   });
@@ -40,6 +53,16 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
   fastify.post("/api/delivery/notifications/:id/read", async (request, reply) => {
     const params = notificationIdParamsSchema.parse(request.params);
     return handleDelivery(reply, () => service.markNotificationRead(request.tenant, getActor(request), params.id));
+  });
+
+  fastify.post("/api/delivery/location-pings", async (request, reply) => {
+    const input = deliveryLocationPingSchema.parse(request.body);
+    return handleDelivery(reply, () => service.createLocationPing(request.tenant, getActor(request), input));
+  });
+
+  fastify.post("/api/delivery/routes/optimize", async (request, reply) => {
+    const input = optimizeDeliveryRoutesSchema.parse(request.body);
+    return handleDelivery(reply, () => service.optimizeRoutes(request.tenant, input));
   });
 
   fastify.post("/api/delivery/:id/assign", async (request, reply) => {
@@ -52,6 +75,12 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
     const params = deliveryIdParamsSchema.parse(request.params);
     const input = updateDeliveryStatusSchema.parse(request.body);
     return handleDelivery(reply, () => service.updateStatus(request.tenant, params.id, input, getActor(request)));
+  });
+
+  fastify.put("/api/delivery/:id/location", async (request, reply) => {
+    const params = deliveryIdParamsSchema.parse(request.params);
+    const input = updateDeliveryLocationSchema.parse(request.body);
+    return handleDelivery(reply, () => service.updateLocation(request.tenant, params.id, input, getActor(request)));
   });
 
   fastify.post("/api/delivery/:id/proofs", async (request, reply) => {

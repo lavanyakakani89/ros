@@ -6,10 +6,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { createAuthenticatedApiClient, logout } from "@/lib/api-client";
+import {
+  cacheMobileDeliveries,
+  flushDeliveryQueues,
+  getDeliveryQueueCounts,
+  queueDeliveryStatusUpdate,
+  queueLocationPing,
+  readCachedMobileDeliveries,
+  type MobileDeliveryStatus,
+} from "@/lib/delivery-mobile-store";
 import { cn } from "@/lib/utils";
 import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
 
-type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
+type DeliveryStatus = MobileDeliveryStatus;
 type ProofType = "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
 
 interface DeliveryProof {
@@ -24,6 +33,12 @@ interface DeliveryItem {
   id: string;
   status: DeliveryStatus;
   deliveryAddress: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  priority?: number;
+  weightKg?: string | number | null;
+  timeWindowStart?: string | null;
+  timeWindowEnd?: string | null;
   notes?: string | null;
   assignedTo?: string | null;
   invoice?: {
@@ -39,6 +54,12 @@ interface DeliveryItem {
   };
   proofs?: DeliveryProof[];
   scheduledAt?: string | null;
+  routeStop?: {
+    sequence: number;
+    eta?: string | null;
+    distanceMeters?: number | null;
+    durationSeconds?: number | null;
+  } | null;
 }
 
 interface AppNotification {
@@ -49,39 +70,101 @@ interface AppNotification {
   createdAt: string;
 }
 
+interface MobileRoute {
+  id: string;
+  totalDistanceMeters?: number | null;
+  totalDurationSeconds?: number | null;
+  stops?: unknown[];
+}
+
+interface MobileSyncResponse {
+  serverTime: string;
+  deliveries: DeliveryItem[];
+  notifications: AppNotification[];
+  route: MobileRoute | null;
+}
+
 export function DeliveryAgentApp() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"green" | "red">("green");
   const [proofNotes, setProofNotes] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [queueCounts, setQueueCounts] = useState({ statusUpdates: 0, locationPings: 0 });
   const notifiedIds = useRef(new Set<string>());
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const tenant = typeof window !== "undefined" ? getStoredTenant() : null;
   const session = typeof window !== "undefined" ? getStoredAuthSession() : null;
 
-  const deliveriesQuery = useQuery({
-    queryKey: ["delivery-agent", "orders"],
-    queryFn: () => createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery/me"),
-    enabled: hasSession,
-    refetchInterval: 15_000,
-  });
-  const notificationsQuery = useQuery({
-    queryKey: ["delivery-agent", "notifications"],
-    queryFn: () => createAuthenticatedApiClient().get<AppNotification[]>("/delivery/me/notifications"),
+  const syncQuery = useQuery({
+    queryKey: ["delivery-agent", "mobile-sync"],
+    queryFn: async () => {
+      const apiClient = createAuthenticatedApiClient();
+      try {
+        await flushDeliveryQueues(apiClient);
+        const response = await apiClient.get<MobileSyncResponse>("/delivery/mobile/sync");
+        await cacheMobileDeliveries(response.deliveries);
+        setOfflineMode(false);
+        setQueueCounts(await getDeliveryQueueCounts());
+        return response;
+      } catch (error) {
+        const cachedDeliveries = await readCachedMobileDeliveries<DeliveryItem>();
+        setOfflineMode(true);
+        setQueueCounts(await getDeliveryQueueCounts());
+        if (cachedDeliveries.length > 0) {
+          return {
+            serverTime: new Date().toISOString(),
+            deliveries: cachedDeliveries,
+            notifications: [],
+            route: null,
+          };
+        }
+
+        throw error;
+      }
+    },
     enabled: hasSession,
     refetchInterval: 10_000,
   });
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
+    mutationFn: async ({ id, status }: { id: string; status: DeliveryStatus }) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await queueDeliveryStatusUpdate({ deliveryId: id, status });
+        return { queued: true };
+      }
+
+      try {
+        return await createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status });
+      } catch (error) {
+        await queueDeliveryStatusUpdate({ deliveryId: id, status });
+        return { queued: true, error };
+      }
+    },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["delivery-agent", "orders"] }),
-        queryClient.invalidateQueries({ queryKey: ["delivery-agent", "notifications"] }),
-      ]);
-      notify("Status updated.");
+      await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "mobile-sync"] });
+      setQueueCounts(await getDeliveryQueueCounts());
+      notify(typeof navigator !== "undefined" && !navigator.onLine ? "Status queued offline." : "Status updated.");
     },
     onError: (error) => notify(error instanceof Error ? error.message : "Status update failed.", "red"),
+  });
+  const saveDeliveryPin = useMutation({
+    mutationFn: async (deliveryId: string) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        throw new Error("Go online once to save this delivery pin.");
+      }
+
+      const location = await currentLocation();
+      return createAuthenticatedApiClient().put(`/delivery/${deliveryId}/location`, {
+        latitude: location.latitude,
+        longitude: location.longitude,
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "mobile-sync"] });
+      notify("Delivery pin saved from current GPS location.");
+    },
+    onError: (error) => notify(error instanceof Error ? error.message : "Could not save delivery pin.", "red"),
   });
   const uploadProof = useMutation({
     mutationFn: async ({ delivery, file, proofType }: { delivery: DeliveryItem; file: File; proofType: ProofType }) => {
@@ -99,20 +182,23 @@ export function DeliveryAgentApp() {
       return createAuthenticatedApiClient().uploadForm(`/delivery/${delivery.id}/proofs`, form);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "orders"] });
+      await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "mobile-sync"] });
       notify("Proof uploaded.");
     },
     onError: (error) => notify(error instanceof Error ? error.message : "Proof upload failed.", "red"),
   });
   const markRead = useMutation({
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/delivery/notifications/${id}/read`, {}),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["delivery-agent", "notifications"] }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["delivery-agent", "mobile-sync"] }),
   });
 
-  const deliveries = deliveriesQuery.data ?? [];
-  const notifications = notificationsQuery.data ?? [];
+  const deliveries = syncQuery.data?.deliveries ?? [];
+  const notifications = syncQuery.data?.notifications ?? [];
+  const route = syncQuery.data?.route ?? null;
   const unread = notifications.filter((notification) => !notification.isRead);
-  const activeDeliveries = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status));
+  const activeDeliveries = deliveries
+    .filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status))
+    .sort((left, right) => (left.routeStop?.sequence ?? 9999) - (right.routeStop?.sequence ?? 9999));
   const completedDeliveries = deliveries.filter((delivery) => ["DELIVERED", "FAILED", "CANCELLED"].includes(delivery.status));
   const totalCash = useMemo(
     () => activeDeliveries.reduce((sum, delivery) => sum + Number(delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0), 0),
@@ -137,6 +223,66 @@ export function DeliveryAgentApp() {
       new Notification(notification.title, { body: notification.body, tag: notification.id });
     }
   }, [notificationPermission, unread]);
+
+  useEffect(() => {
+    if (!hasSession || typeof window === "undefined") {
+      return;
+    }
+
+    async function flushOnReconnect() {
+      try {
+        await flushDeliveryQueues(createAuthenticatedApiClient());
+        setQueueCounts(await getDeliveryQueueCounts());
+        await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "mobile-sync"] });
+      } catch {
+        setQueueCounts(await getDeliveryQueueCounts());
+      }
+    }
+
+    window.addEventListener("online", flushOnReconnect);
+    return () => window.removeEventListener("online", flushOnReconnect);
+  }, [hasSession, queryClient]);
+
+  useEffect(() => {
+    if (!hasSession || activeDeliveries.length === 0) {
+      return;
+    }
+
+    const activeDelivery = activeDeliveries.find((delivery) => delivery.status === "OUT_FOR_DELIVERY") ?? activeDeliveries[0];
+    if (!activeDelivery) {
+      return;
+    }
+    const activeDeliveryId = activeDelivery.id;
+    let cancelled = false;
+
+    async function capturePing() {
+      const location = await currentLocation().catch(() => null);
+      if (!location || cancelled) {
+        return;
+      }
+
+      await queueLocationPing({
+        deliveryId: activeDeliveryId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        ...(location.accuracy !== undefined ? { accuracyMeters: location.accuracy } : {}),
+        capturedAt: new Date(),
+      });
+
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        await flushDeliveryQueues(createAuthenticatedApiClient()).catch(() => undefined);
+      }
+
+      setQueueCounts(await getDeliveryQueueCounts());
+    }
+
+    void capturePing();
+    const interval = window.setInterval(() => void capturePing(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [hasSession, activeDeliveries]);
 
   function notify(nextMessage: string, tone: "green" | "red" = "green") {
     setMessage(nextMessage);
@@ -194,8 +340,7 @@ export function DeliveryAgentApp() {
           <button
             className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700"
             onClick={() => {
-              void deliveriesQuery.refetch();
-              void notificationsQuery.refetch();
+              void syncQuery.refetch();
             }}
           >
             <RefreshCcw className="size-4" aria-hidden="true" />
@@ -208,9 +353,14 @@ export function DeliveryAgentApp() {
         {message ? (
           <div className={cn("rounded-md border px-3 py-2 text-sm", messageTone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700")}>{message}</div>
         ) : null}
-        {deliveriesQuery.error || notificationsQuery.error ? (
+        {offlineMode ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Offline mode: showing cached route. Queued status updates sync automatically on reconnect.
+          </div>
+        ) : null}
+        {syncQuery.error ? (
           <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {(deliveriesQuery.error ?? notificationsQuery.error)?.message}
+            {syncQuery.error.message}
           </div>
         ) : null}
       </section>
@@ -236,6 +386,28 @@ export function DeliveryAgentApp() {
       ) : null}
 
       <section className="mt-4 space-y-3 px-3 pb-6">
+        {route ? (
+          <div className="rounded-md border border-emerald-200 bg-white p-3 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Optimized route</div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="rounded bg-emerald-50 p-2">
+                <div className="font-bold">{String(activeDeliveries.length)}</div>
+                <div className="text-[11px] text-slate-500">stops</div>
+              </div>
+              <div className="rounded bg-emerald-50 p-2">
+                <div className="font-bold">{formatKm(route.totalDistanceMeters)}</div>
+                <div className="text-[11px] text-slate-500">km</div>
+              </div>
+              <div className="rounded bg-emerald-50 p-2">
+                <div className="font-bold">{formatMinutes(route.totalDurationSeconds)}</div>
+                <div className="text-[11px] text-slate-500">ETA</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+          Network: {typeof navigator !== "undefined" && navigator.onLine ? "online" : "offline"} | queued status {queueCounts.statusUpdates} | queued GPS {queueCounts.locationPings}
+        </div>
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned orders</div>
         {activeDeliveries.map((delivery) => (
           <DeliveryCard
@@ -247,6 +419,8 @@ export function DeliveryAgentApp() {
             uploading={uploadProof.isPending}
             onStatus={(status) => updateStatus.mutate({ id: delivery.id, status })}
             onProof={(file, proofType) => uploadProof.mutate({ delivery, file, proofType })}
+            onSaveLocation={() => saveDeliveryPin.mutate(delivery.id)}
+            savingLocation={saveDeliveryPin.isPending}
           />
         ))}
         {activeDeliveries.length === 0 ? (
@@ -282,20 +456,27 @@ function DeliveryCard({
   setProofNotes,
   updating,
   uploading,
+  savingLocation,
   onStatus,
   onProof,
+  onSaveLocation,
 }: Readonly<{
   delivery: DeliveryItem;
   proofNotes: Record<string, string>;
   setProofNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   updating: boolean;
   uploading: boolean;
+  savingLocation: boolean;
   onStatus: (status: DeliveryStatus) => void;
   onProof: (file: File, proofType: ProofType) => void;
+  onSaveLocation: () => void;
 }>) {
   const deliveryPhotoCount = delivery.proofs?.filter((proof) => proof.proofType === "DELIVERY_PHOTO").length ?? 0;
   const paymentProofCount = delivery.proofs?.filter((proof) => proof.proofType === "PAYMENT_SCREENSHOT").length ?? 0;
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.deliveryAddress)}`;
+  const hasCoordinates = delivery.latitude !== undefined && delivery.latitude !== null && delivery.longitude !== undefined && delivery.longitude !== null;
+  const mapUrl = hasCoordinates
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${String(delivery.latitude)},${String(delivery.longitude)}`)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.deliveryAddress)}`;
   const customerPhone = delivery.customer?.phone ?? "";
 
   return (
@@ -305,6 +486,7 @@ function DeliveryCard({
           <div>
             <div className="font-mono text-xs text-slate-500">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
             <div className="mt-1 text-lg font-bold">₹{Number(delivery.invoice?.grandTotal ?? 0).toFixed(2)}</div>
+            {delivery.routeStop ? <div className="mt-1 text-xs font-semibold text-emerald-700">Stop #{delivery.routeStop.sequence}</div> : null}
           </div>
           <StatusBadge status={delivery.status} />
         </div>
@@ -315,6 +497,20 @@ function DeliveryCard({
             <MapPin className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden="true" />
             <span>{delivery.deliveryAddress}</span>
           </a>
+          <a className="mt-2 inline-flex h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-800" href={mapUrl} target="_blank" rel="noreferrer">
+            <Navigation className="size-4" aria-hidden="true" />
+            Navigate
+          </a>
+          {!hasCoordinates ? (
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 text-sm font-semibold text-amber-800 disabled:opacity-50"
+              disabled={savingLocation}
+              onClick={onSaveLocation}
+            >
+              <MapPin className="size-4" aria-hidden="true" />
+              Save current pin
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -414,7 +610,17 @@ function proofNoteKey(deliveryId: string, proofType: ProofType): string {
   return `${deliveryId}:${proofType}`;
 }
 
-function currentLocation(): Promise<{ latitude: number; longitude: number }> {
+function formatKm(distanceMeters?: number | null): string {
+  if (!distanceMeters) return "-";
+  return (distanceMeters / 1000).toFixed(1);
+}
+
+function formatMinutes(durationSeconds?: number | null): string {
+  if (!durationSeconds) return "-";
+  return `${String(Math.round(durationSeconds / 60))}m`;
+}
+
+function currentLocation(): Promise<{ latitude: number; longitude: number; accuracy?: number }> {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) {
       reject(new Error("Geolocation is not available"));
@@ -425,6 +631,7 @@ function currentLocation(): Promise<{ latitude: number; longitude: number }> {
       (position) => resolve({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
       }),
       reject,
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 60_000 },

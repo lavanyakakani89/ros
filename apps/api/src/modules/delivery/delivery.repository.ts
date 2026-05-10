@@ -1,6 +1,6 @@
-import { DeliveryStatus, Prisma, type DeliveryProofType, type PrismaClient } from "@prisma/client";
+import { DeliveryGeocodingStatus, DeliveryRouteStatus, DeliveryStatus, Prisma, UserRole, type DeliveryProofType, type PrismaClient } from "@prisma/client";
 
-import type { CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
+import type { CreateDeliveryInput, DeliveryListQuery, DeliveryLocationPingInput, UpdateDeliveryStatusInput } from "./delivery.types.js";
 
 export interface CreateDeliveryProofInput {
   deliveryId: string;
@@ -44,7 +44,19 @@ export class DeliveryRepository {
         invoiceId: input.invoiceId,
         customerId: input.customerId,
         deliveryAddress: input.deliveryAddress,
+        ...(input.latitude !== undefined && input.longitude !== undefined
+          ? {
+              latitude: input.latitude,
+              longitude: input.longitude,
+              geocodingStatus: DeliveryGeocodingStatus.MANUAL,
+              geocodedAt: new Date(),
+            }
+          : {}),
         ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+        ...(input.timeWindowStart ? { timeWindowStart: input.timeWindowStart } : {}),
+        ...(input.timeWindowEnd ? { timeWindowEnd: input.timeWindowEnd } : {}),
+        ...(input.priority !== undefined ? { priority: input.priority } : {}),
+        ...(input.weightKg !== undefined ? { weightKg: input.weightKg } : {}),
         ...(input.notes ? { notes: input.notes } : {}),
       },
       include: deliveryInclude,
@@ -113,6 +125,30 @@ export class DeliveryRepository {
     });
   }
 
+  async updateDeliveryCoordinates(
+    tenantId: string,
+    deliveryId: string,
+    input: {
+      latitude?: number | undefined;
+      longitude?: number | undefined;
+      status: DeliveryGeocodingStatus;
+      provider?: string | undefined;
+    },
+  ) {
+    return this.prisma.delivery.updateMany({
+      where: {
+        tenantId,
+        id: deliveryId,
+      },
+      data: {
+        geocodingStatus: input.status,
+        geocodedAt: new Date(),
+        ...(input.provider !== undefined ? { geocodingProvider: input.provider } : {}),
+        ...(input.latitude !== undefined && input.longitude !== undefined ? { latitude: input.latitude, longitude: input.longitude } : {}),
+      },
+    });
+  }
+
   async listAgentDeliveries(tenantId: string, userId: string) {
     return this.prisma.delivery.findMany({
       where: {
@@ -122,6 +158,184 @@ export class DeliveryRepository {
       include: deliveryInclude,
       orderBy: {
         scheduledAt: "asc",
+      },
+    });
+  }
+
+  async listActiveRouteForAgent(tenantId: string, userId: string) {
+    return this.prisma.deliveryRoute.findFirst({
+      where: {
+        tenantId,
+        assignedTo: userId,
+        status: {
+          in: [DeliveryRouteStatus.OPTIMIZED, DeliveryRouteStatus.DISPATCHED],
+        },
+      },
+      include: {
+        stops: {
+          include: {
+            delivery: {
+              include: deliveryInclude,
+            },
+          },
+          orderBy: {
+            sequence: "asc",
+          },
+        },
+      },
+      orderBy: {
+        optimizedAt: "desc",
+      },
+    });
+  }
+
+  async listDeliveryUsers(tenantId: string, userIds?: string[]) {
+    return this.prisma.user.findMany({
+      where: {
+        tenantId,
+        role: UserRole.DELIVERY,
+        isActive: true,
+        ...(userIds?.length ? { id: { in: userIds } } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+  }
+
+  async listRouteCandidates(tenantId: string, options: { deliveryIds?: string[]; userIds?: string[] }) {
+    return this.prisma.delivery.findMany({
+      where: {
+        tenantId,
+        status: {
+          in: [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.OUT_FOR_DELIVERY],
+        },
+        ...(options.deliveryIds?.length ? { id: { in: options.deliveryIds } } : {}),
+        ...(options.userIds?.length ? { OR: [{ assignedTo: { in: options.userIds } }, { assignedTo: null }] } : {}),
+      },
+      include: deliveryInclude,
+      orderBy: [
+        { priority: "desc" },
+        { scheduledAt: "asc" },
+        { createdAt: "asc" },
+      ],
+    });
+  }
+
+  async saveOptimizedRoutes(
+    tenantId: string,
+    routes: Array<{
+      assignedTo: string;
+      depotLatitude?: number | undefined;
+      depotLongitude?: number | undefined;
+      totalDistanceMeters?: number | undefined;
+      totalDurationSeconds?: number | undefined;
+      routeGeometry?: unknown;
+      optimizationProvider: string;
+      stops: Array<{
+        deliveryId: string;
+        sequence: number;
+        eta?: Date | undefined;
+        distanceMeters?: number | undefined;
+        durationSeconds?: number | undefined;
+      }>;
+    }>,
+  ) {
+    const deliveryIds = routes.flatMap((route) => route.stops.map((stop) => stop.deliveryId));
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.deliveryRouteStop.deleteMany({
+        where: {
+          tenantId,
+          deliveryId: {
+            in: deliveryIds,
+          },
+        },
+      });
+
+      const savedRoutes = [];
+
+      for (const route of routes) {
+        const savedRoute = await tx.deliveryRoute.create({
+          data: {
+            tenantId,
+            assignedTo: route.assignedTo,
+            ...(route.depotLatitude !== undefined ? { depotLatitude: route.depotLatitude } : {}),
+            ...(route.depotLongitude !== undefined ? { depotLongitude: route.depotLongitude } : {}),
+            ...(route.totalDistanceMeters !== undefined ? { totalDistanceMeters: route.totalDistanceMeters } : {}),
+            ...(route.totalDurationSeconds !== undefined ? { totalDurationSeconds: route.totalDurationSeconds } : {}),
+            ...(route.routeGeometry !== undefined ? { routeGeometry: route.routeGeometry as Prisma.InputJsonValue } : {}),
+            optimizationProvider: route.optimizationProvider,
+            optimizedAt: new Date(),
+            stops: {
+              create: route.stops.map((stop) => ({
+                tenant: {
+                  connect: {
+                    id: tenantId,
+                  },
+                },
+                delivery: {
+                  connect: {
+                    id: stop.deliveryId,
+                  },
+                },
+                sequence: stop.sequence,
+                ...(stop.eta !== undefined ? { eta: stop.eta } : {}),
+                ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
+                ...(stop.durationSeconds !== undefined ? { durationSeconds: stop.durationSeconds } : {}),
+              })),
+            },
+          },
+          include: {
+            stops: {
+              include: {
+                delivery: {
+                  include: deliveryInclude,
+                },
+              },
+              orderBy: {
+                sequence: "asc",
+              },
+            },
+          },
+        });
+
+        await tx.delivery.updateMany({
+          where: {
+            tenantId,
+            id: {
+              in: route.stops.map((stop) => stop.deliveryId),
+            },
+          },
+          data: {
+            assignedTo: route.assignedTo,
+            status: DeliveryStatus.ASSIGNED,
+          },
+        });
+
+        savedRoutes.push(savedRoute);
+      }
+
+      return savedRoutes;
+    });
+  }
+
+  async createLocationPing(tenantId: string, userId: string, input: DeliveryLocationPingInput) {
+    return this.prisma.deliveryLocationPing.create({
+      data: {
+        tenantId,
+        userId,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        ...(input.deliveryId !== undefined ? { deliveryId: input.deliveryId } : {}),
+        ...(input.accuracyMeters !== undefined ? { accuracyMeters: input.accuracyMeters } : {}),
+        ...(input.batteryPct !== undefined ? { batteryPct: input.batteryPct } : {}),
+        capturedAt: input.capturedAt,
       },
     });
   }
@@ -207,6 +421,11 @@ export class DeliveryRepository {
 const deliveryInclude = {
   invoice: true,
   customer: true,
+  routeStop: {
+    include: {
+      route: true,
+    },
+  },
   proofs: {
     orderBy: {
       createdAt: Prisma.SortOrder.desc,

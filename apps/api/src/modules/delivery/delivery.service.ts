@@ -1,8 +1,10 @@
-import { DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
+import { DeliveryGeocodingStatus, DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
+import { geocodeAddress } from "./delivery.geocoding.js";
 import { DeliveryRepository, type CreateDeliveryProofInput } from "./delivery.repository.js";
-import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
+import { optimizeDeliveryRoutePlan, summarizeRoute } from "./delivery.routing.js";
+import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, DeliveryLocationPingInput, DeliveryMobileSyncInput, OptimizeDeliveryRoutesInput, UpdateDeliveryLocationInput, UpdateDeliveryStatusInput } from "./delivery.types.js";
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 
@@ -33,9 +35,26 @@ export class DeliveryService {
       throw new DeliveryError("Delivery module is not enabled for this tenant", 403);
     }
 
-    const delivery = await this.repository.createDelivery(tenant.id, input);
+    let delivery = await this.repository.createDelivery(tenant.id, input);
     if (!delivery) {
       throw new DeliveryError("Invoice or customer not found", 404);
+    }
+
+    if (input.latitude === undefined || input.longitude === undefined) {
+      const geocode = await geocodeAddress(input.deliveryAddress, this.fastify.log);
+      if (geocode) {
+        await this.repository.updateDeliveryCoordinates(tenant.id, delivery.id, {
+          latitude: geocode.latitude,
+          longitude: geocode.longitude,
+          provider: geocode.provider,
+          status: DeliveryGeocodingStatus.GEOCODED,
+        });
+        delivery = await this.repository.getDelivery(tenant.id, delivery.id) ?? delivery;
+      } else {
+        await this.repository.updateDeliveryCoordinates(tenant.id, delivery.id, {
+          status: DeliveryGeocodingStatus.FAILED,
+        });
+      }
     }
 
     return delivery;
@@ -82,6 +101,36 @@ export class DeliveryService {
     return this.repository.listAgentDeliveries(tenant.id, actor.userId);
   }
 
+  async getMobileSync(tenant: Tenant, actor: DeliveryActor) {
+    const [deliveries, notifications, route] = await Promise.all([
+      this.repository.listAgentDeliveries(tenant.id, actor.userId),
+      this.repository.listNotifications(tenant.id, actor.userId),
+      this.repository.listActiveRouteForAgent(tenant.id, actor.userId),
+    ]);
+
+    return {
+      serverTime: new Date().toISOString(),
+      deliveries,
+      notifications,
+      route: route ? summarizeRoute(route) : null,
+    };
+  }
+
+  async syncMobile(tenant: Tenant, actor: DeliveryActor, input: DeliveryMobileSyncInput) {
+    for (const statusUpdate of input.statusUpdates) {
+      await this.updateStatus(tenant, statusUpdate.deliveryId, {
+        status: statusUpdate.status,
+        ...(statusUpdate.notes ? { notes: statusUpdate.notes } : {}),
+      }, actor);
+    }
+
+    for (const ping of input.locationPings) {
+      await this.createLocationPing(tenant, actor, ping);
+    }
+
+    return this.getMobileSync(tenant, actor);
+  }
+
   listMyNotifications(tenant: Tenant, actor: DeliveryActor) {
     return this.repository.listNotifications(tenant.id, actor.userId);
   }
@@ -107,6 +156,84 @@ export class DeliveryService {
       proofType: input.proofType,
       uploadedBy: actor.userId,
     });
+  }
+
+  async createLocationPing(tenant: Tenant, actor: DeliveryActor, input: DeliveryLocationPingInput) {
+    if (input.deliveryId) {
+      await this.ensureDeliveryAccess(tenant.id, input.deliveryId, actor);
+    }
+
+    return this.repository.createLocationPing(tenant.id, actor.userId, input);
+  }
+
+  async updateLocation(tenant: Tenant, deliveryId: string, input: UpdateDeliveryLocationInput, actor?: DeliveryActor) {
+    await this.ensureDeliveryAccess(tenant.id, deliveryId, actor);
+    const result = await this.repository.updateDeliveryCoordinates(tenant.id, deliveryId, {
+      latitude: input.latitude,
+      longitude: input.longitude,
+      provider: "manual",
+      status: DeliveryGeocodingStatus.MANUAL,
+    });
+
+    if (result.count === 0) {
+      throw new DeliveryError("Delivery not found", 404);
+    }
+
+    return this.repository.getDelivery(tenant.id, deliveryId);
+  }
+
+  async optimizeRoutes(tenant: Tenant, input: OptimizeDeliveryRoutesInput) {
+    const routeCandidateOptions: { deliveryIds?: string[]; userIds?: string[] } = {};
+    if (input.deliveryIds !== undefined) {
+      routeCandidateOptions.deliveryIds = input.deliveryIds;
+    }
+    if (input.userIds !== undefined) {
+      routeCandidateOptions.userIds = input.userIds;
+    }
+
+    const [vehicles, candidates] = await Promise.all([
+      this.repository.listDeliveryUsers(tenant.id, input.userIds),
+      this.repository.listRouteCandidates(tenant.id, routeCandidateOptions),
+    ]);
+
+    if (vehicles.length === 0) {
+      throw new DeliveryError("Create at least one active DELIVERY user before optimizing routes", 409);
+    }
+
+    if (candidates.length === 0) {
+      return {
+        provider: "none",
+        warnings: ["No pending or assigned deliveries to optimize."],
+        routes: [],
+      };
+    }
+
+    const routePlanInput = {
+      candidates,
+      vehicles,
+      returnToDepot: input.returnToDepot,
+      ...(input.depotLatitude !== undefined ? { depotLatitude: input.depotLatitude } : {}),
+      ...(input.depotLongitude !== undefined ? { depotLongitude: input.depotLongitude } : {}),
+      ...(input.vehicleCapacityKg !== undefined ? { vehicleCapacityKg: input.vehicleCapacityKg } : {}),
+      ...(input.maxDistanceMeters !== undefined ? { maxDistanceMeters: input.maxDistanceMeters } : {}),
+    };
+
+    const plan = await optimizeDeliveryRoutePlan(routePlanInput);
+
+    if (plan.routes.length === 0) {
+      return plan;
+    }
+
+    const routes = await this.repository.saveOptimizedRoutes(tenant.id, plan.routes.map((route) => ({
+      ...route,
+      optimizationProvider: plan.provider,
+    })));
+
+    return {
+      provider: plan.provider,
+      warnings: plan.warnings,
+      routes: routes.map(summarizeRoute),
+    };
   }
 
   async getProof(tenant: Tenant, deliveryId: string, proofId: string, actor?: DeliveryActor) {
