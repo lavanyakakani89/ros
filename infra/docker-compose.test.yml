@@ -20,7 +20,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://66.42.79.12:3100}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://test-ros.sivsanoils.in}
         NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-RetailOS}
         NEXT_PUBLIC_APP_ENV: ${NEXT_PUBLIC_APP_ENV:-testing}
     restart: unless-stopped

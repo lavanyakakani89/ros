@@ -17,7 +17,7 @@ Production is the live customer/shop environment. Do not test unfinished changes
 ## Testing
 
 - Branch: `develop`
-- URL: `http://66.42.79.12:3100`
+- URL: `https://test-ros.sivsanoils.in`
 - VPS path: `/opt/retailos-testing`
 - Compose file: `infra/docker-compose.test.yml`
 - Env file on server: `.env.testing`
@@ -25,6 +25,8 @@ Production is the live customer/shop environment. Do not test unfinished changes
 - Deploy workflow: `.github/workflows/deploy-testing.yml`
 
 Testing has its own Postgres, Redis, MinIO, WhatsApp session volume, and Caddy container. It does not share production data.
+
+Production Caddy terminates HTTPS for `test-ros.sivsanoils.in` and forwards that hostname to the isolated testing Caddy stack on port `3100`.
 
 The testing UI shows a `TESTING` badge in the top bar because `NEXT_PUBLIC_APP_ENV=testing`.
 
@@ -63,7 +65,7 @@ MINIO_ROOT_PASSWORD=<testing-minio-password>
 JWT_SECRET=<long-random-testing-secret>
 NEXT_PUBLIC_APP_ENV=testing
 NEXT_PUBLIC_API_URL=/api
-NEXT_PUBLIC_APP_URL=http://66.42.79.12:3100
+NEXT_PUBLIC_APP_URL=https://test-ros.sivsanoils.in
 TEST_HTTP_PORT=3100
 ```
 
@@ -78,6 +80,7 @@ Health check:
 
 ```bash
 curl -fsS http://66.42.79.12:3100/api/health
+curl -fsS https://test-ros.sivsanoils.in/api/health
 ```
 
 ## GitHub Secrets
@@ -92,15 +95,4 @@ The testing workflow can reuse these existing repository secrets:
 Optional testing-specific secrets:
 
 - `DEPLOY_TEST_PATH`, default `/opt/retailos-testing`
-- `DEPLOY_TEST_HEALTH_URL`, default `http://66.42.79.12:3100/api/health`
-
-## Future HTTPS Testing Domain
-
-When DNS is ready, point a subdomain such as `test-ros.sivsanoils.in` to the VPS. Then we can route it through production Caddy with HTTPS and change:
-
-```bash
-NEXT_PUBLIC_APP_URL=https://test-ros.sivsanoils.in
-NEXT_PUBLIC_API_URL=/api
-```
-
-Until then, testing runs on `http://66.42.79.12:3100`.
+- `DEPLOY_TEST_HEALTH_URL`, default `https://test-ros.sivsanoils.in/api/health`

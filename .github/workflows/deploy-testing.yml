@@ -102,7 +102,7 @@ jobs:
           DEPLOY_USER="${DEPLOY_USER:-root}"
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
-          HEALTH_URL="${HEALTH_URL:-http://66.42.79.12:3100/api/health}"
+          HEALTH_URL="${HEALTH_URL:-https://test-ros.sivsanoils.in/api/health}"
 
           if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
             echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, as a repository secret or testing environment secret named DEPLOY_SSH_KEY."
