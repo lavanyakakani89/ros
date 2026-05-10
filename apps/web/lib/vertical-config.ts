@@ -8,8 +8,11 @@ const tenantStorageKey = "retailos.tenant";
 
 export interface StoredAuthSession {
   user?: {
+    id?: string;
+    tenantId?: string;
     name?: string;
     email?: string;
+    role?: "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
   };
 }
 
@@ -23,7 +26,15 @@ export interface StoredTenant {
 
 export function storeAuthSession(input: StoredAuthSession) {
   window.localStorage.setItem(authStorageKey, JSON.stringify({
-    user: input.user ? { name: input.user.name, email: input.user.email } : undefined,
+    user: input.user
+      ? {
+          id: input.user.id,
+          tenantId: input.user.tenantId,
+          name: input.user.name,
+          email: input.user.email,
+          role: input.user.role,
+        }
+      : undefined,
   }));
 }
 

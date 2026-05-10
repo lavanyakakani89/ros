@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
 
 interface SettingsResponse {
   tenant: {
@@ -37,9 +37,15 @@ export function SettingsPanel() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [gstEnabled, setGstEnabled] = useState(true);
+  const role = getStoredAuthSession()?.user?.role;
+  const canViewSettings = role === "OWNER" || role === "MANAGER";
+  const canEditShop = role === "OWNER";
+  const canManageWhatsapp = role === "OWNER";
+  const userRoleOptions = role === "OWNER" ? ["OWNER", "MANAGER", "STAFF", "DELIVERY"] : ["STAFF", "DELIVERY"];
   const settingsQuery = useQuery({
     queryKey: ["settings-current"],
     queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
+    enabled: canViewSettings,
   });
   const updateTenant = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().put<SettingsResponse["tenant"]>("/settings/tenant", payload),
@@ -73,7 +79,7 @@ export function SettingsPanel() {
   });
   const verticalConfig = getStoredVerticalConfig();
   const settings = settingsQuery.data;
-  const error = settingsQuery.error ?? updateTenant.error ?? createUser.error ?? updateUser.error;
+  const error = (canViewSettings ? settingsQuery.error : null) ?? updateTenant.error ?? createUser.error ?? updateUser.error;
 
   useEffect(() => {
     if (settings?.tenant.gstEnabled !== undefined) {
@@ -125,36 +131,40 @@ export function SettingsPanel() {
     <div className="space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
       {message ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}
-      <section className="grid gap-3 md:grid-cols-2">
-        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/templates">
-          <span className="flex size-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
-            <FileText className="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <span className="block font-semibold text-slate-950">Invoice templates</span>
-            <span className="text-xs text-slate-500">Thermal, A5, A4, and shop default templates.</span>
-          </span>
-        </Link>
-        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/printer">
-          <span className="flex size-10 items-center justify-center rounded-md bg-amber-50 text-amber-700">
-            <Printer className="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <span className="block font-semibold text-slate-950">Printer setup</span>
-            <span className="text-xs text-slate-500">Local agent, network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
-          </span>
-        </Link>
-        <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/whatsapp">
-          <span className="flex size-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
-            <MessageCircle className="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <span className="block font-semibold text-slate-950">WhatsApp Business</span>
-            <span className="text-xs text-slate-500">Connect a shop number, receive orders, and send invoice updates.</span>
-          </span>
-        </Link>
-      </section>
-      <section id="shop-details" className="rounded-md border border-border bg-white p-4">
+      {canViewSettings ? (
+        <section className="grid gap-3 md:grid-cols-2">
+          <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/templates">
+            <span className="flex size-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
+              <FileText className="size-5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block font-semibold text-slate-950">Invoice templates</span>
+              <span className="text-xs text-slate-500">Thermal, A5, A4, and shop default templates.</span>
+            </span>
+          </Link>
+          <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/printer">
+            <span className="flex size-10 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+              <Printer className="size-5" aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block font-semibold text-slate-950">Printer setup</span>
+              <span className="text-xs text-slate-500">Local agent, network ESC/POS, PrintNode USB, Bluetooth payloads.</span>
+            </span>
+          </Link>
+          {canManageWhatsapp ? (
+            <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/whatsapp">
+              <span className="flex size-10 items-center justify-center rounded-md bg-emerald-50 text-emerald-700">
+                <MessageCircle className="size-5" aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block font-semibold text-slate-950">WhatsApp Business</span>
+                <span className="text-xs text-slate-500">Connect a shop number, receive orders, and send invoice updates.</span>
+              </span>
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
+      {canEditShop ? <section id="shop-details" className="rounded-md border border-border bg-white p-4">
         <div className="mb-3">
           <div className="text-sm font-semibold text-slate-950">Shop details</div>
           <div className="text-xs text-slate-500">{verticalConfig?.displayName ?? settings?.tenant.vertical ?? "Retail"} | active modules from vertical config</div>
@@ -173,8 +183,8 @@ export function SettingsPanel() {
             Save shop details
           </button>
         </form>
-      </section>
-      <section id="users" className="rounded-md border border-border bg-white p-4">
+      </section> : null}
+      {canViewSettings ? <section id="users" className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Users</div>
         <div className="space-y-2">
           {(settings?.users ?? []).map((user) => (
@@ -199,19 +209,23 @@ export function SettingsPanel() {
                     Save username
                   </button>
                 </form>
-                <select
-                  className="h-9 rounded-md border border-border px-2 text-sm"
-                  value={user.role}
-                  onChange={(event) => updateUser.mutate({ id: user.id, payload: { role: event.target.value } })}
-                >
-                  {["OWNER", "MANAGER", "STAFF", "DELIVERY"].map((role) => <option key={role} value={role}>{role}</option>)}
-                </select>
-                <button
-                  className="h-9 rounded-md border border-border px-3 text-sm text-slate-700"
-                  onClick={() => updateUser.mutate({ id: user.id, payload: { isActive: !user.isActive } })}
-                >
-                  {user.isActive ? "Deactivate" : "Activate"}
-                </button>
+                {role === "OWNER" || user.role === "STAFF" || user.role === "DELIVERY" ? (
+                  <>
+                    <select
+                      className="h-9 rounded-md border border-border px-2 text-sm"
+                      value={user.role}
+                      onChange={(event) => updateUser.mutate({ id: user.id, payload: { role: event.target.value } })}
+                    >
+                      {userRoleOptions.map((roleOption) => <option key={roleOption} value={roleOption}>{roleOption}</option>)}
+                    </select>
+                    <button
+                      className="h-9 rounded-md border border-border px-3 text-sm text-slate-700"
+                      onClick={() => updateUser.mutate({ id: user.id, payload: { isActive: !user.isActive } })}
+                    >
+                      {user.isActive ? "Deactivate" : "Activate"}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           ))}
@@ -224,7 +238,7 @@ export function SettingsPanel() {
           <label className="block text-sm font-medium text-slate-700">
             Role
             <select name="role" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm">
-              {["STAFF", "MANAGER", "DELIVERY"].map((role) => <option key={role} value={role}>{role}</option>)}
+              {userRoleOptions.map((roleOption) => <option key={roleOption} value={roleOption}>{roleOption}</option>)}
             </select>
           </label>
           <TextInput name="password" label="Password" type="password" required />
@@ -233,7 +247,7 @@ export function SettingsPanel() {
             Add user
           </button>
         </form>
-      </section>
+      </section> : null}
       <PasswordPanel />
     </div>
   );

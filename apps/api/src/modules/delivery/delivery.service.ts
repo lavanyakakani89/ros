@@ -90,7 +90,7 @@ export class DeliveryService {
       this.fastify.log.error({ error, tenantId: tenant.id, deliveryId }, "Failed to queue WhatsApp delivery update");
     });
 
-    return delivery;
+    return actor?.role === UserRole.DELIVERY ? stripDeliveryFinancials(delivery) : delivery;
   }
 
   listAgentDeliveries(tenant: Tenant, userId: string) {
@@ -98,7 +98,7 @@ export class DeliveryService {
   }
 
   listMyDeliveries(tenant: Tenant, actor: DeliveryActor) {
-    return this.repository.listAgentDeliveries(tenant.id, actor.userId);
+    return this.repository.listAgentDeliveries(tenant.id, actor.userId).then((deliveries) => deliveries.map(stripDeliveryFinancials));
   }
 
   async getMobileSync(tenant: Tenant, actor: DeliveryActor) {
@@ -110,9 +110,9 @@ export class DeliveryService {
 
     return {
       serverTime: new Date().toISOString(),
-      deliveries,
+      deliveries: deliveries.map(stripDeliveryFinancials),
       notifications,
-      route: route ? summarizeRoute(route) : null,
+      route: route ? stripRouteFinancials(summarizeRoute(route)) : null,
     };
   }
 
@@ -179,7 +179,8 @@ export class DeliveryService {
       throw new DeliveryError("Delivery not found", 404);
     }
 
-    return this.repository.getDelivery(tenant.id, deliveryId);
+    const delivery = await this.repository.getDelivery(tenant.id, deliveryId);
+    return actor?.role === UserRole.DELIVERY ? stripDeliveryFinancials(delivery) : delivery;
   }
 
   async optimizeRoutes(tenant: Tenant, input: OptimizeDeliveryRoutesInput) {
@@ -324,4 +325,52 @@ export class DeliveryService {
       jobName: `delivery-${label.replaceAll(" ", "-")}`,
     });
   }
+}
+
+function stripDeliveryFinancials<T>(delivery: T): T {
+  if (!delivery || typeof delivery !== "object") {
+    return delivery;
+  }
+
+  const typedDelivery = delivery as Record<string, unknown>;
+  const invoice = typedDelivery.invoice;
+  if (!invoice || typeof invoice !== "object") {
+    return delivery;
+  }
+
+  const {
+    grandTotal: _grandTotal,
+    paymentMode: _paymentMode,
+    items: _items,
+    lineItems: _lineItems,
+    ...safeInvoice
+  } = invoice as Record<string, unknown>;
+
+  return {
+    ...typedDelivery,
+    invoice: safeInvoice,
+  } as T;
+}
+
+function stripRouteFinancials<T>(route: T): T {
+  if (!route || typeof route !== "object") {
+    return route;
+  }
+
+  const typedRoute = route as Record<string, unknown>;
+  if (!Array.isArray(typedRoute.stops)) {
+    return route;
+  }
+
+  return {
+    ...typedRoute,
+    stops: typedRoute.stops.map((stop) => {
+      if (!stop || typeof stop !== "object") {
+        return stop;
+      }
+
+      const typedStop = stop as Record<string, unknown>;
+      return typedStop.delivery ? { ...typedStop, delivery: stripDeliveryFinancials(typedStop.delivery) } : typedStop;
+    }),
+  } as T;
 }

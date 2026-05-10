@@ -1,4 +1,4 @@
-import type { Tenant } from "@prisma/client";
+import { UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { CustomersRepository } from "./customers.repository.js";
@@ -20,19 +20,27 @@ export class CustomersService {
     this.repository = new CustomersRepository(fastify.prisma);
   }
 
-  listCustomers(tenant: Tenant, query: CustomerListQuery) {
-    return this.repository.list(tenant.id, query);
+  async listCustomers(tenant: Tenant, query: CustomerListQuery, role?: UserRole) {
+    const result = await this.repository.list(tenant.id, query);
+    if (role !== UserRole.STAFF) {
+      return result;
+    }
+
+    return {
+      ...result,
+      data: result.data.map(stripCustomerFinancials),
+    };
   }
 
-  async createCustomer(tenant: Tenant, input: CreateCustomerInput) {
+  async createCustomer(tenant: Tenant, input: CreateCustomerInput, role?: UserRole) {
     try {
-      return await this.repository.create(tenant.id, input);
+      return await this.repository.create(tenant.id, sanitizeCustomerInputForRole(input, role));
     } catch (error) {
       throw new CustomersError(error instanceof Error ? error.message : "Unable to create customer", 409);
     }
   }
 
-  async getCustomer(tenant: Tenant, id: string) {
+  async getCustomer(tenant: Tenant, id: string, role?: UserRole) {
     const customer = await this.repository.find(tenant.id, id);
     if (!customer) {
       throw new CustomersError("Customer not found", 404);
@@ -41,22 +49,24 @@ export class CustomersService {
     const totalSpent = customer.invoices.reduce((total, invoice) => total + invoice.grandTotal.toNumber(), 0);
     const outstandingDue = customer.invoices.reduce((total, invoice) => total + invoice.amountDue.toNumber(), 0);
 
-    return {
+    const result = {
       ...customer,
       totalSpent,
       outstandingDue,
       lastVisitAt: customer.invoices[0]?.invoiceDate ?? null,
     };
+
+    return role === UserRole.STAFF ? stripCustomerFinancials(result) : result;
   }
 
-  async updateCustomer(tenant: Tenant, id: string, input: UpdateCustomerInput) {
+  async updateCustomer(tenant: Tenant, id: string, input: UpdateCustomerInput, role?: UserRole) {
     try {
-      const result = await this.repository.update(tenant.id, id, input);
+      const result = await this.repository.update(tenant.id, id, sanitizeCustomerInputForRole(input, role));
       if (result.count === 0) {
         throw new CustomersError("Customer not found", 404);
       }
 
-      return await this.getCustomer(tenant, id);
+      return await this.getCustomer(tenant, id, role);
     } catch (error) {
       if (error instanceof CustomersError) {
         throw error;
@@ -65,4 +75,36 @@ export class CustomersService {
       throw new CustomersError(error instanceof Error ? error.message : "Unable to update customer", 409);
     }
   }
+}
+
+function stripCustomerFinancials<T extends Record<string, unknown>>(customer: T) {
+  const {
+    creditLimit: _creditLimit,
+    outstandingDue: _outstandingDue,
+    totalSpent: _totalSpent,
+    invoices: _invoices,
+    ...safeCustomer
+  } = customer;
+
+  return safeCustomer;
+}
+
+function sanitizeCustomerInputForRole<T extends CreateCustomerInput | UpdateCustomerInput>(input: T, role?: UserRole): T {
+  if (role !== UserRole.STAFF) {
+    return input;
+  }
+
+  const {
+    openingBalanceType: _openingBalanceType,
+    openingBalance: _openingBalance,
+    tcsEnabled: _tcsEnabled,
+    creditLimit: _creditLimit,
+    creditLimitEnabled: _creditLimitEnabled,
+    creditDays: _creditDays,
+    itemDiscountPercent: _itemDiscountPercent,
+    itemDiscountEnabled: _itemDiscountEnabled,
+    ...basicInput
+  } = input;
+
+  return basicInput as T;
 }

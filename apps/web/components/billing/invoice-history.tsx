@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { getStoredTenant } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 import { formatInvoiceRecordWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
 
 export interface InvoiceRecord {
@@ -75,6 +75,7 @@ export function InvoiceHistory({
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const isDrawer = surface === "drawer";
+  const canCancelInvoices = getStoredAuthSession()?.user?.role !== "STAFF";
   const query = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
@@ -221,7 +222,7 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onEdit={onEdit} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onEdit={onEdit} canCancel={canCancelInvoices} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
@@ -233,12 +234,14 @@ function InvoiceDetailPanel({
   onPrint,
   onShareWhatsapp,
   onEdit,
+  canCancel,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
   onShareWhatsapp: (invoice: InvoiceRecord) => void;
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
+  canCancel: boolean;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
   if (!invoice) {
@@ -308,10 +311,12 @@ function InvoiceDetailPanel({
               Send WhatsApp
             </button>
           ) : null}
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:opacity-40" disabled={invoice.status === "CANCELLED"} onClick={() => onCancel(invoice)}>
-            <XCircle className="size-4" aria-hidden="true" />
-            Cancel invoice
-          </button>
+          {canCancel ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:opacity-40" disabled={invoice.status === "CANCELLED"} onClick={() => onCancel(invoice)}>
+              <XCircle className="size-4" aria-hidden="true" />
+              Cancel invoice
+            </button>
+          ) : null}
         </div>
       </div>
     </aside>

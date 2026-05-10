@@ -8,6 +8,7 @@ import {
   toRequestImpersonationContext,
   verifyImpersonationCookie,
 } from "./impersonation.js";
+import { enforceRbac } from "./rbac.js";
 
 const tenantCacheTtlSeconds = 300;
 const writeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -97,6 +98,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
 
     request.tenant = tenant;
     await setTenantContext(tenantId);
+    return enforceRbac(request, reply);
   });
 
   fastify.addHook("onResponse", async (request, reply) => {

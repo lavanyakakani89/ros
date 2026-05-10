@@ -29,7 +29,7 @@ export function LoginForm() {
       storeAuthSession(auth);
       storeTenant(verticalConfig.tenant);
       storeVerticalConfig(verticalConfig.config);
-      router.push("/billing");
+      router.push(auth.user.role === "DELIVERY" ? "/delivery-app" : auth.user.role === "STAFF" ? "/billing" : "/dashboard");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to sign in");
     } finally {

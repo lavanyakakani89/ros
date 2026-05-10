@@ -67,6 +67,7 @@ export class SettingsService {
 
   async createUser(tenant: Tenant, currentUser: { role: UserRole }, input: CreateUserInput) {
     ensureManager(currentUser.role);
+    ensureCanManageUserRole(currentUser.role, input.role);
     const username = defaultUsername(input.username ?? input.email);
     await this.ensureLoginIdentifiersAvailable(tenant.id, [input.email, username]);
 
@@ -93,6 +94,25 @@ export class SettingsService {
 
     if (userId === currentUser.userId && input.isActive === false) {
       throw new SettingsError("You cannot deactivate your own account", 409);
+    }
+
+    const targetUser = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        tenantId: tenant.id,
+      },
+      select: {
+        role: true,
+      },
+    });
+
+    if (!targetUser) {
+      throw new SettingsError("User not found", 404);
+    }
+
+    ensureCanManageUserRole(currentUser.role, targetUser.role);
+    if (input.role !== undefined) {
+      ensureCanManageUserRole(currentUser.role, input.role);
     }
 
     if (input.username !== undefined) {
@@ -218,6 +238,17 @@ function ensureManager(role: UserRole): void {
   const allowedRoles: UserRole[] = [UserRole.OWNER, UserRole.MANAGER];
   if (!allowedRoles.includes(role)) {
     throw new SettingsError("Only owners and managers can manage users", 403);
+  }
+}
+
+function ensureCanManageUserRole(currentRole: UserRole, targetRole: UserRole): void {
+  if (currentRole === UserRole.OWNER) {
+    return;
+  }
+
+  const managerAllowedRoles: UserRole[] = [UserRole.STAFF, UserRole.DELIVERY];
+  if (!managerAllowedRoles.includes(targetRole)) {
+    throw new SettingsError("Managers can manage only staff and delivery users", 403);
   }
 }
 

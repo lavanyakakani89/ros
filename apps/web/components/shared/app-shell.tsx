@@ -38,6 +38,7 @@ import {
   getStoredAuthSession,
   getStoredTenant,
   getStoredVerticalConfig,
+  storeAuthSession,
   storeTenant,
   storeVerticalConfig,
   type StoredAuthSession,
@@ -93,6 +94,23 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         setVerticalConfig(current.config);
         storeTenant(current.tenant);
         storeVerticalConfig(current.config);
+        if (current.user) {
+          const existingSession = getStoredAuthSession();
+          const nextSession = {
+            user: {
+              ...existingSession?.user,
+              id: current.user.id,
+              tenantId: current.user.tenantId,
+              role: current.user.role,
+            },
+          };
+          setSession(nextSession);
+          storeAuthSession(nextSession);
+          if (current.user.role === "DELIVERY" && pathname !== "/delivery-app") {
+            router.replace("/delivery-app");
+            return;
+          }
+        }
         setImpersonation(current.impersonation ?? null);
         storeImpersonation(current.impersonation ?? null);
         setCheckingSession(false);
@@ -115,6 +133,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
     async function fetchBadges() {
       try {
+        const role = getStoredAuthSession()?.user?.role;
+        if (role === "STAFF" || role === "DELIVERY") {
+          setBadgeCounts({});
+          return;
+        }
+
         const api = createAuthenticatedApiClient();
         const [inventory, deliveries, invoices] = await Promise.all([
           api.get<{ lowStockCount: number }>("/reports/inventory"),
@@ -141,7 +165,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       window.removeEventListener("offline", handleOnlineState);
       window.clearInterval(timer);
     };
-  }, [router]);
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!accountMenuOpen) {
@@ -194,6 +218,15 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     { href: "/settings#password", label: "Change password", description: "Secure this login", icon: KeyRound },
     { href: "/audit", label: "Audit log", description: "Track important activity", icon: History },
   ] satisfies AccountMenuLink[];
+  const role = session?.user?.role ?? "OWNER";
+  const visibleDashboard = dashboard && canAccessNavigation(role, dashboard.href) ? dashboard : null;
+  const visibleNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccessNavigation(role, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
+  const visibleAccountLinks = accountLinks.filter((link) => canAccessAccountLink(role, link.href));
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
@@ -236,10 +269,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </div>
         </div>
         <nav className={cn("px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
-          {dashboard ? (
-            <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} collapsed={sidebarCollapsed} />
+          {visibleDashboard ? (
+            <NavigationLink item={visibleDashboard} pathname={pathname} badgeCount={badgeCounts[visibleDashboard.href] ?? 0} collapsed={sidebarCollapsed} />
           ) : null}
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label} className="mt-4 border-t border-border pt-3">
               <div className={cn("px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400", sidebarCollapsed && "sr-only")}>{group.label}</div>
               <div className="space-y-1">
@@ -297,7 +330,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 </button>
                 {accountMenuOpen ? (
                   <AccountMenu
-                    links={accountLinks}
+                    links={visibleAccountLinks}
                     userName={userName}
                     userEmail={session?.user?.email ?? null}
                     tenantName={tenantName}
@@ -314,10 +347,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto border-t border-border px-2 py-2 lg:hidden" aria-label="Main navigation">
-            {dashboard ? (
-              <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} mobile />
+            {visibleDashboard ? (
+              <NavigationLink item={visibleDashboard} pathname={pathname} badgeCount={badgeCounts[visibleDashboard.href] ?? 0} mobile />
             ) : null}
-            {navGroups.map((group) => (
+            {visibleNavGroups.map((group) => (
               <div key={group.label} className="flex shrink-0 items-stretch gap-1 rounded-md border border-border bg-slate-50 p-1">
                 <div className="flex w-14 items-center justify-center px-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                   {group.label}
@@ -583,4 +616,46 @@ function navigationIconClass(href: string): string {
   }
 
   return "text-emerald-600";
+}
+
+type ShopRole = NonNullable<StoredAuthSession["user"]>["role"];
+
+function canAccessNavigation(role: ShopRole | undefined, href: string): boolean {
+  if (role === "DELIVERY") {
+    return false;
+  }
+
+  if (role === "STAFF") {
+    return [
+      "/billing",
+      "/quotations",
+      "/coupons",
+      "/loyalty",
+      "/inventory",
+      "/customers",
+      "/payments",
+      "/expenses",
+      "/restaurant",
+    ].some((allowed) => href === allowed || href.startsWith(`${allowed}/`));
+  }
+
+  return true;
+}
+
+function canAccessAccountLink(role: ShopRole | undefined, href: string): boolean {
+  if (role === "OWNER") {
+    return true;
+  }
+
+  if (role === "MANAGER") {
+    return [
+      "/settings#users",
+      "/settings/printer",
+      "/settings/templates",
+      "/settings#password",
+      "/audit",
+    ].includes(href);
+  }
+
+  return href === "/settings#password";
 }

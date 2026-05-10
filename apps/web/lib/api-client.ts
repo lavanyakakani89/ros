@@ -10,13 +10,15 @@ export function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`;
 }
 
+export type ShopRole = "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
+
 export interface AuthUser {
   id: string;
   tenantId: string;
   name: string;
   email: string;
   username?: string | null;
-  role: string;
+  role: ShopRole;
 }
 
 export interface AuthResponse {
@@ -119,6 +121,11 @@ export async function getCurrentVerticalConfig(): Promise<{
     gstNumber?: string | null;
   };
   config: VerticalConfig;
+  user?: {
+    id: string;
+    tenantId: string;
+    role: ShopRole;
+  } | null;
   isImpersonated?: boolean;
   impersonation?: StoredImpersonation | null;
 }> {
@@ -144,6 +151,11 @@ export async function getCurrentVerticalConfig(): Promise<{
       gstNumber?: string | null;
     };
     config: VerticalConfig;
+    user?: {
+      id: string;
+      tenantId: string;
+      role: ShopRole;
+    } | null;
     isImpersonated?: boolean;
     impersonation?: StoredImpersonation | null;
   }>;

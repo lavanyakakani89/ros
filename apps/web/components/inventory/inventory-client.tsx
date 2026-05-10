@@ -8,7 +8,7 @@ import { ProductFieldForm } from "@/components/inventory/product-field-form";
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, downloadApiFile, listAllProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface ProductBatch {
   id: string;
@@ -25,6 +25,8 @@ export function InventoryClient() {
   const [importStatus, setImportStatus] = useState("");
   const searchTerm = search.trim();
   const verticalConfig = getStoredVerticalConfig();
+  const role = getStoredAuthSession()?.user?.role;
+  const canManageProducts = role === "OWNER" || role === "MANAGER";
   const supportsExpiryAlerts = Boolean(verticalConfig?.expiryAlerts?.enabled);
   const productsQuery = useQuery({
     queryKey: ["products", lowStockOnly, searchTerm],
@@ -62,7 +64,7 @@ export function InventoryClient() {
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4">
-          <ProductFieldForm onCreated={() => void productsQuery.refetch()} />
+          {canManageProducts ? <ProductFieldForm onCreated={() => void productsQuery.refetch()} /> : null}
           <StockAdjustment products={products} onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
         </div>
         <section className="rounded-md border border-border bg-white">
@@ -74,27 +76,29 @@ export function InventoryClient() {
                 Low stock
               </label>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/template", "retailos-product-template.xls")}>
-                <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
-                Template
-              </button>
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export", "retailos-products-export.xls")}>
-                <Download className="size-4 text-blue-700" aria-hidden="true" />
-                Export
-              </button>
-              <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
-                <Upload className="size-4 text-amber-700" aria-hidden="true" />
-                Import
-                <input type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) {
-                    importProducts.mutate(file);
-                  }
-                  event.currentTarget.value = "";
-                }} />
-              </label>
-            </div>
+            {canManageProducts ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/template", "retailos-product-template.xls")}>
+                  <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
+                  Template
+                </button>
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export", "retailos-products-export.xls")}>
+                  <Download className="size-4 text-blue-700" aria-hidden="true" />
+                  Export
+                </button>
+                <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
+                  <Upload className="size-4 text-amber-700" aria-hidden="true" />
+                  Import
+                  <input type="file" accept=".xls,.xlsx,.csv" className="hidden" onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) {
+                      importProducts.mutate(file);
+                    }
+                    event.currentTarget.value = "";
+                  }} />
+                </label>
+              </div>
+            ) : null}
             {importStatus ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{importStatus}</div> : null}
             {importProducts.error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{importProducts.error.message}</div> : null}
             <div className="relative">
@@ -107,14 +111,14 @@ export function InventoryClient() {
               ) : null}
             </div>
           </div>
-          <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} hasSearch={Boolean(searchTerm)} />
+          <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} hasSearch={Boolean(searchTerm)} canManageProducts={canManageProducts} />
         </section>
       </div>
     </>
   );
 }
 
-function ProductList({ products, loading, error, hasSearch }: Readonly<{ products: ProductRecord[]; loading: boolean; error: Error | null; hasSearch: boolean }>) {
+function ProductList({ products, loading, error, hasSearch, canManageProducts }: Readonly<{ products: ProductRecord[]; loading: boolean; error: Error | null; hasSearch: boolean; canManageProducts: boolean }>) {
   const queryClient = useQueryClient();
   const verticalConfig = getStoredVerticalConfig();
   const updateProduct = useMutation({
@@ -148,6 +152,7 @@ function ProductList({ products, loading, error, hasSearch }: Readonly<{ product
             key={product.id}
             product={product}
             showBatchTools={(verticalConfig?.batchFields?.length ?? 0) > 0}
+            canManageProducts={canManageProducts}
             onUpdate={(payload) => updateProduct.mutate({ id: product.id, payload })}
             onDelete={() => deleteProduct.mutate(product.id)}
             onBatch={(payload) => addBatch.mutate({ id: product.id, payload })}
@@ -158,7 +163,7 @@ function ProductList({ products, loading, error, hasSearch }: Readonly<{ product
   );
 }
 
-function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
+function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; canManageProducts: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
   const [editing, setEditing] = useState(false);
   const [showBatches, setShowBatches] = useState(false);
   const gstEnabled = getStoredTenant()?.gstEnabled !== false;
@@ -252,13 +257,15 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
           <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
           <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
         </div>
-        <div className="flex gap-2">
-          <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
-          <button className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 text-sm text-red-700" onClick={onDelete}>
-            <Trash2 className="size-4" aria-hidden="true" />
-            Delete
-          </button>
-        </div>
+        {canManageProducts ? (
+          <div className="flex gap-2">
+            <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 text-sm text-red-700" onClick={onDelete}>
+              <Trash2 className="size-4" aria-hidden="true" />
+              Delete
+            </button>
+          </div>
+        ) : null}
       </div>
       {showBatchTools ? (
         <div className="mt-3 space-y-3 rounded-md bg-slate-50 p-3">

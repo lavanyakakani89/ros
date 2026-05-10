@@ -14,7 +14,7 @@ export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) 
 
   fastify.get("/api/customers", async (request, reply) => {
     const query = customerListQuerySchema.parse(request.query);
-    return handleCustomers(reply, () => Promise.resolve(service.listCustomers(request.tenant, query)));
+    return handleCustomers(reply, () => service.listCustomers(request.tenant, query, request.user?.role));
   });
 
   fastify.get("/api/customers/template", async (_request, reply) => {
@@ -39,18 +39,18 @@ export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) 
 
   fastify.post("/api/customers", async (request, reply) => {
     const input = createCustomerSchema.parse(request.body);
-    return handleCustomers(reply, () => service.createCustomer(request.tenant, input));
+    return handleCustomers(reply, () => service.createCustomer(request.tenant, input, request.user?.role));
   });
 
   fastify.get("/api/customers/:id", async (request, reply) => {
     const params = customerIdParamsSchema.parse(request.params);
-    return handleCustomers(reply, () => service.getCustomer(request.tenant, params.id));
+    return handleCustomers(reply, () => service.getCustomer(request.tenant, params.id, request.user?.role));
   });
 
   fastify.put("/api/customers/:id", async (request, reply) => {
     const params = customerIdParamsSchema.parse(request.params);
     const input = updateCustomerSchema.parse(request.body);
-    return handleCustomers(reply, () => service.updateCustomer(request.tenant, params.id, input));
+    return handleCustomers(reply, () => service.updateCustomer(request.tenant, params.id, input, request.user?.role));
   });
 
   done();
