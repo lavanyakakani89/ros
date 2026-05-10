@@ -61,9 +61,7 @@ export class InventoryRepository {
     if (query.lowStock) {
       const products = await this.prisma.product.findMany({
         where,
-        orderBy: {
-          updatedAt: "desc",
-        },
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
       });
       const filteredProducts = products.filter((product) => product.reorderLevel !== null && product.currentStock.lte(product.reorderLevel));
       const offset = (query.page - 1) * query.limit;
@@ -80,9 +78,7 @@ export class InventoryRepository {
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
-        orderBy: {
-          updatedAt: "desc",
-        },
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
         skip: (query.page - 1) * query.limit,
         take: query.limit,
       }),

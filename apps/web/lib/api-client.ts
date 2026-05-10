@@ -238,7 +238,7 @@ export async function listProducts(options: { lowStock?: boolean; page?: number;
 
 export async function listAllProducts(options: { lowStock?: boolean; search?: string; pageSize?: number } = {}): Promise<PaginatedResponse<ProductRecord>> {
   const limit = options.pageSize ?? 100;
-  const allProducts: ProductRecord[] = [];
+  const productsById = new Map<string, ProductRecord>();
   let page = 1;
   let total = 0;
 
@@ -251,18 +251,22 @@ export async function listAllProducts(options: { lowStock?: boolean; search?: st
       request.search = options.search;
     }
     const result = await listProducts(request);
-    allProducts.push(...result.data);
+    for (const product of result.data) {
+      productsById.set(product.id, product);
+    }
     total = result.total;
     if (result.data.length === 0) {
       break;
     }
     page += 1;
-  } while (allProducts.length < total);
+  } while ((page - 1) * limit < total);
+
+  const products = [...productsById.values()];
 
   return {
-    data: allProducts,
+    data: products,
     page: 1,
-    limit: allProducts.length,
+    limit: products.length,
     total,
   };
 }
