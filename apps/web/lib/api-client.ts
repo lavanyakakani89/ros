@@ -248,6 +248,18 @@ export async function listProducts(options: { lowStock?: boolean; page?: number;
   return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>(`/inventory/products?${query.toString()}`);
 }
 
+export async function lookupProductByCode(code: string): Promise<ProductRecord | null> {
+  try {
+    return await createAuthenticatedApiClient().get<ProductRecord>(`/inventory/products/lookup?code=${encodeURIComponent(code)}`);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Product not found") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 export async function listAllProducts(options: { lowStock?: boolean; search?: string; pageSize?: number } = {}): Promise<PaginatedResponse<ProductRecord>> {
   const limit = options.pageSize ?? 100;
   const productsById = new Map<string, ProductRecord>();
