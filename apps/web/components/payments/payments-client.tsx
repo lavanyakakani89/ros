@@ -45,7 +45,7 @@ export function PaymentsClient() {
   });
   const duesQuery = useQuery({
     queryKey: ["due-invoices"],
-    queryFn: () => createAuthenticatedApiClient().get<{ data: InvoiceRecord[] }>("/billing/invoices?limit=100"),
+    queryFn: listAllDueInvoices,
   });
   const recordPayment = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/payments", payload),
@@ -57,7 +57,7 @@ export function PaymentsClient() {
     },
   });
   const payments = paymentsQuery.data ?? [];
-  const dueInvoices = (duesQuery.data?.data ?? []).filter((invoice) => Number(invoice.amountDue) > 0 && invoice.status !== "DRAFT" && invoice.status !== "CANCELLED");
+  const dueInvoices = duesQuery.data ?? [];
   const totals = payments.reduce<Record<string, number>>(
     (accumulator, payment) => {
       const amount = Number(payment.amount);
@@ -139,4 +139,21 @@ export function PaymentsClient() {
 
 function money(value: number): string {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+async function listAllDueInvoices(): Promise<InvoiceRecord[]> {
+  const api = createAuthenticatedApiClient();
+  const limit = 100;
+  const invoices: InvoiceRecord[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const response = await api.get<{ data: InvoiceRecord[]; total: number }>(`/billing/invoices?unpaid=true&page=${String(page)}&limit=${String(limit)}`);
+    invoices.push(...response.data);
+    total = response.total;
+    page += 1;
+  } while (invoices.length < total);
+
+  return invoices;
 }
