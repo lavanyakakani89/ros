@@ -174,6 +174,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [deliveryNotes, setDeliveryNotes] = useState("");
   const [lastBill, setLastBill] = useState<LastBill | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
 
   const productsQuery = useQuery({
     queryKey: ["products", "billing"],
@@ -270,6 +271,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const couponAmount = getVerticalNumber(editingInvoice.verticalData, "couponDiscount") ?? 0;
     const redeemedPoints = getVerticalNumber(editingInvoice.verticalData, "loyaltyRedeem") ?? 0;
     const couponCode = getVerticalString(editingInvoice.verticalData, "couponCode");
+    setQuantityDrafts({});
     setLines(lineItems.map((item) => ({
       id: item.id ?? crypto.randomUUID(),
       productId: item.productId,
@@ -357,7 +359,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           notify("Finish or cancel invoice editing before holding a bill.", "red");
           return;
         }
-        holdBill(selectedCustomer?.id ?? "");
+        holdCurrentBill(selectedCustomer?.id ?? "");
       }
       if (key === "n") {
         event.preventDefault();
@@ -915,6 +917,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   function clearBill() {
     reset();
+    setQuantityDrafts({});
     setSelectedCustomer(null);
     setCustomerSearch("");
     setShowNewCustomerForm(false);
@@ -938,6 +941,46 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setLastBill(null);
     onEditComplete?.();
     barcodeRef.current?.focus();
+  }
+
+  function holdCurrentBill(customerId: string) {
+    holdBill(customerId);
+    setQuantityDrafts({});
+  }
+
+  function restoreHeldBill(billId: string) {
+    restoreHeld(billId);
+    setQuantityDrafts({});
+    setShowHeld(false);
+  }
+
+  function removeBillingLine(lineId: string) {
+    removeLine(lineId);
+    setQuantityDrafts((current) => {
+      const { [lineId]: _removed, ...rest } = current;
+      return rest;
+    });
+  }
+
+  function handleQuantityChange(lineId: string, rawValue: string) {
+    setQuantityDrafts((current) => ({ ...current, [lineId]: rawValue }));
+    const quantity = Number(rawValue);
+    if (Number.isFinite(quantity) && quantity > 0) {
+      setLine(lineId, { quantity });
+    }
+  }
+
+  function handleQuantityBlur(lineId: string, currentQuantity: number) {
+    const rawValue = quantityDrafts[lineId];
+    if (rawValue === undefined) {
+      return;
+    }
+
+    setLine(lineId, { quantity: normalizeBillingQuantity(rawValue, currentQuantity) });
+    setQuantityDrafts((current) => {
+      const { [lineId]: _removed, ...rest } = current;
+      return rest;
+    });
   }
 
   function dismissBillPreview() {
@@ -1013,7 +1056,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 Held ({heldBills.length})
               </button>
             ) : null}
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
               <Pause className="size-4" aria-hidden="true" />
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
             </button>
@@ -1032,7 +1075,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               {heldBills.map((bill) => (
                 <div key={bill.id} className="flex items-center gap-2 rounded-md border border-amber-200 bg-white px-2 py-1">
                   <span className="text-xs text-slate-700">{bill.label} ({bill.lines.length} items)</span>
-                  <button className="text-xs font-medium text-emerald-700" onClick={() => { restoreHeld(bill.id); setShowHeld(false); }}>Restore</button>
+                  <button className="text-xs font-medium text-emerald-700" onClick={() => restoreHeldBill(bill.id)}>Restore</button>
                   <button className="text-xs text-red-600" onClick={() => deleteHeld(bill.id)}>Remove</button>
                 </div>
               ))}
@@ -1194,13 +1237,24 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                       {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
                       {aboveMrp ? <div className="mt-1 text-xs font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
                     </td>
-                    <td className="px-3 py-2"><input className="h-9 w-20 rounded-md border border-border px-2" type="number" min="1" step="1" value={line.quantity} onChange={(event) => setLine(line.id, { quantity: normalizeBillingQuantity(event.target.value) })} /></td>
+                    <td className="px-3 py-2">
+                      <input
+                        className="h-9 w-20 rounded-md border border-border px-2"
+                        type="number"
+                        inputMode="decimal"
+                        min="0.5"
+                        step="0.5"
+                        value={quantityDrafts[line.id] ?? formatQuantityInput(line.quantity)}
+                        onChange={(event) => handleQuantityChange(line.id, event.target.value)}
+                        onBlur={() => handleQuantityBlur(line.id, line.quantity)}
+                      />
+                    </td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
                     <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
                     {gstEnabled ? <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td> : null}
                     <td className="px-3 py-2 text-right font-semibold">₹{total.toFixed(2)}</td>
                     <td className="px-3 py-2 text-right">
-                      <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeLine(line.id)}>
+                      <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)}>
                         <Trash2 className="size-4" aria-hidden="true" />
                       </button>
                     </td>
@@ -1612,10 +1666,14 @@ function productSearchPlaceholder(mode: ProductSearchMode): string {
   return "Type product name, or scan exact barcode/SKU + Enter";
 }
 
-function normalizeBillingQuantity(value: string): number {
+function normalizeBillingQuantity(value: string, fallback = 1): number {
   const quantity = Number(value);
-  if (!Number.isFinite(quantity) || quantity <= 0) return 1;
+  if (!Number.isFinite(quantity) || quantity <= 0) return fallback > 0 ? fallback : 1;
   return quantity;
+}
+
+function formatQuantityInput(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(value);
 }
 
 function lineTotal(line: { quantity: number; sellingPrice: number; discount: number; gstRate: number }, gstEnabled = true): number {
