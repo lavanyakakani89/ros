@@ -26,6 +26,7 @@ const PRODUCT_SEARCH_MODES = [
   { value: "BARCODE", label: "Barcode" },
   { value: "SKU", label: "SKU" },
 ] as const;
+const BILLING_SEARCH_RESULT_LIMIT = 100;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH" | "LOCAL_AGENT";
@@ -178,9 +179,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [knownProducts, setKnownProducts] = useState<ProductRecord[]>([]);
 
   const productSearch = buildProductSearchTerm(barcodeInput);
+  const productExactQuery = useQuery({
+    queryKey: ["products", "billing-lookup", productSearch.value],
+    queryFn: () => lookupProductByCode(productSearch.value),
+    enabled: Boolean(productSearch.value),
+    staleTime: 15_000,
+  });
   const productSearchQuery = useQuery({
     queryKey: ["products", "billing-search", productSearchMode, productSearch.value, productSearch.trailingSpace],
-    queryFn: () => listProducts({ search: productSearch.value, limit: 8 }),
+    queryFn: () => listProducts({ search: productSearch.value, limit: BILLING_SEARCH_RESULT_LIMIT }),
     enabled: Boolean(productSearch.value),
     staleTime: 15_000,
   });
@@ -188,7 +195,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     queryKey: ["customers", "billing", customerSearch],
     queryFn: () =>
       createAuthenticatedApiClient().get<{ data: CustomerApiRecord[] }>(
-        `/customers?limit=20${customerSearch ? `&search=${encodeURIComponent(customerSearch)}` : ""}`,
+        `/customers?limit=${String(BILLING_SEARCH_RESULT_LIMIT)}${customerSearch ? `&search=${encodeURIComponent(customerSearch)}` : ""}`,
       ),
   });
   const printerQuery = useQuery({
@@ -200,14 +207,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     () => (customersQuery.data?.data ?? []).map(normalizeCustomer),
     [customersQuery.data?.data],
   );
-  const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults.slice(0, 4) : [];
+  const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults : [];
   const productResults = useMemo(() => {
     if (!productSearch.value) return [];
-    return (productSearchQuery.data?.data ?? [])
+    const exactProducts = productExactQuery.data ? [productExactQuery.data] : [];
+    const searchProducts = (productSearchQuery.data?.data ?? [])
       .filter((product) => matchesProductSearch(product, productSearch, productSearchMode))
-      .sort((left, right) => productMatchRank(left, productSearch) - productMatchRank(right, productSearch) || left.name.localeCompare(right.name))
-      .slice(0, 6);
-  }, [productSearch.value, productSearch.trailingSpace, productSearchMode, productSearchQuery.data?.data]);
+      .sort((left, right) => productMatchRank(left, productSearch) - productMatchRank(right, productSearch) || left.name.localeCompare(right.name));
+    return mergeProducts(exactProducts, searchProducts);
+  }, [productExactQuery.data, productSearch.value, productSearch.trailingSpace, productSearchMode, productSearchQuery.data?.data]);
 
   const totals = useMemo(() => {
     const itemTotals = lines.map((line) => {
@@ -341,6 +349,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     if (fetched.length === 0) return;
     setKnownProducts((current) => mergeProducts(current, fetched));
   }, [productSearchQuery.data?.data]);
+
+  useEffect(() => {
+    const exactProduct = productExactQuery.data;
+    if (!exactProduct) return;
+    setKnownProducts((current) => mergeProducts(current, [exactProduct]));
+  }, [productExactQuery.data]);
 
   useEffect(() => {
     async function refreshCounts() {
@@ -1153,8 +1167,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                   <button className="ml-2 font-semibold text-emerald-800" onClick={() => setSelectedCustomer(null)}>Clear</button>
                 </div>
               ) : null}
-              {customerSearch && !selectedCustomer
-                ? visibleCustomerResults.map((customer, index) => (
+              {customerSearch && !selectedCustomer ? (
+                <div className="grid max-h-56 gap-1 overflow-y-auto pr-1">
+                  {visibleCustomerResults.map((customer, index) => (
                     <button
                       key={customer.id}
                       className={`rounded-md border px-2 py-1 text-left text-xs ${index === customerHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
@@ -1162,8 +1177,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                     >
                       {customer.name} | {customer.phone}
                     </button>
-                  ))
-                : null}
+                  ))}
+                </div>
+              ) : null}
               {customerSearch && !selectedCustomer && !showNewCustomerForm ? (
                 <button className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-left text-xs font-semibold text-emerald-800" onClick={() => {
                   setShowNewCustomerForm(true);
@@ -1215,7 +1231,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               </select>
             </div>
             {barcodeInput.trim() ? (
-              <div className="mt-2 grid gap-1">
+              <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto pr-1">
                 {productResults.length > 0 ? productResults.map((product, index) => (
                   <button
                     key={product.id}
