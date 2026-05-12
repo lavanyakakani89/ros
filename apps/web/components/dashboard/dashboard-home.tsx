@@ -114,7 +114,7 @@ export function DashboardHome() {
   });
   const deliveriesQuery = useQuery({
     queryKey: ["dashboard-deliveries"],
-    queryFn: () => createAuthenticatedApiClient().get<DeliveryRecord[]>("/delivery"),
+    queryFn: () => createAuthenticatedApiClient().get<DeliveryRecord[]>("/delivery?scope=active"),
   });
   const auditQuery = useQuery({
     queryKey: ["dashboard-audit"],

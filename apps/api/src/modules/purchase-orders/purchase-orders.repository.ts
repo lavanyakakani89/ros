@@ -11,9 +11,16 @@ export class PurchaseOrdersRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
   async list(tenantId: string, query: PurchaseOrderListQuery) {
+    const createdAt: Prisma.DateTimeFilter | undefined = query.from || query.to
+      ? {
+          ...(query.from ? { gte: query.from } : {}),
+          ...(query.to ? { lte: query.to } : {}),
+        }
+      : undefined;
     const where: Prisma.PurchaseOrderWhereInput = {
       tenantId,
       ...(query.status ? { status: query.status } : {}),
+      ...(createdAt ? { createdAt } : {}),
     };
 
     const [total, data] = await Promise.all([

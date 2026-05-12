@@ -3,8 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
+import { PaginationControls } from "@/components/shared/pagination-controls";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 
 interface LedgerEntry {
   id: string;
@@ -23,13 +26,27 @@ interface LedgerSummary {
   outstanding?: number | string | null | undefined;
   outstandingDue?: number | string | null | undefined;
   entries?: LedgerEntry[];
+  page?: number;
+  limit?: number;
+  total?: number;
 }
 
 export function CustomerLedger({ customerId }: { customerId: string }) {
+  const [from, setFrom] = useState(() => defaultFromDate(30));
+  const [to, setTo] = useState(() => todayDate());
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
   const ledgerQuery = useQuery({
-    queryKey: ["customer-ledger", customerId],
-    queryFn: () => createAuthenticatedApiClient().get<LedgerSummary>(`/billing/customer-ledger/${customerId}`),
+    queryKey: ["customer-ledger", customerId, from, to, page, pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      appendDateRange(params, from, to);
+      return createAuthenticatedApiClient().get<LedgerSummary>(`/billing/customer-ledger/${customerId}?${params.toString()}`);
+    },
   });
+  useEffect(() => {
+    setPage(1);
+  }, [from, to]);
 
   const data = ledgerQuery.data;
   const outstanding = toMoneyNumber(data?.outstanding ?? data?.outstandingDue);
@@ -74,7 +91,13 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
       )}
 
       <div className="rounded-md border border-border bg-white">
-        <div className="border-b border-border px-4 py-3 text-sm font-semibold text-slate-950">Transaction history</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold text-slate-950">Transaction history</div>
+          <div className="flex flex-wrap gap-2">
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+          </div>
+        </div>
         {entries.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">No transactions yet.</div>
         ) : (
@@ -117,6 +140,7 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
             </table>
           </div>
         )}
+        <PaginationControls page={page} limit={pageSize} total={data.total ?? entries.length} onPageChange={setPage} />
       </div>
     </div>
   );

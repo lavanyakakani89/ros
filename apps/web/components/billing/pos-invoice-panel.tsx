@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listAllProducts, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
@@ -175,10 +175,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [lastBill, setLastBill] = useState<LastBill | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
+  const [knownProducts, setKnownProducts] = useState<ProductRecord[]>([]);
 
-  const productsQuery = useQuery({
-    queryKey: ["products", "billing"],
-    queryFn: () => listAllProducts(),
+  const productSearch = buildProductSearchTerm(barcodeInput);
+  const productSearchQuery = useQuery({
+    queryKey: ["products", "billing-search", productSearchMode, productSearch.value, productSearch.trailingSpace],
+    queryFn: () => listProducts({ search: productSearch.value, limit: 8 }),
+    enabled: Boolean(productSearch.value),
+    staleTime: 15_000,
   });
   const customersQuery = useQuery({
     queryKey: ["customers", "billing", customerSearch],
@@ -191,20 +195,19 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     queryKey: ["printer", "billing"],
     queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
   });
-  const products = productsQuery.data?.data ?? [];
+  const products = knownProducts;
   const customerResults = useMemo(
     () => (customersQuery.data?.data ?? []).map(normalizeCustomer),
     [customersQuery.data?.data],
   );
   const visibleCustomerResults = customerSearch && !selectedCustomer ? customerResults.slice(0, 4) : [];
   const productResults = useMemo(() => {
-    const search = buildProductSearchTerm(barcodeInput);
-    if (!search.value) return [];
-    return products
-      .filter((product) => matchesProductSearch(product, search, productSearchMode))
-      .sort((left, right) => productMatchRank(left, search) - productMatchRank(right, search) || left.name.localeCompare(right.name))
+    if (!productSearch.value) return [];
+    return (productSearchQuery.data?.data ?? [])
+      .filter((product) => matchesProductSearch(product, productSearch, productSearchMode))
+      .sort((left, right) => productMatchRank(left, productSearch) - productMatchRank(right, productSearch) || left.name.localeCompare(right.name))
       .slice(0, 6);
-  }, [barcodeInput, productSearchMode, products]);
+  }, [productSearch.value, productSearch.trailingSpace, productSearchMode, productSearchQuery.data?.data]);
 
   const totals = useMemo(() => {
     const itemTotals = lines.map((line) => {
@@ -320,6 +323,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   useEffect(() => {
     setProductHighlightIndex(0);
   }, [barcodeInput, productResults.length]);
+
+  useEffect(() => {
+    const fetched = productSearchQuery.data?.data ?? [];
+    if (fetched.length === 0) return;
+    setKnownProducts((current) => mergeProducts(current, fetched));
+  }, [productSearchQuery.data?.data]);
 
   useEffect(() => {
     async function refreshCounts() {
@@ -441,6 +450,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }
 
   function insertProduct(product: ProductRecord) {
+    setKnownProducts((current) => mergeProducts(current, [product]));
     const existing = lines.find((line) => line.productId === product.id);
     if (existing) {
       setLine(existing.id, { quantity: existing.quantity + 1 });
@@ -485,14 +495,28 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
 
     if (event.key !== "Enter" || !barcodeInput.trim()) return;
-    const code = barcodeInput.trim();
+    event.preventDefault();
+    void addProductFromSearch(barcodeInput);
+  }
+
+  async function addProductFromSearch(input: string) {
+    const code = input.trim();
     const codeLower = code.toLowerCase();
-    const search = buildProductSearchTerm(barcodeInput);
-    const exactProduct = products.find((item) => exactProductIdentifierMatch(item, codeLower));
+    const search = buildProductSearchTerm(input);
+    let candidates = productResults;
+    if (candidates.length === 0 || !candidates.some((item) => exactProductIdentifierMatch(item, codeLower))) {
+      try {
+        const fetched = await listProducts({ search: search.value, limit: 8 });
+        candidates = mergeProducts(candidates, fetched.data);
+      } catch {
+        // The normal authenticated API error message is shown below as no match.
+      }
+    }
+    const exactProduct = mergeProducts(candidates, products).find((item) => exactProductIdentifierMatch(item, codeLower));
     const product =
       exactProduct ??
-      productResults[productHighlightIndex] ??
-      products.find((item) => matchesProductSearch(item, search, productSearchMode));
+      candidates[productHighlightIndex] ??
+      candidates.find((item) => matchesProductSearch(item, search, productSearchMode));
     if (!product) {
       notify(`No product found for ${code}`, "red");
       setBarcodeInput("");
@@ -1191,7 +1215,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
               </div>
             ) : (
-              <div className="mt-2 text-xs text-slate-500">{productsQuery.isLoading ? "Loading products..." : "Scan or search to add products."}</div>
+              <div className="mt-2 text-xs text-slate-500">Scan or search to add products.</div>
             )}
           </div>
         </div>
@@ -1664,6 +1688,16 @@ function productSearchPlaceholder(mode: ProductSearchMode): string {
   if (mode === "SKU") return "Scan or type SKU + Enter";
   if (mode === "AUTO") return "Scan barcode/SKU, or type product name + Enter";
   return "Type product name, or scan exact barcode/SKU + Enter";
+}
+
+function mergeProducts(...groups: ProductRecord[][]): ProductRecord[] {
+  const byId = new Map<string, ProductRecord>();
+  for (const group of groups) {
+    for (const product of group) {
+      byId.set(product.id, product);
+    }
+  }
+  return [...byId.values()];
 }
 
 function normalizeBillingQuantity(value: string, fallback = 1): number {

@@ -3,8 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, MessageCircle, Smartphone, Truck } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { PaginationControls } from "@/components/shared/pagination-controls";
+import { createAuthenticatedApiClient, type PaginatedResponse } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
 import { formatDeliveryWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
@@ -16,6 +19,8 @@ interface DeliveryItem {
   status: DeliveryStatus;
   deliveryAddress: string;
   assignedTo?: string | null;
+  createdAt?: string;
+  deliveredAt?: string | null;
   invoice?: {
     invoiceNumber: string;
     grandTotal: string;
@@ -41,21 +46,43 @@ interface SettingsResponse {
   }>;
 }
 
-const statuses: DeliveryStatus[] = ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY", "DELIVERED"];
+const statuses: DeliveryStatus[] = ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"];
 
 const fallbackDeliveries: DeliveryItem[] = [];
 
 export function DeliveryBoard() {
   const queryClient = useQueryClient();
+  const [archiveFrom, setArchiveFrom] = useState(() => defaultFromDate(30));
+  const [archiveTo, setArchiveTo] = useState(() => todayDate());
+  const [archivePage, setArchivePage] = useState(1);
+  const archivePageSize = 25;
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const deliveriesQuery = useQuery({
-    queryKey: ["deliveries"],
+    queryKey: ["deliveries", "active"],
     queryFn: async () => {
       if (!hasSession) {
         return fallbackDeliveries;
       }
 
-      return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery");
+      return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active");
+    },
+    staleTime: 30_000,
+  });
+  const archiveQuery = useQuery({
+    queryKey: ["deliveries", "archive", archiveFrom, archiveTo, archivePage, archivePageSize],
+    queryFn: async () => {
+      if (!hasSession) {
+        return { data: fallbackDeliveries, page: 1, limit: archivePageSize, total: 0 };
+      }
+
+      const params = new URLSearchParams({
+        scope: "archive",
+        paginated: "true",
+        page: String(archivePage),
+        limit: String(archivePageSize),
+      });
+      appendDateRange(params, archiveFrom, archiveTo);
+      return createAuthenticatedApiClient().get<PaginatedResponse<DeliveryItem>>(`/delivery?${params.toString()}`);
     },
     staleTime: 30_000,
   });
@@ -75,6 +102,7 @@ export function DeliveryBoard() {
   });
 
   const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
+  const archiveDeliveries = archiveQuery.data?.data ?? fallbackDeliveries;
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
 
   function shareDeliveryUpdate(delivery: DeliveryItem) {
@@ -178,6 +206,33 @@ export function DeliveryBoard() {
         );
       })}
       </div>
+      <section className="rounded-md border border-border bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Delivery archive</div>
+            <div className="text-xs text-slate-500">Delivered, failed, and cancelled orders by date range.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input type="date" value={archiveFrom} onChange={(event) => { setArchiveFrom(event.target.value); setArchivePage(1); }} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <input type="date" value={archiveTo} onChange={(event) => { setArchiveTo(event.target.value); setArchivePage(1); }} className="h-9 rounded-md border border-border px-2 text-sm" />
+          </div>
+        </div>
+        <div className="divide-y divide-border">
+          {archiveDeliveries.length > 0 ? archiveDeliveries.map((delivery) => (
+            <div key={delivery.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+              <div>
+                <div className="font-semibold text-slate-950">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
+                <div className="text-xs text-slate-500">{delivery.customer?.name ?? "Customer"} | {delivery.deliveryAddress}</div>
+              </div>
+              <div className="text-right">
+                <div className="font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
+                <div className="text-xs text-slate-500">{delivery.status.replaceAll("_", " ")} | {delivery.deliveredAt || delivery.createdAt ? new Date(delivery.deliveredAt ?? delivery.createdAt ?? "").toLocaleDateString("en-IN") : "-"}</div>
+              </div>
+            </div>
+          )) : <div className="p-4 text-sm text-slate-500">No archived deliveries for this range.</div>}
+        </div>
+        <PaginationControls page={archivePage} limit={archivePageSize} total={archiveQuery.data?.total ?? 0} onPageChange={setArchivePage} />
+      </section>
     </div>
   );
 }

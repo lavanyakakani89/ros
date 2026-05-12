@@ -3,8 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Download, FileSpreadsheet, Save, Upload } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { PaginationControls } from "@/components/shared/pagination-controls";
 import { createAuthenticatedApiClient, downloadApiFile, type PaginatedResponse } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 
@@ -40,10 +41,13 @@ interface CustomerRecord {
 export function CustomersClient() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [importStatus, setImportStatus] = useState("");
+  const pageSize = 25;
+  const searchTerm = search.trim();
   const customersQuery = useQuery({
-    queryKey: ["customers", search],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?limit=100${search ? `&search=${encodeURIComponent(search)}` : ""}`),
+    queryKey: ["customers", searchTerm, page, pageSize],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?page=${page}&limit=${pageSize}${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`),
   });
   const createCustomer = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/customers", payload),
@@ -61,6 +65,9 @@ export function CustomersClient() {
     },
   });
   const customers = customersQuery.data?.data ?? [];
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
   const error = customersQuery.error ?? createCustomer.error ?? updateCustomer.error ?? importCustomers.error;
 
   function handleCreate(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -120,6 +127,7 @@ export function CustomersClient() {
             <CustomerRow key={customer.id} customer={customer} onSave={(payload) => updateCustomer.mutate({ id: customer.id, payload })} />
           )) : <div className="p-4 text-sm text-slate-500">No customers found.</div>}
         </div>
+        <PaginationControls page={page} limit={pageSize} total={customersQuery.data?.total ?? 0} onPageChange={setPage} />
       </section>
     </div>
   );

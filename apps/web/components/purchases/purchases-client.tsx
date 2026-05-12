@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Save } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { PaginationControls } from "@/components/shared/pagination-controls";
 import { createAuthenticatedApiClient, listAllProducts, type PaginatedResponse } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
 
 interface SupplierRecord {
@@ -32,9 +34,18 @@ interface PurchaseOrderRecord {
 export function PurchasesClient() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
+  const [from, setFrom] = useState(() => defaultFromDate(30));
+  const [to, setTo] = useState(() => todayDate());
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
   const ordersQuery = useQuery({
-    queryKey: ["purchase-orders", status],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<PurchaseOrderRecord>>(`/purchase-orders?limit=100${status ? `&status=${status}` : ""}`),
+    queryKey: ["purchase-orders", status, from, to, page, pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (status) params.set("status", status);
+      appendDateRange(params, from, to);
+      return createAuthenticatedApiClient().get<PaginatedResponse<PurchaseOrderRecord>>(`/purchase-orders?${params.toString()}`);
+    },
   });
   const suppliersQuery = useQuery({
     queryKey: ["suppliers-for-po"],
@@ -61,6 +72,9 @@ export function PurchasesClient() {
   const suppliers = suppliersQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
   const error = ordersQuery.error ?? suppliersQuery.error ?? productsQuery.error ?? createOrder.error ?? receiveOrder.error;
+  useEffect(() => {
+    setPage(1);
+  }, [status, from, to]);
 
   function handleCreate(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -117,12 +131,16 @@ export function PurchasesClient() {
         </form>
       </section>
       <section className="rounded-md border border-border bg-white">
-        <div className="flex items-center justify-between border-b border-border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
           <div className="text-sm font-semibold text-slate-950">Orders</div>
-          <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm">
-            <option value="">All</option>
-            {["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CANCELLED"].map((option) => <option key={option} value={option}>{option}</option>)}
-          </select>
+          <div className="flex flex-wrap gap-2">
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm">
+              <option value="">All</option>
+              {["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CANCELLED"].map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
         </div>
         <div className="divide-y divide-border">
           {orders.length > 0 ? orders.map((order) => (
@@ -152,6 +170,7 @@ export function PurchasesClient() {
             </article>
           )) : <div className="p-4 text-sm text-slate-500">No purchase orders yet.</div>}
         </div>
+        <PaginationControls page={page} limit={pageSize} total={ordersQuery.data?.total ?? 0} onPageChange={setPage} />
       </section>
     </div>
   );

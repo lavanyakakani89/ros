@@ -2,11 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, Save, Search, Trash2, Upload, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ProductFieldForm } from "@/components/inventory/product-field-form";
+import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatStrip } from "@/components/shared/stat-strip";
-import { createAuthenticatedApiClient, downloadApiFile, listAllProducts, type ProductRecord } from "@/lib/api-client";
+import { createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
@@ -22,16 +23,25 @@ export function InventoryClient() {
   const queryClient = useQueryClient();
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [importStatus, setImportStatus] = useState("");
+  const pageSize = 25;
   const searchTerm = search.trim();
   const verticalConfig = getStoredVerticalConfig();
   const supportsExpiryAlerts = Boolean(verticalConfig?.expiryAlerts?.enabled);
   const productsQuery = useQuery({
-    queryKey: ["products", lowStockOnly, searchTerm],
-    queryFn: () => listAllProducts({
+    queryKey: ["products", lowStockOnly, searchTerm, page, pageSize],
+    queryFn: () => listProducts({
       lowStock: lowStockOnly,
+      page,
+      limit: pageSize,
       ...(searchTerm ? { search: searchTerm } : {}),
     }),
+  });
+  const lowStockCountQuery = useQuery({
+    queryKey: ["products", "low-stock-count"],
+    queryFn: () => listProducts({ lowStock: true, page: 1, limit: 1 }),
+    staleTime: 60_000,
   });
   const expiringQuery = useQuery({
     queryKey: ["expiring-products"],
@@ -40,6 +50,9 @@ export function InventoryClient() {
     retry: false,
   });
   const products = productsQuery.data?.data ?? [];
+  useEffect(() => {
+    setPage(1);
+  }, [lowStockOnly, searchTerm]);
   const importProducts = useMutation({
     mutationFn: (file: File) => createAuthenticatedApiClient().upload<ImportResult>("/inventory/products/import", file),
     onSuccess: async (result) => {
@@ -47,7 +60,7 @@ export function InventoryClient() {
       await queryClient.invalidateQueries({ queryKey: ["products"] });
     },
   });
-  const lowStockCount = products.filter((product) => product.reorderLevel !== undefined && product.reorderLevel !== null && Number(product.currentStock) <= Number(product.reorderLevel)).length;
+  const lowStockCount = lowStockCountQuery.data?.total ?? 0;
   const stockValue = products.reduce((sum, product) => sum + Number(product.currentStock) * Number(product.purchasePrice ?? product.sellingPrice), 0);
 
   return (
@@ -57,13 +70,13 @@ export function InventoryClient() {
           { label: "Active products", value: String(productsQuery.data?.total ?? products.length), tone: "blue" },
           { label: "Low stock", value: String(lowStockCount), tone: "amber" },
           ...(supportsExpiryAlerts ? [{ label: "Expiring soon", value: String(expiringQuery.data?.length ?? 0), tone: "emerald" as const }] : []),
-          { label: "Stock value", value: `₹${stockValue.toFixed(2)}`, tone: "slate" },
+          { label: "Visible stock value", value: `₹${stockValue.toFixed(2)}`, tone: "slate" },
         ]}
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4">
           <ProductFieldForm onCreated={() => void productsQuery.refetch()} />
-          <StockAdjustment products={products} onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
+          <StockAdjustment onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
         </div>
         <section className="rounded-md border border-border bg-white">
           <div className="space-y-3 border-b border-border px-4 py-3">
@@ -108,6 +121,7 @@ export function InventoryClient() {
             </div>
           </div>
           <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} hasSearch={Boolean(searchTerm)} />
+          <PaginationControls page={page} limit={pageSize} total={productsQuery.data?.total ?? 0} onPageChange={setPage} />
         </section>
       </div>
     </>
@@ -285,11 +299,18 @@ function ProductRow({ product, showBatchTools, onUpdate, onDelete, onBatch }: Re
   );
 }
 
-function StockAdjustment({ products, onSaved }: Readonly<{ products: ProductRecord[]; onSaved: () => void }>) {
+function StockAdjustment({ onSaved }: Readonly<{ onSaved: () => void }>) {
+  const [productSearch, setProductSearch] = useState("");
+  const searchTerm = productSearch.trim();
+  const productsQuery = useQuery({
+    queryKey: ["products", "stock-adjustment", searchTerm],
+    queryFn: () => listProducts({ limit: 20, ...(searchTerm ? { search: searchTerm } : {}) }),
+  });
   const mutation = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/inventory/stock-adjustment", payload),
     onSuccess: onSaved,
   });
+  const products = productsQuery.data?.data ?? [];
 
   function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -309,6 +330,7 @@ function StockAdjustment({ products, onSaved }: Readonly<{ products: ProductReco
       <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit}>
         <label className="block text-sm font-medium text-slate-700">
           Product
+          <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search product before selecting" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
           <select name="productId" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" required>
             <option value="">Select product</option>
             {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}

@@ -7,6 +7,8 @@ export const purchaseOrderListQuerySchema = z.object({
   status: z.nativeEnum(POStatus).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(25),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 export const purchaseOrderIdParamsSchema = z.object({

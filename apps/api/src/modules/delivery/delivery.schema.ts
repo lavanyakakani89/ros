@@ -11,6 +11,12 @@ export const createDeliverySchema = z.object({
 
 export const deliveryListQuerySchema = z.object({
   status: z.nativeEnum(DeliveryStatus).optional(),
+  scope: z.enum(["active", "archive"]).optional(),
+  paginated: z.enum(["true", "false"]).optional().transform((value) => value === "true"),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(25),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
 });
 
 export const deliveryIdParamsSchema = z.object({
