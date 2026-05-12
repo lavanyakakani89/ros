@@ -110,6 +110,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             router.replace("/delivery-app");
             return;
           }
+          if (!canAccessPath(current.user.role, pathname)) {
+            router.replace(defaultPathForRole(current.user.role));
+            return;
+          }
         }
         setImpersonation(current.impersonation ?? null);
         storeImpersonation(current.impersonation ?? null);
@@ -658,4 +662,48 @@ function canAccessAccountLink(role: ShopRole | undefined, href: string): boolean
   }
 
   return href === "/settings#password";
+}
+
+function canAccessPath(role: ShopRole | undefined, pathname: string): boolean {
+  if (!role || role === "OWNER") {
+    return true;
+  }
+
+  if (role === "DELIVERY") {
+    return pathname === "/delivery-app";
+  }
+
+  if (role === "MANAGER") {
+    return !pathname.startsWith("/settings/whatsapp");
+  }
+
+  const staffPaths = [
+    "/billing",
+    "/quotations",
+    "/coupons",
+    "/loyalty",
+    "/inventory",
+    "/customers",
+    "/payments",
+    "/expenses",
+    "/restaurant",
+  ];
+
+  if (pathname.startsWith("/customers/")) {
+    return false;
+  }
+
+  return pathname === "/settings" || staffPaths.some((allowedPath) => pathname === allowedPath || pathname.startsWith(`${allowedPath}/`));
+}
+
+function defaultPathForRole(role: ShopRole | undefined): string {
+  if (role === "DELIVERY") {
+    return "/delivery-app";
+  }
+
+  if (role === "STAFF") {
+    return "/billing";
+  }
+
+  return "/dashboard";
 }

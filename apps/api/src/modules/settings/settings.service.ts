@@ -9,6 +9,7 @@ export class SettingsError extends Error {
   constructor(
     message: string,
     readonly statusCode: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -248,7 +249,7 @@ function ensureCanManageUserRole(currentRole: UserRole, targetRole: UserRole): v
 
   const managerAllowedRoles: UserRole[] = [UserRole.STAFF, UserRole.DELIVERY];
   if (!managerAllowedRoles.includes(targetRole)) {
-    throw new SettingsError("Managers can manage only staff and delivery users", 403);
+    throw new SettingsError("Managers can manage only staff and delivery users", 403, "PRIVILEGE_ESCALATION");
   }
 }
 

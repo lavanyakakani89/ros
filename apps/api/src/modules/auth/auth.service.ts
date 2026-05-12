@@ -159,7 +159,7 @@ function parseRefreshToken(refreshToken: string): { id: string; secret: string }
 }
 
 function isRefreshTokenUsable(token: RefreshTokenWithUser | null): token is RefreshTokenWithUser {
-  return Boolean(token && !token.revokedAt && token.expiresAt > new Date());
+  return Boolean(token && token.user.isActive && !token.revokedAt && token.expiresAt > new Date());
 }
 
 async function hashPassword(value: string): Promise<string> {

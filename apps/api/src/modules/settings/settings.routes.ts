@@ -43,7 +43,10 @@ async function handleSettings<T>(reply: FastifyReply, handler: () => Promise<T>)
     return await handler();
   } catch (error) {
     if (error instanceof SettingsError) {
-      return reply.status(error.statusCode).send({ error: error.message });
+      return reply.status(error.statusCode).send({
+        error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
 
     throw error;

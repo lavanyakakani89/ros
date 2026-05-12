@@ -2,6 +2,7 @@ import { UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { CustomersRepository } from "./customers.repository.js";
+import { stripCustomerFinancials } from "./customers.sanitizers.js";
 import type { CreateCustomerInput, CustomerListQuery, UpdateCustomerInput } from "./customers.schema.js";
 
 export class CustomersError extends Error {
@@ -75,18 +76,6 @@ export class CustomersService {
       throw new CustomersError(error instanceof Error ? error.message : "Unable to update customer", 409);
     }
   }
-}
-
-function stripCustomerFinancials<T extends Record<string, unknown>>(customer: T) {
-  const {
-    creditLimit: _creditLimit,
-    outstandingDue: _outstandingDue,
-    totalSpent: _totalSpent,
-    invoices: _invoices,
-    ...safeCustomer
-  } = customer;
-
-  return safeCustomer;
 }
 
 function sanitizeCustomerInputForRole<T extends CreateCustomerInput | UpdateCustomerInput>(input: T, role?: UserRole): T {

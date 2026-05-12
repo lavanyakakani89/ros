@@ -132,7 +132,7 @@ export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
   if (!permissionsByRole[role].has(permission)) {
     return reply.status(403).send({
       error: "Forbidden",
-      code: "RBAC_FORBIDDEN",
+      code: role === UserRole.DELIVERY ? "DELIVERY_ROLE_RESTRICTED" : "INSUFFICIENT_PERMISSIONS",
       message: "Your role does not have permission to perform this action.",
       requiredPermission: permission,
     });
@@ -141,7 +141,12 @@ export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
   return undefined;
 }
 
-function requiredPermission(method: string, url: string): Permission | undefined {
+export function canRoleAccess(role: UserRole, method: string, url: string): boolean {
+  const permission = requiredPermission(method, url);
+  return permission ? permissionsByRole[role].has(permission) : true;
+}
+
+export function requiredPermission(method: string, url: string): Permission | undefined {
   const verb = method.toUpperCase();
   const path = url.split("?")[0] ?? url;
 
@@ -152,7 +157,7 @@ function requiredPermission(method: string, url: string): Permission | undefined
 
   if (path.startsWith("/api/billing/customer-ledger")) return "billing:customer-ledger";
   if (path.startsWith("/api/billing/invoices")) {
-    if (verb === "POST" && path.endsWith("/cancel")) return "billing:cancel";
+    if (path.endsWith("/cancel")) return "billing:cancel";
     if (verb === "POST" && path === "/api/billing/invoices") return "billing:create";
     if (verb === "PUT") return "billing:create";
     return "billing:view";
@@ -186,6 +191,7 @@ function requiredPermission(method: string, url: string): Permission | undefined
   )) {
     return "delivery:mobile";
   }
+  if (verb === "GET" && isDeliveryDetailRoute(path)) return "delivery:mobile";
   if (path.startsWith("/api/delivery")) return "delivery:manage";
 
   if (path.startsWith("/api/expenses")) {
@@ -212,7 +218,7 @@ function requiredPermission(method: string, url: string): Permission | undefined
     return "quotations:manage";
   }
 
-  if (path.startsWith("/api/reports/pnl")) return "reports:pnl";
+  if (path.startsWith("/api/reports/pnl") || path.startsWith("/api/reports/pl")) return "reports:pnl";
   if (path.startsWith("/api/reports")) return "reports:view";
 
   if (path.startsWith("/api/restaurant")) return "restaurant:operate";
@@ -231,4 +237,17 @@ function requiredPermission(method: string, url: string): Permission | undefined
   if (path.startsWith("/api/import-export")) return "inventory:import-export";
 
   return "settings:tenant";
+}
+
+function isDeliveryDetailRoute(path: string): boolean {
+  if (path === "/api/delivery") {
+    return false;
+  }
+
+  if (path.startsWith("/api/delivery/agent/") || path.startsWith("/api/delivery/routes/")) {
+    return false;
+  }
+
+  const segments = path.split("/").filter(Boolean);
+  return segments.length === 3 && segments[0] === "api" && segments[1] === "delivery";
 }

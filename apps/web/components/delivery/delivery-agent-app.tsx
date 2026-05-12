@@ -41,10 +41,11 @@ interface DeliveryItem {
   timeWindowEnd?: string | null;
   notes?: string | null;
   assignedTo?: string | null;
+  codAmount?: string | number | null;
   invoice?: {
     id?: string;
     invoiceNumber: string;
-    grandTotal: string | number;
+    grandTotal?: string | number;
     amountDue?: string | number;
     paymentMode?: string;
   };
@@ -96,6 +97,7 @@ export function DeliveryAgentApp() {
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const tenant = typeof window !== "undefined" ? getStoredTenant() : null;
   const session = typeof window !== "undefined" ? getStoredAuthSession() : null;
+  const canUseDeliveryApp = session?.user?.role === "DELIVERY";
 
   const syncQuery = useQuery({
     queryKey: ["delivery-agent", "mobile-sync"],
@@ -124,7 +126,7 @@ export function DeliveryAgentApp() {
         throw error;
       }
     },
-    enabled: hasSession,
+    enabled: hasSession && canUseDeliveryApp,
     refetchInterval: 10_000,
   });
   const updateStatus = useMutation({
@@ -201,7 +203,7 @@ export function DeliveryAgentApp() {
     .sort((left, right) => (left.routeStop?.sequence ?? 9999) - (right.routeStop?.sequence ?? 9999));
   const completedDeliveries = deliveries.filter((delivery) => ["DELIVERED", "FAILED", "CANCELLED"].includes(delivery.status));
   const totalCash = useMemo(
-    () => activeDeliveries.reduce((sum, delivery) => sum + Number(delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0), 0),
+    () => activeDeliveries.reduce((sum, delivery) => sum + deliveryCollectionAmount(delivery), 0),
     [activeDeliveries],
   );
 
@@ -312,6 +314,19 @@ export function DeliveryAgentApp() {
           <h1 className="mt-3 text-3xl font-bold">Sign in to view assigned orders.</h1>
           <p className="mt-3 text-sm text-slate-300">Use the same shop slug, email, and password created for the delivery user in RetailOS settings.</p>
           <Link href="/login" className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 text-sm font-semibold text-slate-950">Sign in</Link>
+        </div>
+      </main>
+    );
+  }
+
+  if (!canUseDeliveryApp) {
+    return (
+      <main className="min-h-screen bg-slate-950 px-5 py-10 text-white">
+        <div className="mx-auto max-w-sm">
+          <div className="text-sm font-semibold text-emerald-300">RetailOS Delivery</div>
+          <h1 className="mt-3 text-3xl font-bold">Delivery app access only.</h1>
+          <p className="mt-3 text-sm text-slate-300">This phone view is restricted to DELIVERY users. Use the main RetailOS dashboard for shop work.</p>
+          <Link href="/dashboard" className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 text-sm font-semibold text-slate-950">Go to dashboard</Link>
         </div>
       </main>
     );
@@ -478,6 +493,7 @@ function DeliveryCard({
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${String(delivery.latitude)},${String(delivery.longitude)}`)}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.deliveryAddress)}`;
   const customerPhone = delivery.customer?.phone ?? "";
+  const collectAmount = deliveryCollectionAmount(delivery);
 
   return (
     <article className="rounded-md border border-slate-200 bg-white shadow-sm">
@@ -485,7 +501,7 @@ function DeliveryCard({
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="font-mono text-xs text-slate-500">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
-            <div className="mt-1 text-lg font-bold">₹{Number(delivery.invoice?.grandTotal ?? 0).toFixed(2)}</div>
+            <div className="mt-1 text-lg font-bold">₹{collectAmount.toFixed(2)}</div>
             {delivery.routeStop ? <div className="mt-1 text-xs font-semibold text-emerald-700">Stop #{delivery.routeStop.sequence}</div> : null}
           </div>
           <StatusBadge status={delivery.status} />
@@ -608,6 +624,10 @@ function statusClass(status: DeliveryStatus): string {
 
 function proofNoteKey(deliveryId: string, proofType: ProofType): string {
   return `${deliveryId}:${proofType}`;
+}
+
+function deliveryCollectionAmount(delivery: DeliveryItem): number {
+  return Number(delivery.codAmount ?? delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0);
 }
 
 function formatKm(distanceMeters?: number | null): string {

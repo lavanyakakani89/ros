@@ -7,7 +7,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
-import { getStoredTenant } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 
 type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend";
 
@@ -65,14 +65,15 @@ export function ReportsDashboard() {
   const [from, setFrom] = useState(weekAgoStr());
   const [to, setTo] = useState(todayStr());
   const [gstEnabled, setGstEnabled] = useState(true);
+  const canViewPnl = getStoredAuthSession()?.user?.role === "OWNER";
 
   useEffect(() => {
     const enabled = getStoredTenant()?.gstEnabled !== false;
     setGstEnabled(enabled);
-    if (!enabled && tab === "gstr") {
+    if ((!enabled && tab === "gstr") || (!canViewPnl && tab === "pnl")) {
       setTab("sales");
     }
-  }, [tab]);
+  }, [canViewPnl, tab]);
 
   const summaryQuery = useQuery({
     queryKey: ["reports-summary", from, to],
@@ -88,7 +89,7 @@ export function ReportsDashboard() {
   const pnlQuery = useQuery({
     queryKey: ["reports-pnl", from, to],
     queryFn: () => createAuthenticatedApiClient().get<PnlReport>(`/reports/pnl?from=${from}&to=${to}`),
-    enabled: tab === "pnl",
+    enabled: canViewPnl && tab === "pnl",
   });
   const dayEndQuery = useQuery({
     queryKey: ["reports-dayend", to],
@@ -111,7 +112,7 @@ export function ReportsDashboard() {
   const tabs: { id: Tab; label: string }[] = [
     { id: "sales", label: "Sales" },
     { id: "inventory", label: "Inventory" },
-    { id: "pnl", label: "P&L" },
+    ...(canViewPnl ? [{ id: "pnl" as const, label: "P&L" }] : []),
     ...(gstEnabled ? [{ id: "gstr" as const, label: "GSTR Export" }] : []),
     { id: "dayend", label: "Day-End" },
   ];
@@ -241,7 +242,7 @@ export function ReportsDashboard() {
       )}
 
       {/* --- P&L TAB --- */}
-      {tab === "pnl" && (
+      {canViewPnl && tab === "pnl" && (
         <>
           <StatStrip items={[
             { label: "Revenue", value: money(pnl?.revenue ?? 0), tone: "emerald" },

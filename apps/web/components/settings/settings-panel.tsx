@@ -188,46 +188,14 @@ export function SettingsPanel() {
         <div className="mb-3 text-sm font-semibold text-slate-950">Users</div>
         <div className="space-y-2">
           {(settings?.users ?? []).map((user) => (
-            <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
-              <div>
-                <div className="text-sm font-medium text-slate-950">{user.name}</div>
-                <div className="text-xs text-slate-500">
-                  {user.username ? `@${user.username} | ` : null}
-                  {user.email} | {user.role} | {user.isActive ? "Active" : "Inactive"}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <form className="flex gap-2" onSubmit={(event) => handleUsernameSubmit(event, user.id)}>
-                  <input
-                    name="username"
-                    className="h-9 w-40 rounded-md border border-border px-2 text-sm"
-                    defaultValue={user.username ?? ""}
-                    placeholder="Login username"
-                    required
-                  />
-                  <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" type="submit">
-                    Save username
-                  </button>
-                </form>
-                {role === "OWNER" || user.role === "STAFF" || user.role === "DELIVERY" ? (
-                  <>
-                    <select
-                      className="h-9 rounded-md border border-border px-2 text-sm"
-                      value={user.role}
-                      onChange={(event) => updateUser.mutate({ id: user.id, payload: { role: event.target.value } })}
-                    >
-                      {userRoleOptions.map((roleOption) => <option key={roleOption} value={roleOption}>{roleOption}</option>)}
-                    </select>
-                    <button
-                      className="h-9 rounded-md border border-border px-3 text-sm text-slate-700"
-                      onClick={() => updateUser.mutate({ id: user.id, payload: { isActive: !user.isActive } })}
-                    >
-                      {user.isActive ? "Deactivate" : "Activate"}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </div>
+            <UserRow
+              key={user.id}
+              user={user}
+              currentRole={role}
+              roleOptions={userRoleOptions}
+              onUsernameSubmit={handleUsernameSubmit}
+              onUpdate={(payload) => updateUser.mutate({ id: user.id, payload })}
+            />
           ))}
         </div>
         <form className="mt-4 grid gap-3 md:grid-cols-6" onSubmit={handleUserSubmit}>
@@ -280,6 +248,65 @@ function PasswordPanel() {
         <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2" disabled={mutation.isPending}>Change password</button>
       </form>
     </section>
+  );
+}
+
+function UserRow({
+  user,
+  currentRole,
+  roleOptions,
+  onUsernameSubmit,
+  onUpdate,
+}: Readonly<{
+  user: UserRecord;
+  currentRole: UserRecord["role"] | undefined;
+  roleOptions: string[];
+  onUsernameSubmit: (event: React.SyntheticEvent<HTMLFormElement>, userId: string) => void;
+  onUpdate: (payload: object) => void;
+}>) {
+  const canManageUser = currentRole === "OWNER" || user.role === "STAFF" || user.role === "DELIVERY";
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+      <div>
+        <div className="text-sm font-medium text-slate-950">{user.name}</div>
+        <div className="text-xs text-slate-500">
+          {user.username ? `@${user.username} | ` : null}
+          {user.email} | {user.role} | {user.isActive ? "Active" : "Inactive"}
+        </div>
+      </div>
+      {canManageUser ? (
+        <div className="flex flex-wrap gap-2">
+          <form className="flex gap-2" onSubmit={(event) => onUsernameSubmit(event, user.id)}>
+            <input
+              name="username"
+              className="h-9 w-40 rounded-md border border-border px-2 text-sm"
+              defaultValue={user.username ?? ""}
+              placeholder="Login username"
+              required
+            />
+            <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" type="submit">
+              Save username
+            </button>
+          </form>
+          <select
+            className="h-9 rounded-md border border-border px-2 text-sm"
+            value={user.role}
+            onChange={(event) => onUpdate({ role: event.target.value })}
+          >
+            {roleOptions.map((roleOption) => <option key={roleOption} value={roleOption}>{roleOption}</option>)}
+          </select>
+          <button
+            className="h-9 rounded-md border border-border px-3 text-sm text-slate-700"
+            onClick={() => onUpdate({ isActive: !user.isActive })}
+          >
+            {user.isActive ? "Deactivate" : "Activate"}
+          </button>
+        </div>
+      ) : (
+        <div className="rounded-md bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">Owner-only management</div>
+      )}
+    </div>
   );
 }
 

@@ -65,6 +65,11 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return handleDelivery(reply, () => service.optimizeRoutes(request.tenant, input));
   });
 
+  fastify.get("/api/delivery/:id", async (request, reply) => {
+    const params = deliveryIdParamsSchema.parse(request.params);
+    return handleDelivery(reply, () => service.getDelivery(request.tenant, params.id, getActor(request)));
+  });
+
   fastify.post("/api/delivery/:id/assign", async (request, reply) => {
     const params = deliveryIdParamsSchema.parse(request.params);
     const input = assignDeliverySchema.parse(request.body);
@@ -171,7 +176,10 @@ async function handleDelivery<T>(reply: FastifyReply, handler: () => Promise<T>)
     return await handler();
   } catch (error) {
     if (error instanceof DeliveryError) {
-      return reply.status(error.statusCode).send({ error: error.message });
+      return reply.status(error.statusCode).send({
+        error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
 
     throw error;

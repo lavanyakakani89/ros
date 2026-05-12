@@ -14,7 +14,7 @@
     "superadmin:seed": "tsx prisma/seed-superadmin.ts",
     "start": "node dist/apps/api/src/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit"
+    "test": "tsx src/plugins/rbac.spec.ts && tsc --noEmit"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
