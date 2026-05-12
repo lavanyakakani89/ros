@@ -1243,7 +1243,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="min-w-0 truncate">
-                        {product.name} <span className="text-slate-400">| Stock {decimalToNumber(product.currentStock).toFixed(3)}</span>
+                        {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
                       </span>
                       <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
                         {productMatchLabel(product, barcodeInput, productSearchMode)}
@@ -1730,6 +1730,20 @@ function productMatchLabel(product: ProductRecord, input: string, mode: ProductS
   if (sku && sku.includes(term)) return "SKU";
   if (normalizedName.includes(term)) return "Name";
   return PRODUCT_SEARCH_MODES.find((item) => item.value === mode)?.label ?? "Match";
+}
+
+function productSearchPrice(product: ProductRecord): string {
+  return `₹${decimalToNumber(product.sellingPrice).toFixed(2)}`;
+}
+
+function productSearchIdentifier(product: ProductRecord): string {
+  const barcode = product.barcode?.trim();
+  if (barcode) return `Barcode ${barcode}`;
+
+  const sku = product.sku?.trim();
+  if (sku) return `SKU ${sku}`;
+
+  return "No barcode";
 }
 
 function productSearchPlaceholder(mode: ProductSearchMode): string {
