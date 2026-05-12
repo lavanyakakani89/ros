@@ -129,19 +129,89 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   // Customer ledger — all invoices + payments for a customer
   fastify.get("/api/billing/customer-ledger/:customerId", async (request) => {
     const { customerId } = z.object({ customerId: z.string().min(1) }).parse(request.params);
+    const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
+    if (!customer) {
+      throw new BillingError("Customer not found", 404);
+    }
+
     const invoices = await fastify.prisma.invoice.findMany({
       where: { tenantId: request.tenant.id, customerId, status: { not: "CANCELLED" } },
-      include: { payments: true, items: { select: { productName: true, quantity: true, total: true } } },
-      orderBy: { invoiceDate: "desc" },
+      include: {
+        payments: { orderBy: { paidAt: "asc" } },
+        items: { select: { productName: true, quantity: true, total: true } },
+      },
+      orderBy: { invoiceDate: "asc" },
     });
-    const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
-    const totalBilled = invoices.reduce((s, i) => s + i.grandTotal.toNumber(), 0);
-    const totalPaid = invoices.reduce((s, i) => s + i.amountPaid.toNumber(), 0);
-    return { customer, invoices, totalBilled, totalPaid, outstandingDue: totalBilled - totalPaid };
+    const totalBilled = roundLedgerMoney(invoices.reduce((s, i) => s + i.grandTotal.toNumber(), 0));
+    const totalPaid = roundLedgerMoney(invoices.reduce((s, i) => s + i.amountPaid.toNumber(), 0));
+    const rawEntries: Array<{
+      id: string;
+      invoiceNumber: string;
+      date: Date;
+      type: "invoice" | "payment";
+      amount: number;
+      sortOrder: number;
+    }> = [];
+
+    for (const invoice of invoices) {
+      rawEntries.push({
+        id: `invoice-${invoice.id}`,
+        invoiceNumber: invoice.invoiceNumber,
+        date: invoice.invoiceDate,
+        type: "invoice",
+        amount: invoice.grandTotal.toNumber(),
+        sortOrder: 0,
+      });
+
+      for (const payment of invoice.payments) {
+        rawEntries.push({
+          id: `payment-${payment.id}`,
+          invoiceNumber: invoice.invoiceNumber,
+          date: payment.paidAt,
+          type: "payment",
+          amount: payment.amount.toNumber(),
+          sortOrder: 1,
+        });
+      }
+    }
+
+    rawEntries.sort((left, right) => {
+      const byDate = left.date.getTime() - right.date.getTime();
+      if (byDate !== 0) {
+        return byDate;
+      }
+
+      const bySortOrder = left.sortOrder - right.sortOrder;
+      if (bySortOrder !== 0) {
+        return bySortOrder;
+      }
+
+      return left.id.localeCompare(right.id);
+    });
+
+    let balance = 0;
+    const entries = rawEntries.map((entry) => {
+      balance = roundLedgerMoney(entry.type === "invoice" ? balance + entry.amount : balance - entry.amount);
+      return {
+        id: entry.id,
+        invoiceNumber: entry.invoiceNumber,
+        date: entry.date.toISOString(),
+        type: entry.type,
+        amount: roundLedgerMoney(entry.amount),
+        balance,
+      };
+    }).reverse();
+    const outstanding = roundLedgerMoney(totalBilled - totalPaid);
+
+    return { customer, invoices, totalBilled, totalPaid, outstanding, outstandingDue: outstanding, entries };
   });
 
   done();
 };
+
+function roundLedgerMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 async function handleBilling<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {
   try {
