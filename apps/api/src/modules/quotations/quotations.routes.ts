@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Prisma, QuotationStatus } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class QuotationError extends Error {
@@ -35,18 +36,30 @@ function calcItems(tenantId: string, quotationId: string, items: z.infer<typeof 
 
 export const quotationsRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.get("/api/quotations", async (request) => {
-    const { page, limit } = z.object({ page: z.coerce.number().default(1), limit: z.coerce.number().max(100).default(25) }).parse(request.query);
+    const query = z.object({
+      status: z.nativeEnum(QuotationStatus).optional(),
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(100).default(25),
+      from: z.coerce.date().optional(),
+      to: z.coerce.date().optional(),
+    }).parse(request.query);
+    const createdAt = dateRangeWhere(query.from, query.to);
+    const where: Prisma.QuotationWhereInput = {
+      tenantId: request.tenant.id,
+      ...(query.status ? { status: query.status } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    };
     const [total, data] = await Promise.all([
-      fastify.prisma.quotation.count({ where: { tenantId: request.tenant.id } }),
+      fastify.prisma.quotation.count({ where }),
       fastify.prisma.quotation.findMany({
-        where: { tenantId: request.tenant.id },
+        where,
         include: { customer: true, items: true },
         orderBy: { createdAt: "desc" },
-        skip: (page - 1) * limit,
-        take: limit,
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
       }),
     ]);
-    return { data, page, limit, total };
+    return { data, page: query.page, limit: query.limit, total };
   });
 
   fastify.post("/api/quotations", async (request, reply) => {
@@ -124,6 +137,14 @@ export const quotationsRoutes: FastifyPluginCallback = (fastify, _options, done)
 
   done();
 };
+
+function dateRangeWhere(from?: Date, to?: Date): Prisma.DateTimeFilter | undefined {
+  if (!from && !to) return undefined;
+  return {
+    ...(from ? { gte: from } : {}),
+    ...(to ? { lte: to } : {}),
+  };
+}
 
 async function handleError<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {
   try { return await handler(); }

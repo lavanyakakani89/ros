@@ -129,6 +129,12 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   // Customer ledger — all invoices + payments for a customer
   fastify.get("/api/billing/customer-ledger/:customerId", async (request) => {
     const { customerId } = z.object({ customerId: z.string().min(1) }).parse(request.params);
+    const query = z.object({
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(100).default(25),
+      from: z.coerce.date().optional(),
+      to: z.coerce.date().optional(),
+    }).parse(request.query);
     const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
     if (!customer) {
       throw new BillingError("Customer not found", 404);
@@ -138,7 +144,6 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       where: { tenantId: request.tenant.id, customerId, status: { not: "CANCELLED" } },
       include: {
         payments: { orderBy: { paidAt: "asc" } },
-        items: { select: { productName: true, quantity: true, total: true } },
       },
       orderBy: { invoiceDate: "asc" },
     });
@@ -201,9 +206,17 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         balance,
       };
     }).reverse();
+    const filteredEntries = entries.filter((entry) => {
+      const time = Date.parse(entry.date);
+      if (query.from && time < query.from.getTime()) return false;
+      if (query.to && time > query.to.getTime()) return false;
+      return true;
+    });
+    const total = filteredEntries.length;
+    const pagedEntries = filteredEntries.slice((query.page - 1) * query.limit, query.page * query.limit);
     const outstanding = roundLedgerMoney(totalBilled - totalPaid);
 
-    return { customer, invoices, totalBilled, totalPaid, outstanding, outstandingDue: outstanding, entries };
+    return { customer, totalBilled, totalPaid, outstanding, outstandingDue: outstanding, entries: pagedEntries, page: query.page, limit: query.limit, total };
   });
 
   done();

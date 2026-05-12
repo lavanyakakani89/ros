@@ -64,15 +64,50 @@ export class DeliveryRepository {
   }
 
   async listDeliveries(tenantId: string, query: DeliveryListQuery) {
+    const statusFilter = query.status
+      ? { equals: query.status }
+      : query.scope === "active"
+        ? { in: [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.OUT_FOR_DELIVERY] }
+        : query.scope === "archive"
+          ? { in: [DeliveryStatus.DELIVERED, DeliveryStatus.FAILED, DeliveryStatus.CANCELLED] }
+          : undefined;
+    const createdAt: Prisma.DateTimeFilter | undefined = query.from || query.to
+      ? {
+          ...(query.from ? { gte: query.from } : {}),
+          ...(query.to ? { lte: query.to } : {}),
+        }
+      : undefined;
+    const where: Prisma.DeliveryWhereInput = {
+      tenantId,
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(createdAt ? { createdAt } : {}),
+    };
+    const orderBy = { createdAt: Prisma.SortOrder.desc };
+
+    if (query.paginated) {
+      const [total, data] = await Promise.all([
+        this.prisma.delivery.count({ where }),
+        this.prisma.delivery.findMany({
+          where,
+          include: deliveryInclude,
+          orderBy,
+          skip: (query.page - 1) * query.limit,
+          take: query.limit,
+        }),
+      ]);
+
+      return {
+        data,
+        page: query.page,
+        limit: query.limit,
+        total,
+      };
+    }
+
     return this.prisma.delivery.findMany({
-      where: {
-        tenantId,
-        ...(query.status ? { status: query.status } : {}),
-      },
+      where,
       include: deliveryInclude,
-      orderBy: {
-        createdAt: "desc",
-      },
+      orderBy,
     });
   }
 

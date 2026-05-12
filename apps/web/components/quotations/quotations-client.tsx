@@ -2,10 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { createAuthenticatedApiClient, listAllProducts, type ProductRecord } from "@/lib/api-client";
+import { PaginationControls } from "@/components/shared/pagination-controls";
+import { createAuthenticatedApiClient, listProducts, type PaginatedResponse, type ProductRecord } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { getStoredTenant } from "@/lib/vertical-config";
 
 interface Quotation {
@@ -57,12 +59,27 @@ export function QuotationsClient() {
   const [terms, setTerms] = useState("");
   const [billDiscount, setBillDiscount] = useState(0);
   const [lines, setLines] = useState<QuoteLine[]>([]);
+  const [status, setStatus] = useState("");
+  const [from, setFrom] = useState(() => defaultFromDate(30));
+  const [to, setTo] = useState(() => todayDate());
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
 
   const quotationsQuery = useQuery({
-    queryKey: ["quotations"],
-    queryFn: () => createAuthenticatedApiClient().get<{ data: Quotation[] }>("/quotations"),
+    queryKey: ["quotations", status, from, to, page, pageSize],
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (status) params.set("status", status);
+      appendDateRange(params, from, to);
+      return createAuthenticatedApiClient().get<PaginatedResponse<Quotation>>(`/quotations?${params.toString()}`);
+    },
   });
-  const productsQuery = useQuery({ queryKey: ["products", "quotation-search"], queryFn: () => listAllProducts() });
+  const productSearchTerm = productSearch.trim();
+  const productsQuery = useQuery({
+    queryKey: ["products", "quotation-search", productSearchTerm],
+    queryFn: () => listProducts({ search: productSearchTerm, limit: 8 }),
+    enabled: productSearchTerm.length > 0,
+  });
   const customersQuery = useQuery({
     queryKey: ["customers", "quotations", customerSearch],
     enabled: customerSearch.trim().length >= 2,
@@ -110,6 +127,9 @@ export function QuotationsClient() {
       )
       .slice(0, 8);
   }, [productSearch, products]);
+  useEffect(() => {
+    setPage(1);
+  }, [status, from, to]);
   const totals = useMemo(() => calculateTotals(lines, billDiscount, gstEnabled), [billDiscount, gstEnabled, lines]);
   const error = createQuotation.error ?? createCustomer.error ?? quotationsQuery.error;
 
@@ -121,12 +141,17 @@ export function QuotationsClient() {
     }
     if (event.key !== "Enter" || !productSearch.trim()) return;
     event.preventDefault();
-    const code = productSearch.trim();
-    const exact = products.find((product) => product.barcode === code || product.sku === code);
-    const product = exact ?? productResults[0];
-    if (product) {
-      addProduct(product);
+    void addFirstProductResult(productSearch.trim());
+  }
+
+  async function addFirstProductResult(term: string) {
+    let candidates = productResults;
+    if (candidates.length === 0) {
+      candidates = (await listProducts({ search: term, limit: 8 })).data;
     }
+    const exact = candidates.find((product) => product.barcode === term || product.sku === term);
+    const product = exact ?? candidates[0];
+    if (product) addProduct(product);
   }
 
   function addProduct(product: ProductRecord) {
@@ -361,7 +386,17 @@ export function QuotationsClient() {
       ) : null}
 
       <div className="rounded-md border border-border bg-white">
-        <div className="border-b border-border px-4 py-3 text-sm font-semibold text-slate-950">Quotations</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold text-slate-950">Quotations</div>
+          <div className="flex flex-wrap gap-2">
+            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm" />
+            <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 rounded-md border border-border px-2 text-sm">
+              <option value="">All statuses</option>
+              {["DRAFT", "SENT", "ACCEPTED", "REJECTED", "CONVERTED", "EXPIRED"].map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </div>
+        </div>
         {quotations.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">No quotations yet.</div>
         ) : (
@@ -403,6 +438,7 @@ export function QuotationsClient() {
             </table>
           </div>
         )}
+        <PaginationControls page={page} limit={pageSize} total={quotationsQuery.data?.total ?? 0} onPageChange={setPage} />
       </div>
     </div>
   );

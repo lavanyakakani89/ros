@@ -16,6 +16,12 @@ export interface CreateDeliveryInput {
 
 export interface DeliveryListQuery {
   status?: DeliveryStatus | undefined;
+  scope?: "active" | "archive" | undefined;
+  paginated: boolean;
+  page: number;
+  limit: number;
+  from?: Date | undefined;
+  to?: Date | undefined;
 }
 
 export interface DeliveryIdParams {

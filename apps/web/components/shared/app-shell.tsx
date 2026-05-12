@@ -146,7 +146,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         const api = createAuthenticatedApiClient();
         const [inventory, deliveries, invoices] = await Promise.all([
           api.get<{ lowStockCount: number }>("/reports/inventory"),
-          api.get<Array<{ status: string }>>("/delivery"),
+          api.get<Array<{ status: string }>>("/delivery?scope=active"),
           api.get<{ data: Array<{ amountDue?: string | number; status?: string }> }>("/billing/invoices?unpaid=true&limit=100"),
         ]);
         const deliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
