@@ -5,6 +5,10 @@ export interface ProductListQuery {
   lowStock?: boolean | undefined;
 }
 
+export interface ProductLookupQuery {
+  code: string;
+}
+
 export interface ProductIdParams {
   id: string;
 }

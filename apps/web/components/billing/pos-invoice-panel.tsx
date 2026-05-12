@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
@@ -242,7 +242,19 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const cgst = taxTotals.cgst;
     const sgst = taxTotals.sgst;
     const grandTotal = taxTotals.grandTotal;
-    return { subtotal: roundMoney(subtotal), lineDiscount: roundMoney(lineDiscount), billLevelDiscount, discount: roundMoney(lineDiscount + billLevelDiscount), cgst, sgst, grandTotal };
+    const totalItems = lines.filter((line) => line.productId).length;
+    const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
+    return {
+      subtotal: roundMoney(subtotal),
+      lineDiscount: roundMoney(lineDiscount),
+      billLevelDiscount,
+      discount: roundMoney(lineDiscount + billLevelDiscount),
+      cgst,
+      sgst,
+      grandTotal,
+      totalItems,
+      totalQuantity: roundQuantity(totalQuantity),
+    };
   }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled]);
   const changeDue = selectedPaymentMode === "CASH" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
 
@@ -504,6 +516,19 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const codeLower = code.toLowerCase();
     const search = buildProductSearchTerm(input);
     let candidates = productResults;
+
+    try {
+      const exactProduct = await lookupProductByCode(code);
+      if (exactProduct) {
+        insertProduct(exactProduct);
+        setBarcodeInput("");
+        return;
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Product lookup failed", "red");
+      return;
+    }
+
     if (candidates.length === 0 || !candidates.some((item) => exactProductIdentifierMatch(item, codeLower))) {
       try {
         const fetched = await listProducts({ search: search.value, limit: 8 });
@@ -980,10 +1005,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   function removeBillingLine(lineId: string) {
     removeLine(lineId);
-    setQuantityDrafts((current) => {
-      const { [lineId]: _removed, ...rest } = current;
-      return rest;
-    });
+    setQuantityDrafts((current) => withoutRecordKey(current, lineId));
   }
 
   function handleQuantityChange(lineId: string, rawValue: string) {
@@ -1001,10 +1023,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
 
     setLine(lineId, { quantity: normalizeBillingQuantity(rawValue, currentQuantity) });
-    setQuantityDrafts((current) => {
-      const { [lineId]: _removed, ...rest } = current;
-      return rest;
-    });
+    setQuantityDrafts((current) => withoutRecordKey(current, lineId));
   }
 
   function dismissBillPreview() {
@@ -1058,6 +1077,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <Receipt className="size-4 text-emerald-700" aria-hidden="true" />
             {editingInvoice ? `Editing ${editingInvoice.invoiceNumber}` : "POS invoice"}
             {editingInvoice ? <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">{editingInvoice.status}</span> : null}
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+              {totals.totalItems} item{totals.totalItems === 1 ? "" : "s"} | Qty {formatQuantityInput(totals.totalQuantity)}
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -1227,9 +1249,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           </div>
         ) : null}
 
-        <div className="overflow-x-auto">
+        <div className="max-h-[46vh] overflow-auto">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
               <tr>
                 <th className="px-3 py-3 font-medium">Product</th>
                 <th className="px-3 py-3 font-medium">Qty</th>
@@ -1316,6 +1338,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       <aside className="rounded-md border border-border bg-white p-4">
         <div className="text-sm font-semibold text-slate-950">Bill summary</div>
         <div className="mt-4 grid gap-2 text-sm">
+          <SummaryTextRow label="Total items" value={String(totals.totalItems)} />
+          <SummaryTextRow label="Total quantity" value={formatQuantityInput(totals.totalQuantity)} />
           <SummaryRow label="Subtotal" value={totals.subtotal} />
           <SummaryRow label="Line discount" value={-totals.lineDiscount} />
           <SummaryRow label="Bill discount" value={-totals.billLevelDiscount} />
@@ -1578,6 +1602,15 @@ function SummaryRow({ label, value }: Readonly<{ label: string; value: number }>
   );
 }
 
+function SummaryTextRow({ label, value }: Readonly<{ label: string; value: string }>) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-slate-500">{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
 interface ProductSearchTerm {
   value: string;
   tokens: string[];
@@ -1700,6 +1733,10 @@ function mergeProducts(...groups: ProductRecord[][]): ProductRecord[] {
   return [...byId.values()];
 }
 
+function withoutRecordKey<T>(record: Record<string, T>, keyToRemove: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== keyToRemove));
+}
+
 function normalizeBillingQuantity(value: string, fallback = 1): number {
   const quantity = Number(value);
   if (!Number.isFinite(quantity) || quantity <= 0) return fallback > 0 ? fallback : 1;
@@ -1708,6 +1745,10 @@ function normalizeBillingQuantity(value: string, fallback = 1): number {
 
 function formatQuantityInput(value: number): string {
   return Number.isInteger(value) ? String(value) : String(value);
+}
+
+function roundQuantity(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function lineTotal(line: { quantity: number; sellingPrice: number; discount: number; gstRate: number }, gstEnabled = true): number {

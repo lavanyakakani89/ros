@@ -13,6 +13,10 @@ export const productListQuerySchema = z.object({
   lowStock: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
 });
 
+export const productLookupQuerySchema = z.object({
+  code: z.string().trim().min(1),
+});
+
 const productSchema = z.object({
   name: z.string().trim().min(1),
   sku: z.string().trim().min(1),

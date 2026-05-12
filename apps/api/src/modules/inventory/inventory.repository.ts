@@ -102,6 +102,24 @@ export class InventoryRepository {
     });
   }
 
+  async findProductByCode(tenantId: string, code: string) {
+    const trimmedCode = code.trim();
+    return this.prisma.product.findFirst({
+      where: {
+        tenantId,
+        isActive: true,
+        OR: [
+          { barcode: { equals: trimmedCode, mode: "insensitive" } },
+          { sku: { equals: trimmedCode, mode: "insensitive" } },
+        ],
+      },
+      orderBy: [
+        { updatedAt: "desc" },
+        { id: "asc" },
+      ],
+    });
+  }
+
   async updateProduct(tenantId: string, productId: string, input: UpdateProductInput) {
     return this.prisma.product.updateMany({
       where: {

@@ -10,6 +10,7 @@ import {
   expiringQuerySchema,
   productIdParamsSchema,
   productListQuerySchema,
+  productLookupQuerySchema,
   stockAdjustmentSchema,
   updateProductSchema,
 } from "./inventory.schema.js";
@@ -45,6 +46,11 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
       const buffer = await file.toBuffer();
       return importProducts(fastify, request.tenant, buffer);
     });
+  });
+
+  fastify.get("/api/inventory/products/lookup", async (request, reply) => {
+    const query = productLookupQuerySchema.parse(request.query);
+    return handleInventory(reply, () => service.lookupProduct(request.tenant, query));
   });
 
   fastify.get("/api/inventory/products/expiring", async (request, reply) => {

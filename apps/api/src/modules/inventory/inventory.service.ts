@@ -2,7 +2,7 @@ import type { Tenant, UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { InventoryRepository } from "./inventory.repository.js";
-import type { AddBatchInput, CreateProductInput, ProductListQuery, StockAdjustmentInput, UpdateProductInput } from "./inventory.types.js";
+import type { AddBatchInput, CreateProductInput, ProductListQuery, ProductLookupQuery, StockAdjustmentInput, UpdateProductInput } from "./inventory.types.js";
 
 export class InventoryError extends Error {
   constructor(
@@ -26,6 +26,15 @@ export class InventoryService {
 
   listProducts(tenant: Tenant, query: ProductListQuery) {
     return this.repository.listProducts(tenant.id, query);
+  }
+
+  async lookupProduct(tenant: Tenant, query: ProductLookupQuery) {
+    const product = await this.repository.findProductByCode(tenant.id, query.code);
+    if (!product) {
+      throw new InventoryError("Product not found", 404);
+    }
+
+    return product;
   }
 
   async updateProduct(tenant: Tenant, productId: string, input: UpdateProductInput) {
