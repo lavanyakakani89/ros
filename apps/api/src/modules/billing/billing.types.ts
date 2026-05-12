@@ -35,6 +35,7 @@ export interface InvoiceListQuery {
   page: number;
   limit: number;
   status?: string | undefined;
+  unpaid: boolean;
   customerId?: string | undefined;
   search?: string | undefined;
   from?: Date | undefined;

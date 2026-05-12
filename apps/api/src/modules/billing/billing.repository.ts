@@ -100,6 +100,16 @@ export class BillingRepository {
   async listInvoices(tenantId: string, query: InvoiceListQuery) {
     const where: Prisma.InvoiceWhereInput = {
       tenantId,
+      ...(query.unpaid
+        ? {
+            amountDue: {
+              gt: 0,
+            },
+            status: {
+              notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED],
+            },
+          }
+        : {}),
       ...(query.status ? { status: query.status as InvoiceStatus } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.from || query.to

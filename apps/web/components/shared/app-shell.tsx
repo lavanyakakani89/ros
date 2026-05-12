@@ -119,7 +119,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         const [inventory, deliveries, invoices] = await Promise.all([
           api.get<{ lowStockCount: number }>("/reports/inventory"),
           api.get<Array<{ status: string }>>("/delivery"),
-          api.get<{ data: Array<{ amountDue?: string | number; status?: string }> }>("/billing/invoices?limit=100"),
+          api.get<{ data: Array<{ amountDue?: string | number; status?: string }> }>("/billing/invoices?unpaid=true&limit=100"),
         ]);
         const deliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
         const outstandingCount = invoices.data.filter((invoice) => Number(invoice.amountDue ?? 0) > 0 || invoice.status === "PARTIAL").length;
