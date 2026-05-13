@@ -6,6 +6,7 @@ import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastif
 import { WhatsappIntegrationError, WhatsappService, type InboundWhatsappMessage } from "./whatsapp.service.js";
 import {
   whatsappEmbeddedSignupCompleteSchema,
+  whatsappMessageTemplatesSchema,
   whatsappOrdersQuerySchema,
   whatsappPasteOrderSchema,
   whatsappTenantParamsSchema,
@@ -89,6 +90,15 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
   fastify.get("/api/whatsapp/embedded-signup/config", (request) => {
     return service.getEmbeddedSignupConfig(request.tenant);
+  });
+
+  fastify.get("/api/whatsapp/message-templates", async (request, reply) => {
+    return handleWhatsapp(reply, () => service.getMessageTemplates(request.tenant));
+  });
+
+  fastify.put("/api/whatsapp/message-templates", async (request, reply) => {
+    const input = whatsappMessageTemplatesSchema.parse(request.body);
+    return handleWhatsapp(reply, () => service.updateMessageTemplates(request.tenant, request.user, input));
   });
 
   fastify.post("/api/whatsapp/embedded-signup/complete", async (request, reply) => {

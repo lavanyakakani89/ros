@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { getEffectiveTemplate, printInvoiceForTenant } from "../printer/printer.service.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 export class BillingError extends Error {
   constructor(
@@ -243,12 +244,15 @@ export class BillingService {
       this.fastify.log.error({ error, invoiceId: invoice.id, tenantId: tenant.id }, "Failed to generate WhatsApp invoice PDF");
       return null;
     });
-    const pdfLine = pdf?.downloadUrl ? `\nInvoice: ${pdf.downloadUrl}` : "";
-    const message = [
-      `Hi ${invoice.customer.name}, your order ${invoice.invoiceNumber} from ${tenant.name} is confirmed.`,
-      `Total: ₹${invoice.grandTotal.toNumber().toFixed(2)}.`,
-      pdfLine,
-    ].join(" ").replace(/\s+\n/g, "\n").trim();
+    const message = await renderWhatsappMessageTemplate(this.fastify, tenant.id, "invoiceReady", {
+      customerName: invoice.customer.name,
+      tenantName: tenant.name,
+      invoiceNumber: invoice.invoiceNumber,
+      grandTotal: moneyForWhatsapp(invoice.grandTotal),
+      paymentMode: invoice.paymentMode,
+      itemsBlock: formatInvoiceItemsForWhatsapp(invoice.items),
+      pdfLine: pdf?.downloadUrl ? `Invoice: ${pdf.downloadUrl}` : "",
+    });
 
     if (whatsappOrderId) {
       await this.fastify.prisma.whatsappOrder.updateMany({
@@ -273,6 +277,21 @@ export class BillingService {
     });
   }
 
+}
+
+function formatInvoiceItemsForWhatsapp(items: Array<{ productName: string; quantity: { toNumber(): number }; total: { toNumber(): number } }>): string {
+  if (items.length === 0) {
+    return "";
+  }
+
+  return [
+    "Items:",
+    ...items.slice(0, 8).map((item) => `- ${item.productName} x ${formatQuantityForWhatsapp(item.quantity.toNumber())} = ₹${moneyForWhatsapp(item.total)}`),
+  ].join("\n");
+}
+
+function formatQuantityForWhatsapp(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
 
 function invoicePdfViewUrl(invoiceId: string): string {

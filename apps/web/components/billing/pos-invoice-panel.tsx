@@ -11,7 +11,7 @@ import { useBillingStore } from "@/lib/billing-store";
 import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
 import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
-import { formatInvoiceWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
+import { fetchWhatsappMessageTemplates, formatInvoiceWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 const PAYMENT_SHORTCUTS = [
   { mode: "CASH", key: "1", displayKey: "Ctrl+1", label: "Cash" },
@@ -201,6 +201,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const printerQuery = useQuery({
     queryKey: ["printer", "billing"],
     queryFn: () => createAuthenticatedApiClient().get<PrinterResponse>("/printer"),
+  });
+  const whatsappTemplatesQuery = useQuery({
+    queryKey: ["whatsapp-message-templates"],
+    queryFn: fetchWhatsappMessageTemplates,
+    staleTime: 60_000,
   });
   const products = knownProducts;
   const customerResults = useMemo(
@@ -897,6 +902,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         tenantName: getStoredTenant()?.name ?? "RetailOS",
         customerName: lastBill.customer.name,
         items: lastBill.lines,
+        templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady"),
       }),
     );
     notify(opened ? "WhatsApp opened with invoice message." : "Customer phone number is invalid for WhatsApp.", opened ? "green" : "red");
