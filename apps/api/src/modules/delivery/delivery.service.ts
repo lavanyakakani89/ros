@@ -8,6 +8,7 @@ import { stripDeliveryFinancials, stripRouteFinancials } from "./delivery.saniti
 import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, DeliveryLocationPingInput, DeliveryMobileSyncInput, OptimizeDeliveryRoutesInput, UpdateDeliveryLocationInput, UpdateDeliveryStatusInput } from "./delivery.types.js";
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 export interface DeliveryActor {
   userId: string;
@@ -298,13 +299,20 @@ export class DeliveryService {
     });
 
     if (user?.phone) {
+      const message = await renderWhatsappMessageTemplate(this.fastify, tenant.id, "deliveryAssigned", {
+        invoiceNumber: delivery.invoice.invoiceNumber,
+        customerName: delivery.customer.name,
+        grandTotal: moneyForWhatsapp(delivery.invoice.grandTotal),
+        deliveryAddress: delivery.deliveryAddress,
+      });
+
       await queueWhatsappNotification(this.fastify, {
         tenantId: tenant.id,
         phone: user.phone,
         invoiceId: delivery.invoiceId,
         deliveryId: delivery.id,
         jobName: "delivery-assigned",
-        message: `RetailOS: delivery assigned for ${delivery.invoice.invoiceNumber}. Customer: ${delivery.customer.name}. Amount: ₹${delivery.invoice.grandTotal.toNumber().toFixed(2)}. Address: ${delivery.deliveryAddress}`,
+        message,
       });
     }
   }
@@ -323,9 +331,14 @@ export class DeliveryService {
     }
 
     const label = status === DeliveryStatus.OUT_FOR_DELIVERY ? "out for delivery" : "delivered";
-    const message = status === DeliveryStatus.OUT_FOR_DELIVERY
-      ? `Hi ${delivery.customer.name}, your order ${delivery.invoice.invoiceNumber} from ${tenant.name} is out for delivery.`
-      : `Hi ${delivery.customer.name}, your order ${delivery.invoice.invoiceNumber} from ${tenant.name} has been delivered. Thank you.`;
+    const templateKey = status === DeliveryStatus.OUT_FOR_DELIVERY ? "deliveryOutForDelivery" : "deliveryDelivered";
+    const message = await renderWhatsappMessageTemplate(this.fastify, tenant.id, templateKey, {
+      customerName: delivery.customer.name,
+      tenantName: tenant.name,
+      invoiceNumber: delivery.invoice.invoiceNumber,
+      grandTotal: moneyForWhatsapp(delivery.invoice.grandTotal),
+      deliveryAddress: delivery.deliveryAddress,
+    });
 
     await queueWhatsappNotification(this.fastify, {
       tenantId: tenant.id,

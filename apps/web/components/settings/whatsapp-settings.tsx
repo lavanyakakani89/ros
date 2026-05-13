@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Loader2, MessageCircle, Send, Unplug } from "lucide-react";
-import { useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, MessageCircle, Save, Send, Unplug } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { fetchWhatsappMessageTemplates, type WhatsappMessageTemplate, type WhatsappMessageTemplatesResponse } from "@/lib/whatsapp";
 
 interface WhatsappIntegrationResponse {
   status: "NOT_CONNECTED" | "PENDING" | "CONNECTED" | "DISCONNECTED" | "ERROR";
@@ -69,6 +70,11 @@ export function WhatsappSettings() {
     queryKey: ["whatsapp-embedded-config"],
     queryFn: () => createAuthenticatedApiClient().get<EmbeddedSignupConfigResponse>("/whatsapp/embedded-signup/config"),
   });
+  const templatesQuery = useQuery({
+    queryKey: ["whatsapp-message-templates"],
+    queryFn: fetchWhatsappMessageTemplates,
+  });
+  const [templateDrafts, setTemplateDrafts] = useState<Record<string, string>>({});
   const completeSignup = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post<WhatsappIntegrationResponse & { warnings?: string[] }>("/whatsapp/embedded-signup/complete", payload),
     onSuccess: async (result) => {
@@ -88,10 +94,27 @@ export function WhatsappSettings() {
     mutationFn: (payload: { phone: string }) => createAuthenticatedApiClient().post("/whatsapp/integration/test", payload),
     onSuccess: () => setMessage("Test message queued."),
   });
+  const saveTemplates = useMutation({
+    mutationFn: (payload: { templates: Array<{ key: string; body: string }> }) =>
+      createAuthenticatedApiClient().put<WhatsappMessageTemplatesResponse>("/whatsapp/message-templates", payload),
+    onSuccess: async (result) => {
+      setMessage("WhatsApp message templates saved.");
+      queryClient.setQueryData(["whatsapp-message-templates"], result);
+      await queryClient.invalidateQueries({ queryKey: ["whatsapp-message-templates"] });
+    },
+  });
+
+  useEffect(() => {
+    if (!templatesQuery.data) {
+      return;
+    }
+
+    setTemplateDrafts(Object.fromEntries(templatesQuery.data.templates.map((template) => [template.key, template.body])));
+  }, [templatesQuery.data]);
 
   const integration = integrationQuery.data;
   const config = configQuery.data;
-  const error = integrationQuery.error ?? configQuery.error ?? completeSignup.error ?? disconnect.error ?? sendTest.error;
+  const error = integrationQuery.error ?? configQuery.error ?? templatesQuery.error ?? completeSignup.error ?? disconnect.error ?? sendTest.error ?? saveTemplates.error;
 
   async function handleConnect() {
     if (!config?.isConfigured || !config.appId || !config.configurationId) {
@@ -176,6 +199,22 @@ export function WhatsappSettings() {
 
     setMessage(null);
     sendTest.mutate({ phone: testPhone.trim() });
+  }
+
+  function handleTemplatesSubmit(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const templates = (templatesQuery.data?.templates ?? []).map((template) => ({
+      key: template.key,
+      body: templateDrafts[template.key] ?? template.body,
+    }));
+    saveTemplates.mutate({ templates });
+  }
+
+  function resetTemplate(template: WhatsappMessageTemplate) {
+    setTemplateDrafts((current) => ({
+      ...current,
+      [template.key]: template.defaultBody,
+    }));
   }
 
   return (
@@ -265,6 +304,53 @@ export function WhatsappSettings() {
             {sendTest.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Send className="size-4" aria-hidden="true" />}
             Send test
           </button>
+        </form>
+      </section>
+
+      <section className="rounded-md border border-border bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Message templates</div>
+            <div className="mt-1 text-xs text-slate-500">Used by invoices, payment reminders, delivery updates, and automated WhatsApp messages.</div>
+          </div>
+          <button
+            type="submit"
+            form="whatsapp-message-template-form"
+            disabled={saveTemplates.isPending || templatesQuery.isLoading}
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saveTemplates.isPending ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
+            Save templates
+          </button>
+        </div>
+        <form id="whatsapp-message-template-form" className="mt-4 grid gap-4 lg:grid-cols-2" onSubmit={handleTemplatesSubmit}>
+          {(templatesQuery.data?.templates ?? []).map((template) => (
+            <div key={template.key} className="rounded-md border border-slate-200 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <label className="text-sm font-semibold text-slate-950" htmlFor={`whatsapp-template-${template.key}`}>{template.label}</label>
+                  <div className="mt-1 text-xs text-slate-500">{template.description}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => resetTemplate(template)}
+                  className="h-8 rounded-md border border-border px-2 text-xs font-medium text-slate-600"
+                >
+                  Reset
+                </button>
+              </div>
+              <textarea
+                id={`whatsapp-template-${template.key}`}
+                value={templateDrafts[template.key] ?? template.body}
+                onChange={(event) => setTemplateDrafts((current) => ({ ...current, [template.key]: event.target.value }))}
+                className="mt-3 min-h-32 w-full rounded-md border border-border px-3 py-2 text-sm text-slate-900 outline-none focus:border-emerald-600"
+              />
+              <div className="mt-2 text-xs text-slate-500">
+                Placeholders: {template.placeholders.map((placeholder) => `{{${placeholder}}}`).join(", ")}
+              </div>
+            </div>
+          ))}
+          {templatesQuery.isLoading ? <div className="text-sm text-slate-500">Loading message templates...</div> : null}
         </form>
       </section>
 

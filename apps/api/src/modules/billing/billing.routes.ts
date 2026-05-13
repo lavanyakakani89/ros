@@ -4,6 +4,7 @@ import type { FastifyPluginCallback, FastifyReply } from "fastify";
 import { BillingError, BillingService } from "./billing.service.js";
 import { createInvoiceSchema, invoiceIdParamsSchema, invoiceListQuerySchema, updateInvoiceSchema } from "./billing.schema.js";
 import { whatsappNotifyQueue } from "../../jobs/whatsapp-notify.job.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new BillingService(fastify);
@@ -107,7 +108,15 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       const pdf = invoice.pdfUrl
         ? await service.getInvoicePdfUrl(request.tenant, params.id)
         : await service.generateInvoicePdf(request.tenant, params.id);
-      const message = `Hi ${customer.name}, your invoice ${invoice.invoiceNumber} from ${request.tenant.name} is ready. Download: ${pdf.downloadUrl}`;
+      const message = await renderWhatsappMessageTemplate(fastify, request.tenant.id, "invoiceReady", {
+        customerName: customer.name,
+        tenantName: request.tenant.name,
+        invoiceNumber: invoice.invoiceNumber,
+        grandTotal: moneyForWhatsapp(invoice.grandTotal),
+        paymentMode: invoice.paymentMode,
+        itemsBlock: formatInvoiceItemsForWhatsapp(invoice.items),
+        pdfLine: `Download: ${pdf.downloadUrl}`,
+      });
 
       await whatsappNotifyQueue.add("invoice-share", { tenantId: request.tenant.id, phone: customer.phone, message });
       return { status: "queued", channel: input.channel };
@@ -120,7 +129,15 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       const { customerId, pdfUrl } = z.object({ customerId: z.string().min(1), pdfUrl: z.string().url() }).parse(request.body);
       const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
       if (!customer) throw new BillingError("Customer not found", 404);
-      const message = `Hi ${customer.name}, your invoice from ${request.tenant.name} is ready. Download: ${pdfUrl}`;
+      const message = await renderWhatsappMessageTemplate(fastify, request.tenant.id, "invoiceReady", {
+        customerName: customer.name,
+        tenantName: request.tenant.name,
+        invoiceNumber: "invoice",
+        grandTotal: moneyForWhatsapp(0),
+        paymentMode: "-",
+        itemsBlock: "",
+        pdfLine: `Download: ${pdfUrl}`,
+      });
       await whatsappNotifyQueue.add("invoice-share", { tenantId: request.tenant.id, phone: customer.phone, message });
       return { status: "queued" };
     });
@@ -224,6 +241,21 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
 function roundLedgerMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function formatInvoiceItemsForWhatsapp(items: Array<{ productName: string; quantity: { toNumber(): number }; total: { toNumber(): number } }>): string {
+  if (items.length === 0) {
+    return "";
+  }
+
+  return [
+    "Items:",
+    ...items.slice(0, 8).map((item) => `- ${item.productName} x ${formatQuantityForWhatsapp(item.quantity.toNumber())} = ₹${moneyForWhatsapp(item.total)}`),
+  ].join("\n");
+}
+
+function formatQuantityForWhatsapp(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
 
 async function handleBilling<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {

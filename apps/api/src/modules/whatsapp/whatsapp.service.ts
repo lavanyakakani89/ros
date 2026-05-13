@@ -4,7 +4,8 @@ import type { FastifyInstance } from "fastify";
 import { BillingService } from "../billing/billing.service.js";
 import { encryptWhatsappToken } from "./whatsapp.credentials.js";
 import { normalizeWhatsappPhone, queueWhatsappNotification } from "./whatsapp.notifications.js";
-import type { WhatsappEmbeddedSignupCompleteInput, WhatsappOrdersQuery, WhatsappPasteOrderInput, WhatsappTestMessageInput } from "./whatsapp.schema.js";
+import type { WhatsappEmbeddedSignupCompleteInput, WhatsappMessageTemplatesInput, WhatsappOrdersQuery, WhatsappPasteOrderInput, WhatsappTestMessageInput } from "./whatsapp.schema.js";
+import { getWhatsappMessageTemplates, renderWhatsappMessageTemplate, saveWhatsappMessageTemplates } from "./whatsapp.templates.js";
 
 export interface InboundWhatsappMessage {
   provider: string;
@@ -251,6 +252,15 @@ export class WhatsappService {
     return toIntegrationResponse(integration);
   }
 
+  getMessageTemplates(tenant: Tenant) {
+    return getWhatsappMessageTemplates(this.fastify, tenant.id);
+  }
+
+  updateMessageTemplates(tenant: Tenant, currentUser: { role: UserRole }, input: WhatsappMessageTemplatesInput) {
+    ensureManager(currentUser.role);
+    return saveWhatsappMessageTemplates(this.fastify, tenant.id, input.templates);
+  }
+
   getEmbeddedSignupConfig(tenant: Tenant) {
     const appId = process.env.WHATSAPP_EMBEDDED_APP_ID ?? process.env.META_APP_ID ?? null;
     const configurationId = process.env.WHATSAPP_EMBEDDED_CONFIG_ID ?? process.env.WHATSAPP_CONFIGURATION_ID ?? null;
@@ -395,7 +405,9 @@ export class WhatsappService {
     await queueWhatsappNotification(this.fastify, {
       tenantId: tenant.id,
       phone: input.phone,
-      message: `RetailOS WhatsApp test from ${tenant.name}. If you received this, WhatsApp Business is connected.`,
+      message: await renderWhatsappMessageTemplate(this.fastify, tenant.id, "whatsappTest", {
+        tenantName: tenant.name,
+      }),
       jobName: "whatsapp-test",
     });
 

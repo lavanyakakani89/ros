@@ -9,7 +9,7 @@ import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { appendDateRange, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
-import { formatDeliveryWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
+import { fetchWhatsappMessageTemplates, formatDeliveryWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 
@@ -75,6 +75,12 @@ export function DeliveryBoard() {
     enabled: hasSession,
     staleTime: 60_000,
   });
+  const whatsappTemplatesQuery = useQuery({
+    queryKey: ["whatsapp-message-templates"],
+    queryFn: fetchWhatsappMessageTemplates,
+    enabled: hasSession,
+    staleTime: 60_000,
+  });
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
@@ -96,6 +102,7 @@ export function DeliveryBoard() {
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
 
   function shareDeliveryUpdate(delivery: DeliveryItem) {
+    const templateKey = delivery.status === "DELIVERED" ? "deliveryDelivered" : "deliveryOutForDelivery";
     openWhatsappMessage(
       delivery.customer?.phone,
       formatDeliveryWhatsappMessage({
@@ -105,6 +112,7 @@ export function DeliveryBoard() {
         grandTotal: delivery.invoice?.grandTotal,
         status: delivery.status,
         address: delivery.deliveryAddress,
+        templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, templateKey),
       }),
     );
   }

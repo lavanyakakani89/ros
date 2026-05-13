@@ -66,6 +66,7 @@ model Tenant {
   appNotifications   AppNotification[]
   deliveryProofs     DeliveryProof[]
   whatsappIntegration WhatsappIntegration?
+  whatsappMessageTemplates WhatsappMessageTemplate[]
 
   @@map("tenants")
 }
@@ -491,6 +492,20 @@ model WhatsappOrder {
   @@index([tenantId, status, createdAt])
   @@index([tenantId, phone])
   @@map("whatsapp_orders")
+}
+
+model WhatsappMessageTemplate {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  key       String   @map("template_key")
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("whatsapp_message_templates")
 }
 
 enum PaperSize {

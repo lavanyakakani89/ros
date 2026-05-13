@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
-import { formatInvoiceRecordWhatsappMessage, openWhatsappMessage } from "@/lib/whatsapp";
+import { fetchWhatsappMessageTemplates, formatInvoiceRecordWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 export interface InvoiceRecord {
   id: string;
@@ -92,6 +92,11 @@ export function InvoiceHistory({
     queryKey: ["invoices", query],
     queryFn: () => createAuthenticatedApiClient().get<InvoiceListResponse>(`/billing/invoices?${query}`),
   });
+  const whatsappTemplatesQuery = useQuery({
+    queryKey: ["whatsapp-message-templates"],
+    queryFn: fetchWhatsappMessageTemplates,
+    staleTime: 60_000,
+  });
   const cancelInvoice = useMutation({
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/billing/invoices/${id}/cancel`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["invoices"] }),
@@ -125,7 +130,7 @@ export function InvoiceHistory({
 
     const opened = openWhatsappMessage(
       invoice.customer.phone,
-      formatInvoiceRecordWhatsappMessage(invoice, getStoredTenant()?.name ?? "RetailOS"),
+      formatInvoiceRecordWhatsappMessage(invoice, getStoredTenant()?.name ?? "RetailOS", getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady")),
     );
     if (!opened) {
       setActionError("Customer phone number is invalid for WhatsApp.");

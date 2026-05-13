@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Save } from "lucide-react";
+import { MessageCircle, Save } from "lucide-react";
 
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
+import { getStoredTenant } from "@/lib/vertical-config";
+import { fetchWhatsappMessageTemplates, formatPaymentReminderWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 interface PaymentRecord {
   id: string;
@@ -54,6 +56,7 @@ export function PaymentsClient() {
   const [rangePreset, setRangePreset] = useState<PaymentRangePreset>("TODAY");
   const [customFrom, setCustomFrom] = useState(todayInput);
   const [customTo, setCustomTo] = useState(todayInput);
+  const [actionMessage, setActionMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const paymentRange = useMemo(
     () => getPaymentRange(rangePreset, customFrom, customTo),
     [customFrom, customTo, rangePreset],
@@ -71,6 +74,11 @@ export function PaymentsClient() {
   const duesQuery = useQuery({
     queryKey: ["due-invoices"],
     queryFn: listAllDueInvoices,
+  });
+  const whatsappTemplatesQuery = useQuery({
+    queryKey: ["whatsapp-message-templates"],
+    queryFn: fetchWhatsappMessageTemplates,
+    staleTime: 60_000,
   });
   const recordPayment = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/payments", payload),
@@ -92,7 +100,7 @@ export function PaymentsClient() {
     {},
   );
   const dueTotal = dueInvoices.reduce((total, invoice) => total + Number(invoice.amountDue), 0);
-  const error = paymentsQuery.error ?? duesQuery.error ?? recordPayment.error;
+  const error = paymentsQuery.error ?? duesQuery.error ?? whatsappTemplatesQuery.error ?? recordPayment.error;
 
   function handlePayment(event: React.SyntheticEvent<HTMLFormElement>, invoiceId: string) {
     event.preventDefault();
@@ -102,6 +110,30 @@ export function PaymentsClient() {
       amount: Number(form.get("amount")),
       mode: formString(form, "mode"),
       referenceNumber: formString(form, "referenceNumber") || undefined,
+    });
+  }
+
+  function sendPaymentReminder(invoice: InvoiceRecord) {
+    setActionMessage(null);
+    if (!invoice.customer?.phone) {
+      setActionMessage({ tone: "error", text: "This invoice does not have a customer phone number." });
+      return;
+    }
+
+    const opened = openWhatsappMessage(
+      invoice.customer.phone,
+      formatPaymentReminderWhatsappMessage({
+        invoiceNumber: invoice.invoiceNumber,
+        amountDue: Number(invoice.amountDue),
+        grandTotal: Number(invoice.grandTotal),
+        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        customerName: invoice.customer.name,
+        templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "paymentReminder"),
+      }),
+    );
+    setActionMessage({
+      tone: opened ? "success" : "error",
+      text: opened ? "WhatsApp opened with payment reminder." : "Customer phone number is invalid for WhatsApp.",
     });
   }
 
@@ -116,6 +148,13 @@ export function PaymentsClient() {
         ]}
       />
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
+      {actionMessage ? (
+        <div className={`rounded-md border p-3 text-sm ${
+          actionMessage.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"
+        }`}>
+          {actionMessage.text}
+        </div>
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="rounded-md border border-border bg-white">
           <div className="border-b border-border px-4 py-3">
@@ -188,6 +227,16 @@ export function PaymentsClient() {
                     <div className="text-sm font-medium text-slate-950">{invoice.invoiceNumber}</div>
                     <div className="text-xs text-slate-500">{invoice.customer?.name ?? "Walk-in"} | Due {money(Number(invoice.amountDue))}</div>
                   </div>
+                  {invoice.customer?.phone ? (
+                    <button
+                      type="button"
+                      onClick={() => sendPaymentReminder(invoice)}
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 text-xs font-medium text-emerald-800"
+                    >
+                      <MessageCircle className="size-3.5" aria-hidden="true" />
+                      WhatsApp
+                    </button>
+                  ) : null}
                 </div>
                 <form className="mt-3 grid gap-2 sm:grid-cols-[1fr_120px_1fr_auto]" onSubmit={(event) => handlePayment(event, invoice.id)}>
                   <input name="amount" type="number" step="0.01" max={Number(invoice.amountDue)} placeholder="Amount" className="h-9 rounded-md border border-border px-3 text-sm" required />
@@ -266,7 +315,7 @@ function dateInputValue(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return `${String(year)}-${month}-${day}`;
 }
 
 function formatRangeLabel(from: Date, to: Date): string {

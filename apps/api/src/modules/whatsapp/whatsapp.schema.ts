@@ -1,6 +1,8 @@
 import { WhatsappOrderStatus } from "@prisma/client";
 import { z } from "zod";
 
+import { WHATSAPP_TEMPLATE_KEYS } from "./whatsapp.templates.js";
+
 export const whatsappTenantParamsSchema = z.object({
   tenantSlug: z.string().trim().min(1),
 });
@@ -35,7 +37,15 @@ export const whatsappPasteOrderSchema = z.object({
   body: z.string().trim().min(3).max(5000),
 });
 
+export const whatsappMessageTemplatesSchema = z.object({
+  templates: z.array(z.object({
+    key: z.enum(WHATSAPP_TEMPLATE_KEYS),
+    body: z.string().trim().min(1).max(5000),
+  })).min(1).max(WHATSAPP_TEMPLATE_KEYS.length),
+});
+
 export type WhatsappOrdersQuery = z.infer<typeof whatsappOrdersQuerySchema>;
 export type WhatsappEmbeddedSignupCompleteInput = z.infer<typeof whatsappEmbeddedSignupCompleteSchema>;
 export type WhatsappTestMessageInput = z.infer<typeof whatsappTestMessageSchema>;
 export type WhatsappPasteOrderInput = z.infer<typeof whatsappPasteOrderSchema>;
+export type WhatsappMessageTemplatesInput = z.infer<typeof whatsappMessageTemplatesSchema>;
