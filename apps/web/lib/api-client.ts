@@ -6,6 +6,8 @@ import { clearStoredSession } from "@/lib/vertical-config";
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "development" ? "http://localhost:3001/api" : "/api");
 
+let refreshAuthSessionPromise: Promise<AuthResponse> | null = null;
+
 export function apiUrl(path: string): string {
   return `${apiBaseUrl}${path}`;
 }
@@ -98,7 +100,11 @@ export async function registerShop(payload: RegisterPayload): Promise<AuthRespon
 }
 
 export async function refreshAuthSession(): Promise<AuthResponse> {
-  return postJson<AuthResponse>("/auth/refresh", {});
+  refreshAuthSessionPromise ??= postJson<AuthResponse>("/auth/refresh", {}).finally(() => {
+    refreshAuthSessionPromise = null;
+  });
+
+  return refreshAuthSessionPromise;
 }
 
 export async function logout(): Promise<void> {
@@ -122,17 +128,7 @@ export async function getCurrentVerticalConfig(): Promise<{
   isImpersonated?: boolean;
   impersonation?: StoredImpersonation | null;
 }> {
-  const response = await fetch(`${apiBaseUrl}/vertical-config/current`, {
-    credentials: "include",
-  });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearBrowserSession();
-    }
-
-    throw new Error(await readApiError(response));
-  }
+  const response = await fetchWithCookieAuth("/vertical-config/current");
 
   return response.json() as Promise<{
     tenantId: string;
