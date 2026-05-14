@@ -16,16 +16,23 @@ model Tenant {
   gstEnabled         Boolean             @default(true) @map("gst_enabled")
   phone              String
   address            String?
+  logoUrl            String?             @map("logo_url") @db.Text
+  whatsappNotificationSettings Json       @default("{}") @map("whatsapp_notification_settings")
+  requirePoApproval  Boolean             @default(false) @map("require_po_approval")
   timezone           String              @default("Asia/Kolkata")
   currency           String              @default("INR")
   status             TenantStatus        @default(ACTIVE)
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   users              User[]
+  stores             Store[]
+  storeUserAssignments StoreUserAssignment[]
   products           Product[]
   productBatches     ProductBatch[]
   productVariants    ProductVariant[]
   stockAdjustments   StockAdjustment[]
+  stockCounts        StockCount[]
+  stockCountItems    StockCountItem[]
   customers          Customer[]
   invoices           Invoice[]
   invoiceCounters    InvoiceCounter[]
@@ -47,6 +54,7 @@ model Tenant {
   quotationItems     QuotationItem[]
   loyaltyAccounts    LoyaltyAccount[]
   loyaltyTransactions LoyaltyTransaction[]
+  loyaltyTiers       LoyaltyTier[]
   coupons            Coupon[]
   auditLogs          AuditLog[]
   supplierPayments   SupplierPayment[]
@@ -67,6 +75,8 @@ model Tenant {
   deliveryProofs     DeliveryProof[]
   whatsappIntegration WhatsappIntegration?
   whatsappMessageTemplates WhatsappMessageTemplate[]
+  whatsappCampaigns WhatsappCampaign[]
+  whatsappCampaignRecipients WhatsappCampaignRecipient[]
 
   @@map("tenants")
 }
@@ -90,6 +100,8 @@ model User {
   id            String         @id @default(cuid())
   tenantId      String         @map("tenant_id")
   tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  primaryStoreId String?       @map("primary_store_id")
+  primaryStore  Store?         @relation("UserPrimaryStore", fields: [primaryStoreId], references: [id], onDelete: SetNull)
   name          String
   email         String
   username      String?
@@ -100,10 +112,12 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
+  storeAssignments StoreUserAssignment[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
   @@index([tenantId])
+  @@index([tenantId, primaryStoreId])
   @@map("users")
 }
 
@@ -112,6 +126,42 @@ enum UserRole {
   MANAGER
   STAFF
   DELIVERY
+}
+
+model Store {
+  id               String                @id @default(cuid())
+  tenantId         String                @map("tenant_id")
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  name             String
+  address          String?
+  phone            String?
+  isDefault        Boolean               @default(false) @map("is_default")
+  isActive         Boolean               @default(true) @map("is_active")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  primaryUsers     User[]                @relation("UserPrimaryStore")
+  userAssignments  StoreUserAssignment[]
+  invoices         Invoice[]
+  purchaseOrders   PurchaseOrder[]
+  expenses         Expense[]
+  stockAdjustments StockAdjustment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("stores")
+}
+
+model StoreUserAssignment {
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  storeId   String   @map("store_id")
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([storeId, userId])
+  @@index([tenantId, userId])
+  @@map("store_user_assignments")
 }
 
 model RefreshToken {
@@ -185,6 +235,7 @@ model Product {
   menuCategoryId     String?             @map("menu_category_id")
   menuCategory       MenuCategory?       @relation(fields: [menuCategoryId], references: [id])
   isActive           Boolean             @default(true) @map("is_active")
+  imageUrl           String?             @map("image_url") @db.Text
   verticalData       Json?               @map("vertical_data")
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
@@ -192,6 +243,7 @@ model Product {
   batches            ProductBatch[]
   variants           ProductVariant[]
   stockAdjustments   StockAdjustment[]
+  stockCountItems    StockCountItem[]
   purchaseOrderItems PurchaseOrderItem[]
   creditNoteItems    CreditNoteItem[]
   recipesAsMenu      Recipe[]            @relation("RecipeProduct")
@@ -247,6 +299,8 @@ model StockAdjustment {
   id             String   @id @default(cuid())
   tenantId       String   @map("tenant_id")
   tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  storeId        String?  @map("store_id")
+  store          Store?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
   productId      String   @map("product_id")
   product        Product  @relation(fields: [productId], references: [id])
   quantityChange Decimal  @map("quantity_change") @db.Decimal(10, 3)
@@ -256,7 +310,43 @@ model StockAdjustment {
   createdAt      DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, productId])
+  @@index([tenantId, storeId])
   @@map("stock_adjustments")
+}
+
+model StockCount {
+  id          String           @id @default(cuid())
+  tenantId    String           @map("tenant_id")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  name        String
+  status      String           @default("OPEN")
+  countedAt   DateTime         @default(now()) @map("counted_at")
+  submittedAt DateTime?        @map("submitted_at")
+  approvedAt  DateTime?        @map("approved_at")
+  createdBy   String           @map("created_by")
+  approvedBy  String?          @map("approved_by")
+  items       StockCountItem[]
+
+  @@index([tenantId, status, countedAt])
+  @@map("stock_counts")
+}
+
+model StockCountItem {
+  id           String     @id @default(cuid())
+  tenantId     String     @map("tenant_id")
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  stockCountId String     @map("stock_count_id")
+  stockCount   StockCount @relation(fields: [stockCountId], references: [id])
+  productId    String     @map("product_id")
+  product      Product    @relation(fields: [productId], references: [id])
+  productName  String     @map("product_name")
+  systemQty    Decimal    @map("system_qty") @db.Decimal(10, 3)
+  countedQty   Decimal?   @map("counted_qty") @db.Decimal(10, 3)
+  variance     Decimal    @default(0) @db.Decimal(10, 3)
+
+  @@unique([stockCountId, productId])
+  @@index([tenantId, productId])
+  @@map("stock_count_items")
 }
 
 model Customer {
@@ -280,12 +370,16 @@ model Customer {
   gstin           String?
   pan             String?
   cin             String?
+  birthday        DateTime?
+  anniversary     DateTime?
   openingBalanceType String?       @map("opening_balance_type")
   openingBalance  Decimal          @default(0) @map("opening_balance") @db.Decimal(10, 2)
   tcsEnabled      Boolean          @default(false) @map("tcs_enabled")
   creditLimit     Decimal?         @map("credit_limit") @db.Decimal(10, 2)
   creditLimitEnabled Boolean       @default(false) @map("credit_limit_enabled")
   creditDays      Int?             @map("credit_days")
+  tierId          String?          @map("tier_id")
+  tier            LoyaltyTier?     @relation(fields: [tierId], references: [id], onDelete: SetNull)
   itemDiscountPercent Decimal      @default(0) @map("item_discount_percent") @db.Decimal(5, 2)
   itemDiscountEnabled Boolean      @default(false) @map("item_discount_enabled")
   outstandingDue  Decimal          @default(0) @map("outstanding_due") @db.Decimal(10, 2)
@@ -300,6 +394,8 @@ model Customer {
   @@unique([tenantId, phone])
   @@unique([tenantId, customerCode])
   @@index([tenantId])
+  @@index([tenantId, birthday])
+  @@index([tenantId, anniversary])
   @@map("customers")
 }
 
@@ -307,6 +403,8 @@ model Invoice {
   id                     String        @id @default(cuid())
   tenantId               String        @map("tenant_id")
   tenant                 Tenant        @relation(fields: [tenantId], references: [id])
+  storeId                String?       @map("store_id")
+  store                  Store?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
   invoiceNumber          String        @map("invoice_number")
   customerId             String?       @map("customer_id")
   customer               Customer?     @relation(fields: [customerId], references: [id])
@@ -319,6 +417,7 @@ model Invoice {
   totalCgst              Decimal       @default(0) @map("total_cgst") @db.Decimal(10, 2)
   totalSgst              Decimal       @default(0) @map("total_sgst") @db.Decimal(10, 2)
   totalIgst              Decimal       @default(0) @map("total_igst") @db.Decimal(10, 2)
+  deliveryCharge         Decimal       @default(0) @map("delivery_charge") @db.Decimal(10, 2)
   grandTotal             Decimal       @map("grand_total") @db.Decimal(10, 2)
   amountPaid             Decimal       @default(0) @map("amount_paid") @db.Decimal(10, 2)
   amountDue              Decimal       @default(0) @map("amount_due") @db.Decimal(10, 2)
@@ -328,6 +427,7 @@ model Invoice {
   verticalData           Json?         @map("vertical_data")
   notes                  String?
   pdfUrl                 String?       @map("pdf_url")
+  paymentLinkId          String?       @map("payment_link_id")
   createdAt              DateTime      @default(now()) @map("created_at")
   updatedAt              DateTime      @updatedAt @map("updated_at")
   items                  InvoiceItem[]
@@ -338,7 +438,9 @@ model Invoice {
 
   @@unique([tenantId, invoiceNumber])
   @@index([tenantId, invoiceDate])
+  @@index([tenantId, storeId, invoiceDate])
   @@index([tenantId, customerId])
+  @@index([tenantId, paymentLinkId])
   @@map("invoices")
 }
 
@@ -412,6 +514,7 @@ enum WhatsappOrderStatus {
   DRAFT_CREATED
   NEEDS_REVIEW
   CONFIRMED
+  DISMISSED
   CANCELLED
 }
 
@@ -506,6 +609,49 @@ model WhatsappMessageTemplate {
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("whatsapp_message_templates")
+}
+
+model WhatsappCampaign {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  message     String   @db.Text
+  status      String   @default("DRAFT")
+  targetType  String   @default("ALL") @map("target_type")
+  targetValue String?  @map("target_value")
+  sentCount   Int      @default(0) @map("sent_count")
+  failCount   Int      @default(0) @map("fail_count")
+  scheduledAt DateTime? @map("scheduled_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  recipients  WhatsappCampaignRecipient[]
+
+  @@index([tenantId, status, createdAt])
+  @@map("whatsapp_campaigns")
+}
+
+model WhatsappCampaignRecipient {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  campaignId  String   @map("campaign_id")
+  campaign    WhatsappCampaign @relation(fields: [campaignId], references: [id])
+  customerId  String?  @map("customer_id")
+  phone       String
+  customerName String? @map("customer_name")
+  status      String   @default("QUEUED")
+  error       String?
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([campaignId, phone])
+  @@index([tenantId, campaignId, status])
+  @@map("whatsapp_campaign_recipients")
 }
 
 enum PaperSize {
@@ -792,10 +938,18 @@ model PurchaseOrder {
   id              String              @id @default(cuid())
   tenantId        String              @map("tenant_id")
   tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  storeId         String?             @map("store_id")
+  store           Store?              @relation(fields: [storeId], references: [id], onDelete: SetNull)
   supplierId      String              @map("supplier_id")
   supplier        Supplier            @relation(fields: [supplierId], references: [id])
   poNumber        String              @map("po_number")
   status          POStatus            @default(DRAFT)
+  approvalStatus  String              @default("PENDING_APPROVAL") @map("approval_status")
+  approvedBy      String?             @map("approved_by")
+  approvedAt      DateTime?           @map("approved_at")
+  rejectedBy      String?             @map("rejected_by")
+  rejectedAt      DateTime?           @map("rejected_at")
+  rejectionReason String?             @map("rejection_reason")
   totalAmount     Decimal             @map("total_amount") @db.Decimal(10, 2)
   receivedAt      DateTime?           @map("received_at")
   createdAt       DateTime            @default(now()) @map("created_at")
@@ -804,6 +958,8 @@ model PurchaseOrder {
   purchaseReturns PurchaseReturn[]
 
   @@unique([tenantId, poNumber])
+  @@index([tenantId, storeId])
+  @@index([tenantId, approvalStatus])
   @@map("purchase_orders")
 }
 
@@ -841,6 +997,8 @@ model Expense {
   id          String   @id @default(cuid())
   tenantId    String   @map("tenant_id")
   tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  storeId     String?  @map("store_id")
+  store       Store?   @relation(fields: [storeId], references: [id], onDelete: SetNull)
   category    String
   description String
   amount      Decimal  @db.Decimal(10, 2)
@@ -850,6 +1008,7 @@ model Expense {
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([tenantId, paidAt])
+  @@index([tenantId, storeId, paidAt])
   @@map("expenses")
 }
 
@@ -870,6 +1029,7 @@ model CreditNote {
   grandTotal       Decimal          @map("grand_total") @db.Decimal(10, 2)
   reason           String?
   notes            String?
+  pdfUrl           String?          @map("pdf_url")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
   items            CreditNoteItem[]
@@ -922,6 +1082,7 @@ model Quotation {
   totalSgst             Decimal         @default(0) @map("total_sgst") @db.Decimal(10, 2)
   grandTotal            Decimal         @default(0) @map("grand_total") @db.Decimal(10, 2)
   notes                 String?
+  pdfUrl                String?         @map("pdf_url")
   convertedToInvoiceId  String?         @map("converted_to_invoice_id")
   createdAt             DateTime        @default(now()) @map("created_at")
   updatedAt             DateTime        @updatedAt @map("updated_at")
@@ -976,6 +1137,22 @@ model LoyaltyAccount {
   @@map("loyalty_accounts")
 }
 
+model LoyaltyTier {
+  id         String     @id @default(cuid())
+  tenantId   String     @map("tenant_id")
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  name       String
+  minPoints  Int        @map("min_points")
+  multiplier Decimal    @default(1) @db.Decimal(4, 2)
+  color      String     @default("#6b7280")
+  sortOrder  Int        @default(0) @map("sort_order")
+  customers  Customer[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, minPoints])
+  @@map("loyalty_tiers")
+}
+
 model LoyaltyTransaction {
   id          String         @id @default(cuid())
   tenantId    String         @map("tenant_id")
@@ -986,9 +1163,11 @@ model LoyaltyTransaction {
   type        LoyaltyTxType
   referenceId String?        @map("reference_id")
   notes       String?
+  expiresAt   DateTime?      @map("expires_at")
   createdAt   DateTime       @default(now()) @map("created_at")
 
   @@index([tenantId, accountId])
+  @@index([tenantId, expiresAt])
   @@map("loyalty_transactions")
 }
 
@@ -997,6 +1176,7 @@ enum LoyaltyTxType {
   REDEEMED
   EXPIRED
   ADJUSTED
+  MANUAL_ADJUST
 }
 
 model Coupon {
@@ -1185,12 +1365,14 @@ model KOT {
   invoice   Invoice?        @relation(fields: [invoiceId], references: [id])
   status    KOTStatus       @default(PENDING)
   createdBy String          @map("created_by")
+  billedAt  DateTime?       @map("billed_at")
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
   items     KOTItem[]
 
   @@unique([tenantId, kotNumber])
   @@index([tenantId, status])
+  @@index([tenantId, tableId, status, billedAt])
   @@map("kots")
 }
 

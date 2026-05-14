@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Save } from "lucide-react";
+import { CheckCircle2, Plus, Save, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { createAuthenticatedApiClient, listAllProducts, type PaginatedResponse } from "@/lib/api-client";
 import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
+import { getStoredAuthSession } from "@/lib/vertical-config";
 
 interface SupplierRecord {
   id: string;
@@ -18,6 +19,8 @@ interface PurchaseOrderRecord {
   id: string;
   poNumber: string;
   status: string;
+  approvalStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | string;
+  rejectionReason?: string | null;
   totalAmount: string | number;
   createdAt: string;
   supplier: SupplierRecord;
@@ -33,6 +36,8 @@ interface PurchaseOrderRecord {
 
 export function PurchasesClient() {
   const queryClient = useQueryClient();
+  const role = getStoredAuthSession()?.user?.role;
+  const canApprove = role === "OWNER" || role === "MANAGER";
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState(() => defaultFromDate(30));
   const [to, setTo] = useState(() => todayDate());
@@ -68,10 +73,18 @@ export function PurchasesClient() {
       ]);
     },
   });
+  const approveOrder = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().post(`/purchase-orders/${id}/approve`, {}),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }),
+  });
+  const rejectOrder = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => createAuthenticatedApiClient().post(`/purchase-orders/${id}/reject`, { reason }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }),
+  });
   const orders = ordersQuery.data?.data ?? [];
   const suppliers = suppliersQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
-  const error = ordersQuery.error ?? suppliersQuery.error ?? productsQuery.error ?? createOrder.error ?? receiveOrder.error;
+  const error = ordersQuery.error ?? suppliersQuery.error ?? productsQuery.error ?? createOrder.error ?? receiveOrder.error ?? approveOrder.error ?? rejectOrder.error;
   useEffect(() => {
     setPage(1);
   }, [status, from, to]);
@@ -96,6 +109,15 @@ export function PurchasesClient() {
       },
       { onSuccess: () => formElement.reset() },
     );
+  }
+
+  function handleReject(order: PurchaseOrderRecord) {
+    const reason = window.prompt(`Reason for rejecting ${order.poNumber}`);
+    if (!reason?.trim()) {
+      return;
+    }
+
+    rejectOrder.mutate({ id: order.id, reason: reason.trim() });
   }
 
   return (
@@ -148,8 +170,38 @@ export function PurchasesClient() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-slate-950">{order.poNumber}</div>
-                  <div className="text-xs text-slate-500">{order.supplier.name} | {order.status} | {money(Number(order.totalAmount))}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span>{order.supplier.name}</span>
+                    <span>|</span>
+                    <span>{order.status}</span>
+                    <span className={approvalBadgeClass(order.approvalStatus)}>{approvalLabel(order.approvalStatus)}</span>
+                    <span>|</span>
+                    <span>{money(Number(order.totalAmount))}</span>
+                    {order.rejectionReason ? <span className="text-red-600">Reason: {order.rejectionReason}</span> : null}
+                  </div>
                 </div>
+                {canApprove && order.approvalStatus === "PENDING_APPROVAL" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700"
+                      disabled={approveOrder.isPending}
+                      onClick={() => approveOrder.mutate(order.id)}
+                    >
+                      <CheckCircle2 className="size-4" aria-hidden="true" />
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 text-sm font-medium text-red-700"
+                      disabled={rejectOrder.isPending}
+                      onClick={() => handleReject(order)}
+                    >
+                      <XCircle className="size-4" aria-hidden="true" />
+                      Reject
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 space-y-2">
                 {order.items.map((item) => (
@@ -160,9 +212,9 @@ export function PurchasesClient() {
                   }}>
                     <div className="text-sm text-slate-700">{item.productName} | Ordered {Number(item.quantity)} | Received {Number(item.receivedQuantity)}</div>
                     <input name="receivedQuantity" type="number" step="0.001" max={Number(item.quantity) - Number(item.receivedQuantity)} className="h-9 rounded-md border border-border px-2 text-sm" required />
-                    <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" disabled={receiveOrder.isPending || order.status === "RECEIVED"}>
+                    <button className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={receiveOrder.isPending || order.status === "RECEIVED" || order.approvalStatus !== "APPROVED"}>
                       <Save className="size-4" aria-hidden="true" />
-                      Receive
+                      {order.approvalStatus === "APPROVED" ? "Receive" : "Needs approval"}
                     </button>
                   </form>
                 ))}
@@ -187,4 +239,21 @@ function TextInput({ name, label, type = "text", defaultValue, required }: Reado
 
 function money(value: number): string {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function approvalLabel(status: string): string {
+  if (status === "PENDING_APPROVAL") return "Pending approval";
+  if (status === "APPROVED") return "Approved";
+  if (status === "REJECTED") return "Rejected";
+  return status;
+}
+
+function approvalBadgeClass(status: string): string {
+  if (status === "APPROVED") {
+    return "rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700";
+  }
+  if (status === "REJECTED") {
+    return "rounded bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-700";
+  }
+  return "rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700";
 }

@@ -4,6 +4,7 @@ import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
 import {
   AlertTriangle,
+  Building2,
   ChevronDown,
   CreditCard,
   FileText,
@@ -25,7 +26,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
 import {
   clearStoredImpersonation,
   getStoredImpersonation,
@@ -58,6 +59,9 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [impersonation, setImpersonation] = useState<StoredImpersonation | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [storeSwitching, setStoreSwitching] = useState(false);
+  const [storeLoadError, setStoreLoadError] = useState<string | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -102,6 +106,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               id: current.user.id,
               tenantId: current.user.tenantId,
               role: current.user.role,
+              storeId: current.user.storeId ?? null,
             },
           };
           setSession(nextSession);
@@ -197,6 +202,35 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     };
   }, [accountMenuOpen]);
 
+  useEffect(() => {
+    const role = session?.user?.role;
+    if (role !== "OWNER" && role !== "MANAGER") {
+      setStores([]);
+      setStoreLoadError(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function fetchStores() {
+      try {
+        const data = await createAuthenticatedApiClient().get<StoreOption[]>("/settings/stores");
+        if (!cancelled) {
+          setStores(data);
+          setStoreLoadError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setStoreLoadError(error instanceof Error ? error.message : "Store list unavailable");
+        }
+      }
+    }
+
+    void fetchStores();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.role, session?.user?.tenantId]);
+
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface text-sm font-medium text-slate-600">
@@ -210,8 +244,16 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
   const environmentLabel = appEnvironment === "production" ? null : appEnvironment.toUpperCase();
-  const dashboard = dashboardItem(verticalConfig.navigation);
-  const navGroups = groupedNavigation(verticalConfig.navigation);
+  const tenantNavigation = [
+    ...verticalConfig.navigation,
+    ...(verticalConfig.vertical === "RESTAURANT" && !verticalConfig.navigation.some((item) => item.href === "/restaurant/kds")
+      ? [{ href: "/restaurant/kds", label: "KDS", icon: "utensils" }]
+      : []),
+    ...(verticalConfig.navigation.some((item) => item.href === "/whatsapp") ? [] : [{ href: "/whatsapp", label: "WhatsApp Orders", icon: "message-circle" }]),
+    ...(verticalConfig.navigation.some((item) => item.href === "/customers/campaigns") ? [] : [{ href: "/customers/campaigns", label: "Campaigns", icon: "message-circle" }]),
+  ];
+  const dashboard = dashboardItem(tenantNavigation);
+  const navGroups = groupedNavigation(tenantNavigation);
   const sidebarWidthClass = sidebarCollapsed ? "lg:pl-20" : "lg:pl-64";
   const accountLinks = [
     { href: "/settings#shop-details", label: "Shop settings", description: "GST, address, and shop details", icon: Settings },
@@ -231,6 +273,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     }))
     .filter((group) => group.items.length > 0);
   const visibleAccountLinks = accountLinks.filter((link) => canAccessAccountLink(role, link.href));
+  const canSwitchStores = role === "OWNER" || role === "MANAGER";
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
@@ -257,6 +300,25 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     clearStoredImpersonation();
     setImpersonation(null);
     router.replace("/superadmin/dashboard");
+  }
+
+  async function handleStoreSelection(value: string) {
+    const nextStoreId = value === "__all__" ? null : value;
+    setStoreSwitching(true);
+    setStoreLoadError(null);
+    try {
+      await createAuthenticatedApiClient().put("/settings/stores/current", { storeId: nextStoreId });
+      const auth = await refreshAuthSession();
+      const nextSession = { user: auth.user };
+      setSession(nextSession);
+      storeAuthSession(nextSession);
+      router.refresh();
+      window.location.reload();
+    } catch (error) {
+      setStoreLoadError(error instanceof Error ? error.message : "Could not switch store");
+    } finally {
+      setStoreSwitching(false);
+    }
   }
 
   return (
@@ -313,6 +375,27 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {canSwitchStores ? (
+                <label className="hidden items-center gap-2 rounded-md border border-border bg-white px-2 py-1.5 text-xs font-medium text-slate-600 shadow-sm sm:flex">
+                  <Building2 className="size-4 text-emerald-600" aria-hidden="true" />
+                  <span className="sr-only">Store context</span>
+                  <select
+                    className="max-w-44 bg-transparent text-xs font-semibold text-slate-700 outline-none"
+                    value={session?.user?.storeId ?? "__all__"}
+                    disabled={storeSwitching || stores.length === 0}
+                    onChange={(event) => void handleStoreSelection(event.target.value)}
+                    title={storeLoadError ?? "Switch store context"}
+                  >
+                    <option value="__all__">All stores</option>
+                    {stores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.isDefault ? `${store.name} (Default)` : store.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {storeLoadError ? <span className="hidden max-w-48 truncate text-xs font-medium text-amber-700 md:inline">{storeLoadError}</span> : null}
               <div
                 className="hidden size-2.5 rounded-full sm:block"
                 title={online ? "Online" : "Offline"}
@@ -408,6 +491,12 @@ interface AccountMenuLink {
   label: string;
   description: string;
   icon: ComponentType<{ className?: string }>;
+}
+
+interface StoreOption {
+  id: string;
+  name: string;
+  isDefault: boolean;
 }
 
 function AccountMenu({
@@ -603,7 +692,7 @@ function navigationIconClass(href: string): string {
     return "text-blue-600";
   }
 
-  if (["/customers", "/suppliers"].includes(href)) {
+  if (["/customers", "/customers/campaigns", "/suppliers"].includes(href)) {
     return "text-violet-600";
   }
 
@@ -615,7 +704,7 @@ function navigationIconClass(href: string): string {
     return "text-slate-600";
   }
 
-  if (href === "/restaurant") {
+  if (href === "/restaurant" || href === "/restaurant/kds") {
     return "text-rose-600";
   }
 
@@ -630,6 +719,10 @@ function canAccessNavigation(role: ShopRole | undefined, href: string): boolean 
   }
 
   if (role === "STAFF") {
+    if (href === "/customers/campaigns" || href.startsWith("/customers/campaigns/")) {
+      return false;
+    }
+
     return [
       "/billing",
       "/quotations",

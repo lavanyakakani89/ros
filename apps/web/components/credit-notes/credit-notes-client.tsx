@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle, Plus } from "lucide-react";
+import { CheckCircle, Download, MessageCircle, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PaginationControls } from "@/components/shared/pagination-controls";
@@ -26,6 +26,7 @@ export function CreditNotesClient() {
   const [reason, setReason] = useState("");
   const [lines, setLines] = useState([{ productId: "", quantity: 1, discount: 0 }]);
   const [status, setStatus] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [from, setFrom] = useState(() => defaultFromDate(30));
   const [to, setTo] = useState(() => todayDate());
   const [page, setPage] = useState(1);
@@ -49,6 +50,17 @@ export function CreditNotesClient() {
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/credit-notes/${id}/confirm`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["credit-notes"] }),
   });
+  const generatePdf = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().post<{ downloadUrl: string }>(`/credit-notes/${id}/pdf`, {}),
+    onSuccess: (result) => {
+      window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
+      setActionMessage("Credit note PDF is ready.");
+    },
+  });
+  const shareCreditNote = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().post<{ status: string }>(`/credit-notes/${id}/share`, { channel: "whatsapp" }),
+    onSuccess: () => setActionMessage("Credit note queued for WhatsApp."),
+  });
 
   const creditNotes = cnQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
@@ -71,6 +83,13 @@ export function CreditNotesClient() {
           <Plus className="size-4" />New credit note
         </button>
       </div>
+
+      {createCn.error || confirmCn.error || generatePdf.error || shareCreditNote.error || cnQuery.error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {(createCn.error ?? confirmCn.error ?? generatePdf.error ?? shareCreditNote.error ?? cnQuery.error)?.message}
+        </div>
+      ) : null}
+      {actionMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{actionMessage}</div> : null}
 
       {showForm && (
         <form onSubmit={handleCreate} className="rounded-md border border-border bg-white p-4 space-y-3">
@@ -144,11 +163,41 @@ export function CreditNotesClient() {
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-500">{new Date(cn.createdAt).toLocaleDateString("en-IN")}</td>
                     <td className="px-4 py-2 text-right">
-                      {cn.status === "DRAFT" && (
-                        <button onClick={() => confirmCn.mutate(cn.id)} className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
+                      <div className="flex flex-wrap justify-end gap-2">
+                      {cn.status === "CONFIRMED" ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              setActionMessage("");
+                              generatePdf.mutate(cn.id);
+                            }}
+                            disabled={generatePdf.isPending}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
+                            type="button"
+                          >
+                            <Download className="size-3" aria-hidden="true" />
+                            PDF
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActionMessage("");
+                              shareCreditNote.mutate(cn.id);
+                            }}
+                            disabled={shareCreditNote.isPending}
+                            className="inline-flex min-h-9 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 disabled:opacity-50"
+                            type="button"
+                          >
+                            <MessageCircle className="size-3" aria-hidden="true" />
+                            WhatsApp
+                          </button>
+                        </>
+                      ) : null}
+                      {cn.status === "DRAFT" ? (
+                        <button onClick={() => confirmCn.mutate(cn.id)} className="inline-flex min-h-9 items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 border border-emerald-200" type="button">
                           <CheckCircle className="size-3" />Confirm
                         </button>
-                      )}
+                      ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

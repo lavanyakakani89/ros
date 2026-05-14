@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
-import type { FastifyPluginCallback, FastifyReply } from "fastify";
+import { PaymentMode, Prisma } from "@prisma/client";
+import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
+import { BillingService } from "../billing/billing.service.js";
 
 export class RestaurantError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); }
@@ -10,6 +11,14 @@ const tableSchema = z.object({
   number: z.string().min(1),
   capacity: z.coerce.number().int().positive().default(4),
   section: z.string().optional(),
+});
+
+const tableIdParamsSchema = z.object({
+  tableId: z.string().min(1),
+});
+
+const kotIdParamsSchema = z.object({
+  id: z.string().min(1),
 });
 
 const kotItemSchema = z.object({
@@ -46,12 +55,14 @@ const recipeItemSchema = z.object({
 });
 
 export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  const billingService = new BillingService(fastify);
+
   // ---- TABLES ----
   fastify.get("/api/restaurant/tables", async (request) => {
     const { status } = z.object({ status: z.string().optional() }).parse(request.query);
     return fastify.prisma.restaurantTable.findMany({
       where: { tenantId: request.tenant.id, ...(status ? { status: status as "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING" } : {}) },
-      include: { kots: { where: { status: { notIn: ["SERVED", "CANCELLED"] } } } },
+      include: { kots: { where: { status: { not: "CANCELLED" }, billedAt: null } } },
       orderBy: { number: "asc" },
     });
   });
@@ -83,6 +94,133 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
     return { status: "ok" };
   });
 
+  fastify.post("/api/restaurant/tables/:tableId/bill", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { tableId } = tableIdParamsSchema.parse(request.params);
+      const table = await fastify.prisma.restaurantTable.findFirst({
+        where: {
+          id: tableId,
+          tenantId: request.tenant.id,
+        },
+      });
+
+      if (!table) {
+        throw new RestaurantError("Table not found", 404);
+      }
+
+      const kots = await fastify.prisma.kOT.findMany({
+        where: {
+          tenantId: request.tenant.id,
+          tableId,
+          status: "SERVED",
+          billedAt: null,
+        },
+        include: {
+          items: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      });
+
+      if (kots.length === 0) {
+        throw new RestaurantError("No served, unbilled KOTs found for this table", 400);
+      }
+
+      const products = await fastify.prisma.product.findMany({
+        where: {
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+      });
+      const productById = new Map(products.map((product) => [product.id, product]));
+      const productByName = new Map(products.map((product) => [normalizeRestaurantName(product.name), product]));
+      const itemsByProduct = new Map<string, { productId: string; quantity: number; sellingPrice: number }>();
+
+      for (const item of kots.flatMap((kot) => kot.items)) {
+        const product = item.productId ? productById.get(item.productId) : productByName.get(normalizeRestaurantName(item.productName));
+        if (!product) {
+          throw new RestaurantError(`Product "${item.productName}" must be linked before billing this table`, 400);
+        }
+
+        const existing = itemsByProduct.get(product.id);
+        const quantity = item.quantity.toNumber();
+        if (existing) {
+          existing.quantity += quantity;
+        } else {
+          itemsByProduct.set(product.id, {
+            productId: product.id,
+            quantity,
+            sellingPrice: product.sellingPrice.toNumber(),
+          });
+        }
+      }
+
+      const invoiceItems = [...itemsByProduct.values()].filter((item) => item.quantity > 0);
+      if (invoiceItems.length === 0) {
+        throw new RestaurantError("No billable items found for this table", 400);
+      }
+
+      const customerIds = [...new Set(kots.flatMap((kot) => kot.customerId ? [kot.customerId] : []))];
+      const invoice = await billingService.createInvoice(request.tenant, {
+        ...(customerIds.length === 1 ? { customerId: customerIds[0] } : {}),
+        paymentMode: PaymentMode.CASH,
+        billDiscount: 0,
+        notes: `Restaurant table ${table.number} bill from ${kots.length} KOT(s).`,
+        verticalData: {
+          source: "RESTAURANT_KOT",
+          tableId,
+          tableNumber: table.number,
+          kotIds: kots.map((kot) => kot.id),
+          kotNumbers: kots.map((kot) => kot.kotNumber),
+        },
+        items: invoiceItems,
+      });
+
+      await fastify.prisma.$transaction([
+        fastify.prisma.kOT.updateMany({
+          where: {
+            tenantId: request.tenant.id,
+            id: {
+              in: kots.map((kot) => kot.id),
+            },
+          },
+          data: {
+            invoiceId: invoice.id,
+            billedAt: new Date(),
+          },
+        }),
+        fastify.prisma.restaurantTable.updateMany({
+          where: {
+            id: tableId,
+            tenantId: request.tenant.id,
+            status: "OCCUPIED",
+          },
+          data: {
+            status: "CLEANING",
+          },
+        }),
+        fastify.prisma.auditLog.create({
+          data: {
+            tenantId: request.tenant.id,
+            userId: request.user.userId,
+            action: "RESTAURANT_TABLE_BILLED",
+            entity: "INVOICE",
+            entityId: invoice.id,
+            changes: {
+              tableId,
+              kotIds: kots.map((kot) => kot.id),
+              invoiceNumber: invoice.invoiceNumber,
+            },
+            ip: request.ip,
+          },
+        }),
+      ]);
+
+      return invoice;
+    });
+  });
+
   // ---- KOT ----
   fastify.get("/api/restaurant/kots", async (request) => {
     const { status } = z.object({ status: z.string().optional() }).parse(request.query);
@@ -90,6 +228,31 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
       where: { tenantId: request.tenant.id, ...(status ? { status: status as "PENDING" | "PREPARING" | "READY" | "SERVED" | "CANCELLED" } : {}) },
       include: { items: true, table: true, customer: true },
       orderBy: { createdAt: "desc" },
+    });
+  });
+
+  fastify.get("/api/restaurant/kds/live", async (request, reply) => {
+    const sendSnapshot = async () => {
+      const payload = await buildKdsPayload(fastify, request.tenant.id);
+      reply.raw.write(`event: kds\n`);
+      reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    await sendSnapshot();
+    const timer = setInterval(() => {
+      void sendSnapshot().catch((error: unknown) => {
+        request.log.error({ error }, "KDS SSE snapshot failed");
+      });
+    }, 5000);
+
+    request.raw.on("close", () => {
+      clearInterval(timer);
     });
   });
 
@@ -160,6 +323,42 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
           await fastify.prisma.restaurantTable.update({ where: { id: kot.tableId }, data: { status: "CLEANING" } });
         }
       }
+
+      return { status: "ok" };
+    });
+  });
+
+  fastify.post("/api/restaurant/kots/:id/bump", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = kotIdParamsSchema.parse(request.params);
+      const kot = await fastify.prisma.kOT.findFirst({
+        where: {
+          id,
+          tenantId: request.tenant.id,
+        },
+      });
+      if (!kot) {
+        throw new RestaurantError("KOT not found", 404);
+      }
+      if (kot.status !== "PREPARING") {
+        throw new RestaurantError("Only preparing KOTs can be bumped to ready", 400);
+      }
+
+      await fastify.prisma.kOT.update({
+        where: { id },
+        data: { status: "READY" },
+      });
+      await fastify.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenant.id,
+          userId: request.user.userId,
+          action: "KOT_BUMPED_READY",
+          entity: "KOT",
+          entityId: id,
+          changes: { previousStatus: kot.status, nextStatus: "READY" },
+          ip: request.ip,
+        },
+      });
 
       return { status: "ok" };
     });
@@ -255,4 +454,42 @@ async function handleError<T>(reply: FastifyReply, handler: () => Promise<T>): P
     if (error instanceof RestaurantError) return reply.status(error.statusCode).send({ error: error.message });
     throw error;
   }
+}
+
+function normalizeRestaurantName(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}.]+/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+async function buildKdsPayload(fastify: FastifyInstance, tenantId: string) {
+  const now = Date.now();
+  const kots = await fastify.prisma.kOT.findMany({
+    where: {
+      tenantId,
+      status: {
+        in: ["PENDING", "PREPARING"],
+      },
+    },
+    include: {
+      items: true,
+      table: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
+  return kots.map((kot) => ({
+    id: kot.id,
+    kotNumber: kot.kotNumber,
+    tableNumber: kot.table?.number ?? "Takeaway",
+    status: kot.status,
+    createdAt: kot.createdAt.toISOString(),
+    elapsedMinutes: Math.max(0, Math.floor((now - kot.createdAt.getTime()) / 60_000)),
+    items: kot.items.map((item) => ({
+      productName: item.productName,
+      quantity: item.quantity.toNumber(),
+      modifiers: Array.isArray(item.modifiers) ? item.modifiers : [],
+      notes: item.notes,
+    })),
+  }));
 }

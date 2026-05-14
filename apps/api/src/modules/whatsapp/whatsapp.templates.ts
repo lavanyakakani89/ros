@@ -28,6 +28,45 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ].join("\n"),
   },
   {
+    key: "paymentLink",
+    label: "Payment link",
+    description: "Used when sharing a Razorpay payment link for an invoice.",
+    placeholders: ["customerName", "tenantName", "invoiceNumber", "amount", "paymentUrl"],
+    defaultBody: [
+      "Hi {{customerName}},",
+      "{{tenantName}} has shared a payment link for invoice {{invoiceNumber}}.",
+      "Amount: ₹{{amount}}.",
+      "{{paymentUrl}}",
+      "Please share the screenshot once the payment is done.  Thank you!",
+    ].join("\n"),
+  },
+  {
+    key: "quotationReady",
+    label: "Quotation shared",
+    description: "Used when sharing a quotation or estimate.",
+    placeholders: ["customerName", "tenantName", "quotationNumber", "grandTotal", "validUntil", "pdfLine"],
+    defaultBody: [
+      "Hi {{customerName}},",
+      "Your quotation {{quotationNumber}} from {{tenantName}} is ready.",
+      "Total: ₹{{grandTotal}}.",
+      "Valid until: {{validUntil}}.",
+      "{{pdfLine}}",
+    ].join("\n"),
+  },
+  {
+    key: "creditNoteReady",
+    label: "Credit note shared",
+    description: "Used when sharing a confirmed credit note.",
+    placeholders: ["customerName", "tenantName", "creditNoteNumber", "grandTotal", "originalInvoiceNumber", "pdfLine"],
+    defaultBody: [
+      "Hi {{customerName}},",
+      "Your credit note {{creditNoteNumber}} from {{tenantName}} is ready.",
+      "Amount: ₹{{grandTotal}}.",
+      "Original invoice: {{originalInvoiceNumber}}.",
+      "{{pdfLine}}",
+    ].join("\n"),
+  },
+  {
     key: "deliveryOutForDelivery",
     label: "Delivery out for delivery",
     description: "Used when an order moves to out for delivery.",
@@ -58,6 +97,30 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     defaultBody: "RetailOS: delivery assigned for {{invoiceNumber}}. Customer: {{customerName}}. Amount: ₹{{grandTotal}}. Address: {{deliveryAddress}}",
   },
   {
+    key: "birthdayGreeting",
+    label: "Birthday greeting",
+    description: "Sent automatically to customers on their birthday.",
+    placeholders: ["customerName", "tenantName", "loyaltyPoints"],
+    defaultBody: [
+      "Hi {{customerName}},",
+      "Happy birthday from {{tenantName}}.",
+      "Wishing you a wonderful year ahead.",
+      "Your current loyalty points: {{loyaltyPoints}}.",
+    ].join("\n"),
+  },
+  {
+    key: "anniversaryGreeting",
+    label: "Anniversary greeting",
+    description: "Sent automatically to customers on their anniversary.",
+    placeholders: ["customerName", "tenantName", "loyaltyPoints"],
+    defaultBody: [
+      "Hi {{customerName}},",
+      "Happy anniversary from {{tenantName}}.",
+      "Thank you for being with us.",
+      "Your current loyalty points: {{loyaltyPoints}}.",
+    ].join("\n"),
+  },
+  {
     key: "whatsappTest",
     label: "WhatsApp test",
     description: "Used by the Test message button in WhatsApp settings.",
@@ -69,9 +132,14 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
 export const WHATSAPP_TEMPLATE_KEYS = WHATSAPP_TEMPLATE_DEFINITIONS.map((definition) => definition.key) as [
   "invoiceReady",
   "paymentReminder",
+  "paymentLink",
+  "quotationReady",
+  "creditNoteReady",
   "deliveryOutForDelivery",
   "deliveryDelivered",
   "deliveryAssigned",
+  "birthdayGreeting",
+  "anniversaryGreeting",
   "whatsappTest",
 ];
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChefHat, Plus, Table, UtensilsCrossed } from "lucide-react";
+import { ChefHat, Loader2, Plus, Receipt, Table, UtensilsCrossed } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { createAuthenticatedApiClient, listAllProducts } from "@/lib/api-client";
@@ -14,7 +15,7 @@ interface RestaurantTable {
   capacity: number;
   section?: string | null;
   status: "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
-  kots: Array<{ id: string; status: string }>;
+  kots: Array<{ id: string; status: string; billedAt?: string | null }>;
 }
 
 interface KOT {
@@ -49,6 +50,7 @@ const KOT_STATUS_COLORS: Record<string, string> = {
 };
 
 export function RestaurantClient() {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabType>("tables");
   const [newTableNumber, setNewTableNumber] = useState("");
@@ -56,7 +58,7 @@ export function RestaurantClient() {
   const [newTableSection, setNewTableSection] = useState("");
   const [newMenuCat, setNewMenuCat] = useState("");
   const [kotTableId, setKotTableId] = useState("");
-  const [kotLines, setKotLines] = useState([{ productName: "", quantity: 1, notes: "" }]);
+  const [kotLines, setKotLines] = useState<Array<{ productId?: string; productName: string; quantity: number; notes: string }>>([{ productName: "", quantity: 1, notes: "" }]);
 
   const tablesQuery = useQuery({ queryKey: ["restaurant-tables"], queryFn: () => createAuthenticatedApiClient().get<RestaurantTable[]>("/restaurant/tables") });
   const kotsQuery = useQuery({ queryKey: ["restaurant-kots"], queryFn: () => createAuthenticatedApiClient().get<KOT[]>("/restaurant/kots?status=PENDING,PREPARING,READY"), enabled: tab === "kot" });
@@ -78,6 +80,16 @@ export function RestaurantClient() {
   const updateKotStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => createAuthenticatedApiClient().put(`/restaurant/kots/${id}/status`, { status }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["restaurant-kots"] }),
+  });
+  const billTable = useMutation({
+    mutationFn: (tableId: string) => createAuthenticatedApiClient().post<{ id: string; invoiceNumber: string }>(`/restaurant/tables/${tableId}/bill`, {}),
+    onSuccess: async (invoice) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["restaurant-tables"] }),
+        queryClient.invalidateQueries({ queryKey: ["restaurant-kots"] }),
+      ]);
+      router.push(`/billing?invoiceId=${invoice.id}`);
+    },
   });
   const createMenuCat = useMutation({
     mutationFn: (p: object) => createAuthenticatedApiClient().post("/restaurant/menu-categories", p),
@@ -125,12 +137,23 @@ export function RestaurantClient() {
               <Plus className="inline size-4 mr-1" />Add table
             </button>
           </div>
+          {billTable.error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{billTable.error.message}</div> : null}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {tables.map((t) => (
               <div key={t.id} className={`rounded-md border-2 p-3 ${TABLE_STATUS_COLORS[t.status] ?? ""}`}>
                 <div className="text-lg font-bold">T{t.number}</div>
                 <div className="text-xs">{t.section ?? "Main"} · {t.capacity} seats</div>
                 <div className="text-xs mt-1 font-medium">{t.status}</div>
+                {t.kots.filter((kot) => kot.status === "SERVED" && !kot.billedAt).length > 0 ? (
+                  <button
+                    onClick={() => billTable.mutate(t.id)}
+                    disabled={billTable.isPending}
+                    className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1 rounded-md bg-slate-950 px-2 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {billTable.isPending ? <Loader2 className="size-3 animate-spin" aria-hidden="true" /> : <Receipt className="size-3" aria-hidden="true" />}
+                    Bill Table
+                  </button>
+                ) : null}
                 {t.status !== "AVAILABLE" && (
                   <button onClick={() => updateTableStatus.mutate({ id: t.id, status: "AVAILABLE" })} className="mt-2 text-xs underline">Mark free</button>
                 )}
@@ -151,9 +174,17 @@ export function RestaurantClient() {
             </select>
             {kotLines.map((line, idx) => (
               <div key={idx} className="flex gap-2">
-                <select value={line.productName} onChange={(e) => {
+                <select value={line.productId ?? ""} onChange={(e) => {
                   const product = products.find((p) => p.id === e.target.value);
-                  setKotLines((prev) => prev.map((l, i) => i === idx ? { ...l, productName: product?.name ?? e.target.value } : l));
+                  setKotLines((prev) => prev.map((l, i) => {
+                    if (i !== idx) {
+                      return l;
+                    }
+
+                    return product
+                      ? { ...l, productId: product.id, productName: product.name }
+                      : { productName: e.target.value, quantity: l.quantity, notes: l.notes };
+                  }));
                 }} className="h-9 flex-1 rounded-md border border-border px-2 text-sm">
                   <option value="">Select item</option>
                   {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -165,6 +196,7 @@ export function RestaurantClient() {
             ))}
             <button type="button" onClick={() => setKotLines((p) => [...p, { productName: "", quantity: 1, notes: "" }])} className="text-sm text-emerald-700">+ Add item</button>
             <button type="submit" disabled={createKot.isPending} className="w-full h-10 rounded-md bg-emerald-600 text-sm font-medium text-white">Fire KOT</button>
+            {billTable.error ? <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{billTable.error.message}</div> : null}
           </form>
           <div className="space-y-3">
             {["PENDING", "PREPARING", "READY"].map((statusGroup) => (

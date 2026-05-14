@@ -22,6 +22,17 @@ export const razorpayOrderSchema = z.object({
   invoiceId: z.string().trim().min(1).optional(),
 });
 
+export const razorpayPaymentLinkSchema = z.object({
+  invoiceId: z.string().trim().min(1),
+  amount: decimalSchema.positive(),
+  description: z.string().trim().min(1).max(2048).optional(),
+  customerId: z.string().trim().min(1).optional(),
+});
+
+export const razorpayPaymentLinkParamsSchema = z.object({
+  linkId: z.string().trim().min(1),
+});
+
 export const razorpayVerifySchema = z.object({
   orderId: z.string().min(1),
   paymentId: z.string().min(1),

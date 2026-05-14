@@ -61,3 +61,20 @@ export interface StockAdjustmentInput {
   reason: string;
   notes?: string | undefined;
 }
+
+export interface StockMovementQuery {
+  page: number;
+  limit: number;
+  from?: Date | undefined;
+  to?: Date | undefined;
+  type?: "adjustment" | "sale" | "purchase" | "return" | undefined;
+}
+
+export interface StockMovementRecord {
+  date: Date;
+  type: "adjustment" | "sale" | "purchase" | "return";
+  qty: number;
+  reference: string;
+  notes: string;
+  runningBalance: number;
+}

@@ -1,16 +1,47 @@
 import { createHmac } from "node:crypto";
 
-import { PaymentMode, type Tenant, type UserRole } from "@prisma/client";
+import { InvoiceStatus, PaymentMode, type Tenant, type UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import Razorpay from "razorpay";
 
 import { PaymentsRepository } from "./payments.repository.js";
-import type { PaymentListQuery, RazorpayOrderInput, RazorpayVerifyInput, RecordPaymentInput } from "./payments.types.js";
+import type { PaymentListQuery, RazorpayOrderInput, RazorpayPaymentLinkInput, RazorpayVerifyInput, RecordPaymentInput } from "./payments.types.js";
+import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 interface RazorpayWebhookInput {
   rawBody: string;
   signature: string | undefined;
   event: unknown;
+}
+
+type RazorpayClient = InstanceType<typeof Razorpay>;
+
+interface RazorpayPaymentLinkPayload {
+  amount: number;
+  currency: "INR";
+  accept_partial: false;
+  description: string;
+  reference_id: string;
+  customer: {
+    name: string;
+    email?: string;
+    contact?: string | number;
+  };
+  notify: {
+    email: false;
+    sms: false;
+    whatsapp: false;
+  };
+  reminder_enable: false;
+  notes: Record<string, string>;
+}
+
+interface RazorpayPaymentLinkResult {
+  id: string;
+  short_url: string;
+  amount: number | string;
+  expire_by?: number | string | undefined;
 }
 
 export class PaymentsError extends Error {
@@ -25,7 +56,7 @@ export class PaymentsError extends Error {
 export class PaymentsService {
   private readonly repository: PaymentsRepository;
 
-  constructor(fastify: FastifyInstance) {
+  constructor(private readonly fastify: FastifyInstance) {
     this.repository = new PaymentsRepository(fastify.prisma);
   }
 
@@ -51,17 +82,7 @@ export class PaymentsService {
   }
 
   async createRazorpayOrder(tenant: Tenant, input: RazorpayOrderInput) {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!keyId || !keySecret) {
-      throw new PaymentsError("Razorpay credentials are not configured", 501);
-    }
-
-    const razorpay = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
-    });
+    const razorpay = this.createRazorpayClient();
 
     return razorpay.orders.create({
       amount: Math.round(input.amount * 100),
@@ -72,6 +93,103 @@ export class PaymentsService {
         ...(input.invoiceId ? { invoiceId: input.invoiceId } : {}),
       },
     });
+  }
+
+  async createRazorpayPaymentLink(tenant: Tenant, input: RazorpayPaymentLinkInput) {
+    const invoice = await this.repository.findInvoiceForPaymentLink(tenant.id, input.invoiceId);
+    if (!invoice) {
+      throw new PaymentsError("Invoice not found", 404);
+    }
+
+    if (invoice.status === InvoiceStatus.DRAFT || invoice.status === InvoiceStatus.CANCELLED) {
+      throw new PaymentsError("Payment link can be created only for confirmed invoices", 400);
+    }
+
+    const amountDue = invoice.amountDue.toNumber();
+    if (amountDue <= 0.01) {
+      throw new PaymentsError("Invoice has no pending amount", 400);
+    }
+
+    if (input.amount > amountDue + 0.01) {
+      throw new PaymentsError("Payment link amount cannot exceed invoice amount due", 400);
+    }
+
+    const requestedCustomer = input.customerId ? await this.repository.findCustomer(tenant.id, input.customerId) : null;
+    if (input.customerId && !requestedCustomer) {
+      throw new PaymentsError("Customer not found", 404);
+    }
+
+    const customer = requestedCustomer ?? invoice.customer;
+    const razorpay = this.createRazorpayClient();
+    const linkCustomer: RazorpayPaymentLinkPayload["customer"] = {
+      name: normalizeRazorpayCustomerName(customer?.name ?? tenant.name),
+    };
+    if (customer?.email) {
+      linkCustomer.email = customer.email;
+    }
+    const contact = normalizeRazorpayContact(customer?.phone ?? tenant.phone);
+    if (contact) {
+      linkCustomer.contact = contact;
+    }
+    const link = await createPaymentLink(razorpay, {
+      amount: Math.round(input.amount * 100),
+      currency: "INR",
+      accept_partial: false,
+      description: input.description ?? `Payment for invoice ${invoice.invoiceNumber}`,
+      reference_id: invoice.invoiceNumber,
+      customer: linkCustomer,
+      notify: {
+        email: false,
+        sms: false,
+        whatsapp: false,
+      },
+      reminder_enable: false,
+      notes: {
+        tenantId: tenant.id,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+      },
+    });
+
+    await this.repository.updateInvoicePaymentLinkId(tenant.id, invoice.id, link.id);
+
+    return paymentLinkResponse(link);
+  }
+
+  async shareRazorpayPaymentLink(tenant: Tenant, linkId: string) {
+    const invoice = await this.repository.findInvoiceByPaymentLinkId(tenant.id, linkId);
+    if (!invoice) {
+      throw new PaymentsError("Payment link is not attached to an invoice", 404);
+    }
+
+    if (!invoice.customer?.phone) {
+      throw new PaymentsError("Invoice customer phone number is required for WhatsApp sharing", 400);
+    }
+
+    const link = await fetchPaymentLink(this.createRazorpayClient(), linkId);
+    const amount = Number(link.amount) / 100;
+    const message = await renderWhatsappMessageTemplate(this.fastify, tenant.id, "paymentLink", {
+      customerName: invoice.customer.name,
+      tenantName: tenant.name,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: moneyForWhatsapp(amount),
+      paymentUrl: link.short_url,
+    });
+
+    await queueWhatsappNotification(this.fastify, {
+      tenantId: tenant.id,
+      phone: invoice.customer.phone,
+      customerId: invoice.customer.id,
+      invoiceId: invoice.id,
+      message,
+      jobName: `payment-link:${invoice.id}`,
+      eventKey: "paymentLink",
+    });
+
+    return {
+      queued: true,
+      ...paymentLinkResponse(link),
+    };
   }
 
   verifyRazorpayPayment(input: RazorpayVerifyInput) {
@@ -148,6 +266,86 @@ export class PaymentsService {
       invoice: result.invoice,
     };
   }
+
+  private createRazorpayClient() {
+    const keyId = process.env.RAZORPAY_KEY_ID;
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keyId || !keySecret) {
+      throw new PaymentsError("Razorpay credentials are not configured", 501);
+    }
+
+    return new Razorpay({
+      key_id: keyId,
+      key_secret: keySecret,
+    });
+  }
+}
+
+function createPaymentLink(client: RazorpayClient, payload: RazorpayPaymentLinkPayload): Promise<RazorpayPaymentLinkResult> {
+  return new Promise((resolve, reject) => {
+    client.paymentLink.create(payload, (error, data) => {
+      if (error) {
+        reject(new PaymentsError(razorpayErrorMessage(error), 502));
+        return;
+      }
+
+      resolve(paymentLinkResult(data));
+    });
+  });
+}
+
+function fetchPaymentLink(client: RazorpayClient, linkId: string): Promise<RazorpayPaymentLinkResult> {
+  return new Promise((resolve, reject) => {
+    client.paymentLink.fetch(linkId, (error, data) => {
+      if (error) {
+        reject(new PaymentsError(razorpayErrorMessage(error), 502));
+        return;
+      }
+
+      resolve(paymentLinkResult(data));
+    });
+  });
+}
+
+function paymentLinkResult(link: RazorpayPaymentLinkResult): RazorpayPaymentLinkResult {
+  return {
+    id: link.id,
+    short_url: link.short_url,
+    amount: link.amount,
+    ...(link.expire_by !== undefined ? { expire_by: link.expire_by } : {}),
+  };
+}
+
+function paymentLinkResponse(link: RazorpayPaymentLinkResult) {
+  const expireBy = typeof link.expire_by === "number" ? link.expire_by : Number(link.expire_by);
+  return {
+    paymentLinkId: link.id,
+    shortUrl: link.short_url,
+    expiresAt: Number.isFinite(expireBy) && expireBy > 0 ? new Date(expireBy * 1000).toISOString() : null,
+  };
+}
+
+function razorpayErrorMessage(error: unknown): string {
+  const record = asRecord(error);
+  const nested = asRecord(record?.error);
+  const description = readString(nested, "description") ?? readString(record, "description") ?? readString(record, "message");
+  return description ? `Razorpay payment link failed: ${description}` : "Razorpay payment link failed";
+}
+
+function normalizeRazorpayCustomerName(value: string): string {
+  const trimmed = value.trim() || "RetailOS Customer";
+  return trimmed.length < 3 ? "RetailOS Customer" : trimmed.slice(0, 50);
+}
+
+function normalizeRazorpayContact(value: string | null | undefined): string | undefined {
+  const digits = value?.replace(/\D/g, "") ?? "";
+  if (!digits) {
+    return undefined;
+  }
+
+  const localNumber = digits.length > 10 ? digits.slice(-10) : digits;
+  return localNumber.length === 10 ? `91${localNumber}` : localNumber.slice(0, 15);
 }
 
 function readEventName(event: unknown): string | undefined {

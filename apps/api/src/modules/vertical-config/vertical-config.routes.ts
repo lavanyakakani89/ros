@@ -15,6 +15,7 @@ export const verticalConfigRoutes: FastifyPluginCallback = (fastify, _options, d
             id: request.user.userId,
             tenantId: request.user.tenantId,
             role: request.user.role,
+            storeId: request.user.storeId ?? null,
           }
         : null,
       isImpersonated: Boolean(request.isImpersonated),

@@ -99,6 +99,7 @@ interface LastBill {
   subtotal: number;
   lineDiscount: number;
   billLevelDiscount: number;
+  deliveryCharge: number;
   cgst: number;
   sgst: number;
   paymentMode: PaymentMode;
@@ -173,6 +174,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [deliveryRequired, setDeliveryRequired] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [scheduledDeliveryTime, setScheduledDeliveryTime] = useState("");
   const [lastBill, setLastBill] = useState<LastBill | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
@@ -254,7 +257,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     );
     const cgst = taxTotals.cgst;
     const sgst = taxTotals.sgst;
-    const grandTotal = taxTotals.grandTotal;
+    const activeDeliveryCharge = selectedCustomer && deliveryRequired ? roundMoney(Math.max(deliveryCharge, 0)) : 0;
+    const grandTotal = roundMoney(taxTotals.grandTotal + activeDeliveryCharge);
     const totalItems = lines.filter((line) => line.productId).length;
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
     return {
@@ -264,11 +268,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       discount: roundMoney(lineDiscount + billLevelDiscount),
       cgst,
       sgst,
+      deliveryCharge: activeDeliveryCharge,
       grandTotal,
       totalItems,
       totalQuantity: roundQuantity(totalQuantity),
     };
-  }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled]);
+  }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled, selectedCustomer, deliveryRequired, deliveryCharge]);
   const changeDue = selectedPaymentMode === "CASH" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
 
   useEffect(() => {
@@ -281,6 +286,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       setLoyaltyBalance(null);
       setDeliveryRequired(false);
       setDeliveryAddress("");
+      setDeliveryCharge(0);
+      setScheduledDeliveryTime("");
       return;
     }
 
@@ -298,7 +305,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const billDiscountAmount = getVerticalNumber(editingInvoice.verticalData, "billDiscountAmount") ?? 0;
     const couponAmount = getVerticalNumber(editingInvoice.verticalData, "couponDiscount") ?? 0;
     const redeemedPoints = getVerticalNumber(editingInvoice.verticalData, "loyaltyRedeem") ?? 0;
+    const savedDeliveryCharge = decimalToNumberOrNull(editingInvoice.deliveryCharge) ?? getVerticalNumber(editingInvoice.verticalData, "deliveryCharge") ?? 0;
     const couponCode = getVerticalString(editingInvoice.verticalData, "couponCode");
+    const scheduledAt = editingInvoice.delivery?.scheduledAt ?? getVerticalString(editingInvoice.verticalData, "scheduledDeliveryTime");
     setQuantityDrafts({});
     setLines(lineItems.map((item) => ({
       id: item.id ?? crypto.randomUUID(),
@@ -332,6 +341,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setDeliveryRequired(Boolean(editingInvoice.delivery));
     setDeliveryAddress(editingInvoice.delivery?.deliveryAddress ?? editingInvoice.customer?.address ?? "");
     setDeliveryNotes(editingInvoice.delivery?.notes ?? "");
+    setDeliveryCharge(savedDeliveryCharge);
+    setScheduledDeliveryTime(toDateTimeLocalInputValue(scheduledAt));
     setSplitEntries([{ mode: coercePaymentMode(editingInvoice.paymentMode), amount: decimalToNumber(editingInvoice.amountPaid ?? 0) }]);
     setUseSplit(false);
     setAmountReceived(0);
@@ -692,10 +703,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       setSelectedPaymentMode(paymentMode);
     }
     const customerId = selectedCustomer?.id;
+    const scheduledDeliveryAt = deliveryRequired ? toIsoDateTime(scheduledDeliveryTime) : undefined;
     const deliveryPayload = deliveryRequired && selectedCustomer
       ? {
           customerId: selectedCustomer.id,
           deliveryAddress: deliveryAddress.trim() || selectedCustomer.address || "",
+          ...(scheduledDeliveryAt ? { scheduledAt: scheduledDeliveryAt } : {}),
           ...(deliveryNotes.trim() ? { notes: deliveryNotes.trim() } : {}),
         }
       : undefined;
@@ -744,6 +757,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       loyaltyRedeem,
       ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
       ...(useSplit ? { splitPayments: splitPaymentEntries } : {}),
+      deliveryCharge: deliveryPayload ? totals.deliveryCharge : 0,
+      scheduledDeliveryTime: deliveryPayload && scheduledDeliveryAt ? scheduledDeliveryAt : null,
     };
     const invoicePayload = {
       paymentMode,
@@ -793,6 +808,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           subtotal: billSnapshot.subtotal,
           lineDiscount: billSnapshot.lineDiscount,
           billLevelDiscount: billSnapshot.billLevelDiscount,
+          deliveryCharge: billSnapshot.deliveryCharge,
           cgst: billSnapshot.cgst,
           sgst: billSnapshot.sgst,
           paymentMode,
@@ -847,6 +863,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         subtotal: billSnapshot.subtotal,
         lineDiscount: billSnapshot.lineDiscount,
         billLevelDiscount: billSnapshot.billLevelDiscount,
+        deliveryCharge: billSnapshot.deliveryCharge,
         cgst: billSnapshot.cgst,
         sgst: billSnapshot.sgst,
         paymentMode,
@@ -875,7 +892,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   async function queueOfflineInvoice(
     invoicePayload: object,
-    deliveryPayload: { customerId: string; deliveryAddress: string; notes?: string } | undefined,
+    deliveryPayload: { customerId: string; deliveryAddress: string; scheduledAt?: string; notes?: string } | undefined,
     paymentMode: PaymentMode,
     splitPayments: SplitEntry[] = [],
   ) {
@@ -1003,6 +1020,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setDeliveryRequired(false);
     setDeliveryAddress("");
     setDeliveryNotes("");
+    setDeliveryCharge(0);
+    setScheduledDeliveryTime("");
     setSplitEntries([{ mode: "CASH", amount: 0 }]);
     setUseSplit(false);
     setAmountReceived(0);
@@ -1074,6 +1093,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       subtotal: billTotals.subtotal,
       lineDiscount: billTotals.lineDiscount,
       billLevelDiscount: billTotals.billLevelDiscount,
+      deliveryCharge: billTotals.deliveryCharge,
       cgst: billTotals.cgst,
       sgst: billTotals.sgst,
       paymentMode,
@@ -1238,25 +1258,35 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             </div>
             {barcodeInput.trim() ? (
               <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto pr-1">
-                {productResults.length > 0 ? productResults.map((product, index) => (
-                  <button
-                    key={product.id}
-                    className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                    onClick={() => {
-                      insertProduct(product);
-                      setBarcodeInput("");
-                    }}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate">
-                        {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
+                {productResults.length > 0 ? productResults.map((product, index) => {
+                  const imageSrc = productSearchImageSrc(product);
+                  return (
+                    <button
+                      key={product.id}
+                      className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                      onClick={() => {
+                        insertProduct(product);
+                        setBarcodeInput("");
+                      }}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {imageSrc ? (
+                            <img src={imageSrc} alt="" className="size-8 shrink-0 rounded border border-slate-200 object-cover" />
+                          ) : (
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-[9px] font-bold uppercase text-slate-400">Img</span>
+                          )}
+                          <span className="min-w-0 truncate">
+                            {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
+                          </span>
+                        </span>
+                        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
+                          {productMatchLabel(product, barcodeInput, productSearchMode)}
+                        </span>
                       </span>
-                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
-                        {productMatchLabel(product, barcodeInput, productSearchMode)}
-                      </span>
-                    </span>
-                  </button>
-                )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
+                    </button>
+                  );
+                }) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
               </div>
             ) : (
               <div className="mt-2 text-xs text-slate-500">Scan or search to add products.</div>
@@ -1353,6 +1383,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               Delivery notes
               <input value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
             </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Delivery charge (₹)
+              <input type="number" min="0" value={deliveryCharge} onChange={(event) => setDeliveryCharge(Number(event.target.value) || 0)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Scheduled for
+              <input type="datetime-local" value={scheduledDeliveryTime} onChange={(event) => setScheduledDeliveryTime(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+            </label>
           </div>
         ) : null}
       </div>
@@ -1365,6 +1403,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           <SummaryRow label="Subtotal" value={totals.subtotal} />
           <SummaryRow label="Line discount" value={-totals.lineDiscount} />
           <SummaryRow label="Bill discount" value={-totals.billLevelDiscount} />
+          {totals.deliveryCharge > 0 ? <SummaryRow label="Delivery charge" value={totals.deliveryCharge} /> : null}
           {gstEnabled ? <SummaryRow label="CGST" value={totals.cgst} /> : null}
           {gstEnabled ? <SummaryRow label="SGST" value={totals.sgst} /> : null}
           <div className="flex justify-between border-t border-border pt-3 text-base font-bold"><span>Grand total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
@@ -1581,6 +1620,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 <SummaryRow label="Subtotal" value={lastBill.subtotal} />
                 <SummaryRow label="Line discount" value={-lastBill.lineDiscount} />
                 <SummaryRow label="Bill discount" value={-lastBill.billLevelDiscount} />
+                {lastBill.deliveryCharge > 0 ? <SummaryRow label="Delivery charge" value={lastBill.deliveryCharge} /> : null}
                 {gstEnabled ? <SummaryRow label="CGST" value={lastBill.cgst} /> : null}
                 {gstEnabled ? <SummaryRow label="SGST" value={lastBill.sgst} /> : null}
                 <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span>₹{lastBill.grandTotal.toFixed(2)}</span></div>
@@ -1752,6 +1792,14 @@ function productSearchIdentifier(product: ProductRecord): string {
   return "No barcode";
 }
 
+function productSearchImageSrc(product: ProductRecord): string | null {
+  if (!product.imageUrl) {
+    return null;
+  }
+
+  return `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}`;
+}
+
 function productSearchPlaceholder(mode: ProductSearchMode): string {
   if (mode === "BARCODE") return "Scan or type barcode + Enter";
   if (mode === "SKU") return "Scan or type SKU + Enter";
@@ -1846,6 +1894,20 @@ function decimalToNumber(value: string | number): number {
 function decimalToNumberOrNull(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   return decimalToNumber(value);
+}
+
+function toDateTimeLocalInputValue(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function toIsoDateTime(value: string): string | undefined {
+  if (!value.trim()) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 function coercePaymentMode(value: string): PaymentMode {

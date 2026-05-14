@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -44,6 +44,7 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
       return createAuthenticatedApiClient().get<LedgerSummary>(`/billing/customer-ledger/${customerId}?${params.toString()}`);
     },
   });
+  const [statementError, setStatementError] = useState("");
   useEffect(() => {
     setPage(1);
   }, [from, to]);
@@ -56,6 +57,18 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
   if (ledgerQuery.isLoading) return <div className="p-6 text-sm text-slate-500">Loading ledger…</div>;
   if (!data) return <div className="p-6 text-sm text-slate-400">Customer not found.</div>;
 
+  async function downloadStatement() {
+    setStatementError("");
+    const params = new URLSearchParams();
+    appendDateRange(params, from, to);
+    try {
+      const result = await createAuthenticatedApiClient().post<{ downloadUrl: string }>(`/customers/${customerId}/statement-pdf?${params.toString()}`, {});
+      window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setStatementError(error instanceof Error ? error.message : "Unable to generate statement PDF.");
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -64,7 +77,17 @@ export function CustomerLedger({ customerId }: { customerId: string }) {
           <h1 className="text-xl font-bold text-slate-950">{data.customer.name}</h1>
           <div className="text-xs text-slate-500">{data.customer.phone}</div>
         </div>
+        <button
+          type="button"
+          onClick={() => void downloadStatement()}
+          className="ml-auto inline-flex h-10 items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700"
+        >
+          <Download className="size-4" aria-hidden="true" />
+          Download statement
+        </button>
       </div>
+
+      {statementError ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{statementError}</div> : null}
 
       <div className="grid grid-cols-3 gap-3">
         {[

@@ -9,8 +9,12 @@ import { minioPlugin } from "./plugins/minio.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { redisPlugin } from "./plugins/redis.js";
 import { tenantPlugin } from "./plugins/tenant.js";
+import { scheduleCustomerEventReminders } from "./jobs/customer-events.job.js";
 import { createExpiryAlertsWorker, scheduleExpiryAlerts } from "./jobs/expiry-alerts.job.js";
+import { expireLoyaltyPoints } from "./jobs/loyalty-expiry.job.js";
 import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
+import { expireOverdueQuotations } from "./jobs/quotation-expiry.job.js";
+import { createWhatsappCampaignWorker } from "./jobs/whatsapp-campaign.job.js";
 import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
@@ -22,6 +26,7 @@ import { customersRoutes } from "./modules/customers/customers.routes.js";
 import { deliveryRoutes } from "./modules/delivery/delivery.routes.js";
 import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
+import { stockCountRoutes } from "./modules/inventory/stock-count.routes.js";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { printerRoutes } from "./modules/printer/printer.routes.js";
@@ -31,6 +36,7 @@ import { quotationsRoutes } from "./modules/quotations/quotations.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { restaurantRoutes } from "./modules/restaurant/restaurant.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
+import { storesRoutes } from "./modules/settings/stores.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.routes.js";
 import { superAdminImpersonationRoutes } from "./modules/superadmin/superadmin-impersonation.routes.js";
@@ -38,6 +44,7 @@ import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.rou
 import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
+import { whatsappCampaignsRoutes } from "./modules/whatsapp/whatsapp-campaigns.routes.js";
 import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
@@ -134,6 +141,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(purchaseOrdersRoutes);
   await fastify.register(purchaseReturnsRoutes);
   await fastify.register(inventoryRoutes);
+  await fastify.register(stockCountRoutes);
   await fastify.register(billingRoutes);
   await fastify.register(templatesRoutes);
   await fastify.register(printerRoutes);
@@ -141,6 +149,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(deliveryRoutes);
   await fastify.register(reportsRoutes);
   await fastify.register(settingsRoutes);
+  await fastify.register(storesRoutes);
   await fastify.register(expensesRoutes);
   await fastify.register(creditNotesRoutes);
   await fastify.register(quotationsRoutes);
@@ -149,9 +158,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(auditRoutes);
   await fastify.register(restaurantRoutes);
   await fastify.register(whatsappRoutes);
+  await fastify.register(whatsappCampaignsRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
-    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];
+    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker(), createWhatsappCampaignWorker()];
 
     for (const worker of workers) {
       worker.on("failed", (job, error) => {
@@ -160,8 +170,26 @@ export async function buildServer(): Promise<FastifyInstance> {
     }
 
     await scheduleExpiryAlerts();
+    await expireOverdueQuotations();
+    await expireLoyaltyPoints();
+    const customerEventsScheduler = scheduleCustomerEventReminders(fastify);
+    const quotationExpiryTimer = setInterval(() => {
+      void expireOverdueQuotations().catch((error: unknown) => {
+        fastify.log.error({ error }, "Quotation auto-expiry failed");
+      });
+    }, 24 * 60 * 60 * 1000);
+    quotationExpiryTimer.unref();
+    const loyaltyExpiryTimer = setInterval(() => {
+      void expireLoyaltyPoints().catch((error: unknown) => {
+        fastify.log.error({ error }, "Loyalty points expiry failed");
+      });
+    }, 24 * 60 * 60 * 1000);
+    loyaltyExpiryTimer.unref();
 
     fastify.addHook("onClose", async () => {
+      clearInterval(quotationExpiryTimer);
+      clearInterval(loyaltyExpiryTimer);
+      customerEventsScheduler.close();
       await Promise.all(workers.map((worker) => worker.close()));
     });
   }

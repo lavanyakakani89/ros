@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const decimalSchema = z.coerce.number().finite();
+const optionalDateSchema = z.preprocess((value) => (value === "" || value === null ? undefined : value), z.coerce.date().optional());
 
 export const customerListQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -30,6 +31,8 @@ export const createCustomerSchema = z.object({
   gstin: z.string().trim().min(1).optional(),
   pan: z.string().trim().min(1).optional(),
   cin: z.string().trim().min(1).optional(),
+  birthday: optionalDateSchema,
+  anniversary: optionalDateSchema,
   openingBalanceType: z.enum(["CR", "DR"]).optional(),
   openingBalance: decimalSchema.nonnegative().default(0),
   tcsEnabled: z.coerce.boolean().default(false),

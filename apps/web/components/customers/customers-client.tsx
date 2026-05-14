@@ -26,6 +26,8 @@ interface CustomerRecord {
   gstin?: string | null;
   pan?: string | null;
   cin?: string | null;
+  birthday?: string | null;
+  anniversary?: string | null;
   openingBalanceType?: string | null;
   openingBalance?: string | number | null;
   tcsEnabled?: boolean;
@@ -39,9 +41,20 @@ interface CustomerRecord {
   lastVisitAt?: string | null;
 }
 
+interface OutstandingCustomer {
+  id: string;
+  name: string;
+  phone: string;
+  totalOutstanding: number;
+  invoiceCount: number;
+  lastInvoiceDate: string | null;
+  oldestUnpaidDate: string | null;
+}
+
 export function CustomersClient() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [listMode, setListMode] = useState<"all" | "outstanding">("all");
   const [page, setPage] = useState(1);
   const [importStatus, setImportStatus] = useState("");
   const pageSize = 25;
@@ -52,6 +65,12 @@ export function CustomersClient() {
   const customersQuery = useQuery({
     queryKey: ["customers", searchTerm, page, pageSize],
     queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?page=${page}&limit=${pageSize}${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`),
+    enabled: listMode === "all",
+  });
+  const outstandingQuery = useQuery({
+    queryKey: ["customers", "outstanding", page, pageSize],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<OutstandingCustomer>>(`/customers/outstanding?page=${page}&limit=${pageSize}&sortBy=amount_due`),
+    enabled: listMode === "outstanding" && canSeeCustomerFinancials,
   });
   const createCustomer = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/customers", payload),
@@ -69,10 +88,11 @@ export function CustomersClient() {
     },
   });
   const customers = customersQuery.data?.data ?? [];
+  const outstandingCustomers = outstandingQuery.data?.data ?? [];
   useEffect(() => {
     setPage(1);
-  }, [searchTerm]);
-  const error = customersQuery.error ?? createCustomer.error ?? updateCustomer.error ?? importCustomers.error;
+  }, [listMode, searchTerm]);
+  const error = customersQuery.error ?? outstandingQuery.error ?? createCustomer.error ?? updateCustomer.error ?? importCustomers.error;
 
   function handleCreate(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -102,6 +122,24 @@ export function CustomersClient() {
       </section>
       <section className="rounded-md border border-border bg-white">
         <div className="space-y-3 border-b border-border p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setListMode("all")}
+              className={`h-9 rounded-md border px-3 text-sm font-medium ${listMode === "all" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-border text-slate-700"}`}
+            >
+              All customers
+            </button>
+            {canSeeCustomerFinancials ? (
+              <button
+                type="button"
+                onClick={() => setListMode("outstanding")}
+                className={`h-9 rounded-md border px-3 text-sm font-medium ${listMode === "outstanding" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-border text-slate-700"}`}
+              >
+                Outstanding
+              </button>
+            ) : null}
+          </div>
           {canImportExport ? (
             <div className="flex flex-wrap items-center gap-2">
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/template", "retailos-customer-template.xls")}>
@@ -126,15 +164,67 @@ export function CustomersClient() {
             </div>
           ) : null}
           {importStatus ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{importStatus}</div> : null}
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, phone, email" className="h-10 w-full rounded-md border border-border px-3 text-sm" />
+          {listMode === "all" ? (
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, phone, email" className="h-10 w-full rounded-md border border-border px-3 text-sm" />
+          ) : null}
         </div>
-        <div className="divide-y divide-border">
-          {customers.length > 0 ? customers.map((customer) => (
-            <CustomerRow key={customer.id} customer={customer} canSeeFinancials={canSeeCustomerFinancials} onSave={(payload) => updateCustomer.mutate({ id: customer.id, payload })} />
-          )) : <div className="p-4 text-sm text-slate-500">No customers found.</div>}
-        </div>
-        <PaginationControls page={page} limit={pageSize} total={customersQuery.data?.total ?? 0} onPageChange={setPage} />
+        {listMode === "outstanding" ? (
+          <OutstandingCustomersTable customers={outstandingCustomers} />
+        ) : (
+          <div className="divide-y divide-border">
+            {customers.length > 0 ? customers.map((customer) => (
+              <CustomerRow key={customer.id} customer={customer} canSeeFinancials={canSeeCustomerFinancials} onSave={(payload) => updateCustomer.mutate({ id: customer.id, payload })} />
+            )) : <div className="p-4 text-sm text-slate-500">No customers found.</div>}
+          </div>
+        )}
+        <PaginationControls
+          page={page}
+          limit={pageSize}
+          total={listMode === "outstanding" ? outstandingQuery.data?.total ?? 0 : customersQuery.data?.total ?? 0}
+          onPageChange={setPage}
+        />
       </section>
+    </div>
+  );
+}
+
+function OutstandingCustomersTable({ customers }: Readonly<{ customers: OutstandingCustomer[] }>) {
+  if (customers.length === 0) {
+    return <div className="p-4 text-sm text-slate-500">No outstanding customer dues found.</div>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead className="bg-slate-50 text-xs text-slate-500">
+          <tr>
+            <th className="px-4 py-2 text-left font-medium">Customer</th>
+            <th className="px-4 py-2 text-left font-medium">Phone</th>
+            <th className="px-4 py-2 text-right font-medium">Outstanding</th>
+            <th className="px-4 py-2 text-right font-medium">Invoices</th>
+            <th className="px-4 py-2 text-left font-medium">Oldest invoice</th>
+            <th className="px-4 py-2 text-left font-medium">Last invoice</th>
+            <th className="px-4 py-2 text-right font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {customers.map((customer) => (
+            <tr key={customer.id}>
+              <td className="px-4 py-3 font-medium text-slate-950">{customer.name}</td>
+              <td className="px-4 py-3 text-slate-600">{customer.phone}</td>
+              <td className="px-4 py-3 text-right font-semibold text-amber-700">{money(customer.totalOutstanding)}</td>
+              <td className="px-4 py-3 text-right text-slate-600">{customer.invoiceCount}</td>
+              <td className="px-4 py-3 text-slate-600">{formatDate(customer.oldestUnpaidDate)}</td>
+              <td className="px-4 py-3 text-slate-600">{formatDate(customer.lastInvoiceDate)}</td>
+              <td className="px-4 py-3 text-right">
+                <Link href={`/customers/${customer.id}/ledger`} className="inline-flex h-9 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700">
+                  View ledger
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -190,6 +280,8 @@ function CustomerOptionalFields({ customer, canSeeFinancials }: Readonly<{ custo
         <TextInput name="gstin" label="GSTIN / UID" defaultValue={customer?.gstin ?? ""} />
         <TextInput name="pan" label="PAN" defaultValue={customer?.pan ?? ""} />
         <TextInput name="cin" label="CIN" defaultValue={customer?.cin ?? ""} />
+        <TextInput name="birthday" label="Date of birth" type="date" defaultValue={dateInputValue(customer?.birthday)} />
+        <TextInput name="anniversary" label="Anniversary date" type="date" defaultValue={dateInputValue(customer?.anniversary)} />
         {canSeeFinancials ? (
           <>
             <TextInput name="openingBalanceType" label="Opening balance type" defaultValue={customer?.openingBalanceType ?? ""} />
@@ -251,6 +343,8 @@ function buildCustomerPayload(form: FormData): Record<string, unknown> {
     gstin: formString(form, "gstin") || undefined,
     pan: formString(form, "pan") || undefined,
     cin: formString(form, "cin") || undefined,
+    birthday: formString(form, "birthday") || undefined,
+    anniversary: formString(form, "anniversary") || undefined,
     openingBalanceType: formString(form, "openingBalanceType").toUpperCase() || undefined,
     openingBalance: Number(form.get("openingBalance") || 0),
     tcsEnabled: form.get("tcsEnabled") === "on",
@@ -271,4 +365,20 @@ interface ImportResult {
 
 function money(value: number): string {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function formatDate(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleDateString("en-IN");
+}
+
+function dateInputValue(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toISOString().slice(0, 10);
 }

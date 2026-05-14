@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { InventoryError, InventoryService } from "./inventory.service.js";
@@ -12,6 +12,7 @@ import {
   productListQuerySchema,
   productLookupQuerySchema,
   stockAdjustmentSchema,
+  stockMovementQuerySchema,
   updateProductSchema,
 } from "./inventory.schema.js";
 
@@ -80,6 +81,135 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
     return handleInventory(reply, () => Promise.resolve(service.listBatches(request.tenant, params.id)));
   });
 
+  fastify.get("/api/inventory/products/:id/movements", async (request, reply) => {
+    const params = productIdParamsSchema.parse(request.params);
+    const query = stockMovementQuerySchema.parse(request.query);
+    return handleInventory(reply, () => service.listProductMovements(request.tenant, params.id, query));
+  });
+
+  fastify.get("/api/inventory/products/:id/image", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      const params = productIdParamsSchema.parse(request.params);
+      const product = await fastify.prisma.product.findFirst({
+        where: {
+          id: params.id,
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+        select: {
+          imageUrl: true,
+        },
+      });
+
+      if (!product?.imageUrl) {
+        throw new InventoryError("Product image not found", 404);
+      }
+
+      const stream = await fastify.minio.getObject(fastify.minioBucket, product.imageUrl);
+      reply.header("Cache-Control", "private, max-age=300");
+      reply.type(contentTypeForImageObject(product.imageUrl));
+      return reply.send(stream);
+    });
+  });
+
+  fastify.post("/api/inventory/products/:id/image", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = productIdParamsSchema.parse(request.params);
+      const product = await fastify.prisma.product.findFirst({
+        where: {
+          id: params.id,
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          imageUrl: true,
+        },
+      });
+
+      if (!product) {
+        throw new InventoryError("Product not found", 404);
+      }
+
+      const file = await request.file();
+      if (!file) {
+        throw new InventoryError("Product image file is required", 400);
+      }
+
+      const contentType = file.mimetype.toLowerCase();
+      if (!allowedProductImageTypes.has(contentType)) {
+        throw new InventoryError("Upload a JPG, PNG, or WEBP image", 400);
+      }
+
+      const buffer = await file.toBuffer();
+      if (buffer.length > maxProductImageBytes) {
+        throw new InventoryError("Product image must be 5 MB or smaller", 400);
+      }
+
+      const extension = extensionForContentType(contentType);
+      const objectName = `products/${request.tenant.id}/${params.id}.${extension}`;
+      await fastify.minio.putObject(fastify.minioBucket, objectName, buffer, buffer.length, {
+        "Content-Type": contentType,
+      });
+
+      if (product.imageUrl && product.imageUrl !== objectName) {
+        await fastify.minio.removeObject(fastify.minioBucket, product.imageUrl).catch(() => undefined);
+      }
+
+      await fastify.prisma.product.update({
+        where: {
+          id: params.id,
+        },
+        data: {
+          imageUrl: objectName,
+        },
+      });
+
+      return {
+        imageUrl: productImageViewUrl(params.id),
+      };
+    });
+  });
+
+  fastify.delete("/api/inventory/products/:id/image", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = productIdParamsSchema.parse(request.params);
+      const product = await fastify.prisma.product.findFirst({
+        where: {
+          id: params.id,
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+        select: {
+          imageUrl: true,
+        },
+      });
+
+      if (!product) {
+        throw new InventoryError("Product not found", 404);
+      }
+
+      if (product.imageUrl) {
+        await fastify.minio.removeObject(fastify.minioBucket, product.imageUrl).catch(() => undefined);
+      }
+
+      await fastify.prisma.product.update({
+        where: {
+          id: params.id,
+        },
+        data: {
+          imageUrl: null,
+        },
+      });
+
+      return {
+        imageUrl: null,
+      };
+    });
+  });
+
   fastify.post("/api/inventory/stock-adjustment", async (request, reply) => {
     const input = stockAdjustmentSchema.parse(request.body);
     return handleInventory(reply, () => service.adjustStock(request.tenant, request.user, input));
@@ -134,4 +264,29 @@ async function handleInventory<T>(reply: FastifyReply, handler: () => Promise<T>
 
     throw error;
   }
+}
+
+const maxProductImageBytes = 5 * 1024 * 1024;
+const allowedProductImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function ensureProductImageManager(role: UserRole): void {
+  if (role !== UserRole.OWNER && role !== UserRole.MANAGER) {
+    throw new InventoryError("Only owners and managers can manage product images", 403);
+  }
+}
+
+function extensionForContentType(contentType: string): "jpg" | "png" | "webp" {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function contentTypeForImageObject(objectName: string): string {
+  if (objectName.endsWith(".png")) return "image/png";
+  if (objectName.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
+function productImageViewUrl(productId: string): string {
+  return `/api/inventory/products/${productId}/image`;
 }

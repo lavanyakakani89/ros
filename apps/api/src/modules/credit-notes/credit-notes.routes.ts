@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { CreditNoteStatus, Prisma } from "@prisma/client";
-import type { FastifyPluginCallback, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
+
+import { generateCreditNotePdf, type CreditNoteWithItems } from "./credit-note.pdf.js";
+import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 export class CreditNoteError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); }
@@ -128,6 +132,71 @@ export const creditNotesRoutes: FastifyPluginCallback = (fastify, _options, done
     });
   });
 
+  fastify.post("/api/credit-notes/:id/pdf", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      return generateAndStoreCreditNotePdf(fastify, request.tenant.id, id);
+    });
+  });
+
+  fastify.get("/api/credit-notes/:id/pdf/view", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      const pdf = await generateAndStoreCreditNotePdf(fastify, request.tenant.id, id);
+      const creditNote = await getCreditNoteOrThrow(fastify, request.tenant.id, id);
+      let stream;
+      try {
+        stream = await fastify.minio.getObject(fastify.minioBucket, pdf.pdfUrl);
+      } catch (error) {
+        fastify.log.error({ error, tenantId: request.tenant.id, creditNoteId: id, objectName: pdf.pdfUrl }, "Generated credit note PDF was unavailable");
+        throw new CreditNoteError("Credit note PDF could not be opened after generation.", 502);
+      }
+      reply
+        .header("Content-Type", "application/pdf")
+        .header("Content-Disposition", `inline; filename="${creditNote.creditNoteNumber}.pdf"`)
+        .header("Cache-Control", "no-store, max-age=0");
+      return reply.send(stream);
+    });
+  });
+
+  fastify.post("/api/credit-notes/:id/share", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      const input = z.object({ channel: z.enum(["whatsapp", "pdf"]).default("whatsapp") }).parse(request.body ?? {});
+      const creditNote = await getCreditNoteOrThrow(fastify, request.tenant.id, id);
+
+      if (input.channel === "pdf") {
+        return generateAndStoreCreditNotePdf(fastify, request.tenant.id, id);
+      }
+
+      if (!creditNote.customer?.phone) {
+        throw new CreditNoteError("Credit note does not have a customer phone number to share with", 400);
+      }
+
+      const pdf = creditNote.pdfUrl
+        ? { pdfUrl: creditNote.pdfUrl, downloadUrl: creditNotePdfViewUrl(creditNote.id) }
+        : await generateAndStoreCreditNotePdf(fastify, request.tenant.id, id);
+      const message = await renderWhatsappMessageTemplate(fastify, request.tenant.id, "creditNoteReady", {
+        customerName: creditNote.customer.name,
+        tenantName: request.tenant.name,
+        creditNoteNumber: creditNote.creditNoteNumber,
+        grandTotal: moneyForWhatsapp(creditNote.grandTotal),
+        originalInvoiceNumber: creditNote.originalInvoice?.invoiceNumber ?? "-",
+        pdfLine: `Download: ${pdf.downloadUrl}`,
+      });
+
+      await queueWhatsappNotification(fastify, {
+        tenantId: request.tenant.id,
+        phone: creditNote.customer.phone,
+        customerId: creditNote.customerId,
+        message,
+        jobName: "credit-note-share",
+        eventKey: "creditNoteShared",
+      });
+      return { status: "queued", channel: input.channel };
+    });
+  });
+
   fastify.get("/api/credit-notes/:id", async (request, reply) => {
     return handleError(reply, async () => {
       const { id } = idParams.parse(request.params);
@@ -146,6 +215,58 @@ function dateRangeWhere(from?: Date, to?: Date): Prisma.DateTimeFilter | undefin
     ...(from ? { gte: from } : {}),
     ...(to ? { lte: to } : {}),
   };
+}
+
+async function getCreditNoteOrThrow(fastify: FastifyInstance, tenantId: string, id: string): Promise<CreditNoteWithItems> {
+  const creditNote = await fastify.prisma.creditNote.findFirst({
+    where: { id, tenantId },
+    include: { items: true, customer: true, originalInvoice: true },
+  });
+  if (!creditNote) {
+    throw new CreditNoteError("Credit note not found", 404);
+  }
+
+  return creditNote;
+}
+
+async function generateAndStoreCreditNotePdf(fastify: FastifyInstance, tenantId: string, id: string) {
+  const creditNote = await getCreditNoteOrThrow(fastify, tenantId, id);
+  const tenant = await fastify.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+  let pdfUrl: string;
+  try {
+    pdfUrl = await generateCreditNotePdf({
+      creditNote,
+      tenant,
+      minio: fastify.minio,
+      bucket: fastify.minioBucket,
+    });
+  } catch (error) {
+    fastify.log.error({ error, creditNoteId: id, tenantId }, "Credit note PDF generation failed");
+    throw new CreditNoteError(`Credit note PDF generation failed: ${safeErrorMessage(error)}`, 502);
+  }
+
+  await fastify.prisma.creditNote.updateMany({
+    where: { id, tenantId },
+    data: { pdfUrl },
+  });
+
+  return {
+    pdfUrl,
+    downloadUrl: creditNotePdfViewUrl(id),
+  };
+}
+
+function creditNotePdfViewUrl(creditNoteId: string): string {
+  const baseUrl = process.env.PUBLIC_APP_URL ?? (process.env.APP_DOMAIN ? `https://${process.env.APP_DOMAIN}` : "");
+  return `${baseUrl}/api/credit-notes/${creditNoteId}/pdf/view`;
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Unknown PDF renderer error";
+  }
+
+  return error.message.replace(/\s+/g, " ").slice(0, 180) || "Unknown PDF renderer error";
 }
 
 async function handleError<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {

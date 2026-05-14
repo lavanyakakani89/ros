@@ -28,7 +28,7 @@ export class BillingService {
   }
 
   async createInvoice(tenant: Tenant, input: CreateInvoiceInput) {
-    const calculated = await this.calculateInvoice(tenant, input.items, input.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, input.items, input.billDiscount, input.verticalData);
 
     return this.repository.createInvoice({
       tenantId: tenant.id,
@@ -68,6 +68,7 @@ export class BillingService {
           ...(item.expiryDate ? { expiryDate: item.expiryDate } : {}),
         })),
       ...(input.customerId !== undefined ? input.customerId ? { customerId: input.customerId } : {} : existing.customerId ? { customerId: existing.customerId } : {}),
+      ...(input.storeId !== undefined ? input.storeId ? { storeId: input.storeId } : {} : existing.storeId ? { storeId: existing.storeId } : {}),
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : existing.dueDate ? { dueDate: existing.dueDate } : {}),
       ...(input.verticalData !== undefined
         ? { verticalData: input.verticalData }
@@ -77,7 +78,7 @@ export class BillingService {
       ...(input.notes !== undefined ? input.notes ? { notes: input.notes } : {} : existing.notes ? { notes: existing.notes } : {}),
     };
 
-    const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount, merged.verticalData);
     let invoice: Awaited<ReturnType<BillingRepository["replaceInvoice"]>>;
     try {
       invoice = await this.repository.replaceInvoice({
@@ -196,7 +197,7 @@ export class BillingService {
     }
   }
 
-  private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0) {
+  private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0, verticalData?: Record<string, unknown>) {
     const productIds = [...new Set(items.map((item) => item.productId))];
     const products = await this.repository.findProducts(tenant.id, productIds);
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -216,6 +217,7 @@ export class BillingService {
         totalDiscount: roundMoney(accumulator.totalDiscount + Number(item.discount)),
         totalCgst: roundMoney(accumulator.totalCgst + Number(item.cgst)),
         totalSgst: roundMoney(accumulator.totalSgst + Number(item.sgst)),
+        deliveryCharge: accumulator.deliveryCharge,
         grandTotal: roundMoney(accumulator.grandTotal + Number(item.total)),
       }),
       {
@@ -223,12 +225,18 @@ export class BillingService {
         totalDiscount: 0,
         totalCgst: 0,
         totalSgst: 0,
+        deliveryCharge: 0,
         grandTotal: 0,
       },
     );
+    const deliveryCharge = readDeliveryCharge(verticalData);
 
     return {
-      totals,
+      totals: {
+        ...totals,
+        deliveryCharge,
+        grandTotal: roundMoney(totals.grandTotal + deliveryCharge),
+      },
       items: invoiceItems,
     };
   }
@@ -274,6 +282,7 @@ export class BillingService {
       invoiceId: invoice.id,
       message,
       jobName: "invoice-confirmed",
+      eventKey: "invoiceConfirmed",
     });
   }
 
@@ -318,6 +327,16 @@ function isWhatsappSourced(value: unknown): boolean {
 
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function readDeliveryCharge(verticalData: unknown): number {
+  const value = toRecord(verticalData).deliveryCharge;
+  const amount = typeof value === "number" ? value : Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+
+  return roundMoney(amount);
 }
 
 function createInvoiceItem(

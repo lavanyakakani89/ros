@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { Prisma, QuotationStatus } from "@prisma/client";
-import type { FastifyPluginCallback, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
+
+import { generateQuotationPdf, type QuotationWithItems } from "./quotation.pdf.js";
+import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
+import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
 export class QuotationError extends Error {
   constructor(message: string, readonly statusCode: number) { super(message); }
@@ -127,6 +131,71 @@ export const quotationsRoutes: FastifyPluginCallback = (fastify, _options, done)
     });
   });
 
+  fastify.post("/api/quotations/:id/pdf", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      return generateAndStoreQuotationPdf(fastify, request.tenant, id);
+    });
+  });
+
+  fastify.get("/api/quotations/:id/pdf/view", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      const pdf = await generateAndStoreQuotationPdf(fastify, request.tenant, id);
+      const quotation = await getQuotationOrThrow(fastify, request.tenant.id, id);
+      let stream;
+      try {
+        stream = await fastify.minio.getObject(fastify.minioBucket, pdf.pdfUrl);
+      } catch (error) {
+        fastify.log.error({ error, tenantId: request.tenant.id, quotationId: id, objectName: pdf.pdfUrl }, "Generated quotation PDF was unavailable");
+        throw new QuotationError("Quotation PDF could not be opened after generation.", 502);
+      }
+      reply
+        .header("Content-Type", "application/pdf")
+        .header("Content-Disposition", `inline; filename="${quotation.quotationNumber}.pdf"`)
+        .header("Cache-Control", "no-store, max-age=0");
+      return reply.send(stream);
+    });
+  });
+
+  fastify.post("/api/quotations/:id/share", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      const input = z.object({ channel: z.enum(["whatsapp", "pdf"]).default("whatsapp") }).parse(request.body ?? {});
+      const quotation = await getQuotationOrThrow(fastify, request.tenant.id, id);
+
+      if (input.channel === "pdf") {
+        return generateAndStoreQuotationPdf(fastify, request.tenant, id);
+      }
+
+      if (!quotation.customer?.phone) {
+        throw new QuotationError("Quotation does not have a customer phone number to share with", 400);
+      }
+
+      const pdf = quotation.pdfUrl
+        ? { pdfUrl: quotation.pdfUrl, downloadUrl: quotationPdfViewUrl(quotation.id) }
+        : await generateAndStoreQuotationPdf(fastify, request.tenant, id);
+      const message = await renderWhatsappMessageTemplate(fastify, request.tenant.id, "quotationReady", {
+        customerName: quotation.customer.name,
+        tenantName: request.tenant.name,
+        quotationNumber: quotation.quotationNumber,
+        grandTotal: moneyForWhatsapp(quotation.grandTotal),
+        validUntil: quotation.validUntil?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) ?? "-",
+        pdfLine: `Download: ${pdf.downloadUrl}`,
+      });
+
+      await queueWhatsappNotification(fastify, {
+        tenantId: request.tenant.id,
+        phone: quotation.customer.phone,
+        customerId: quotation.customerId,
+        message,
+        jobName: "quotation-share",
+        eventKey: "quotationShared",
+      });
+      return { status: "queued", channel: input.channel };
+    });
+  });
+
   fastify.put("/api/quotations/:id/status", async (request, reply) => {
     return handleError(reply, async () => {
       const { id } = idParams.parse(request.params);
@@ -144,6 +213,57 @@ function dateRangeWhere(from?: Date, to?: Date): Prisma.DateTimeFilter | undefin
     ...(from ? { gte: from } : {}),
     ...(to ? { lte: to } : {}),
   };
+}
+
+async function getQuotationOrThrow(fastify: FastifyInstance, tenantId: string, id: string): Promise<QuotationWithItems> {
+  const quotation = await fastify.prisma.quotation.findFirst({
+    where: { id, tenantId },
+    include: { items: true, customer: true },
+  });
+  if (!quotation) {
+    throw new QuotationError("Quotation not found", 404);
+  }
+
+  return quotation;
+}
+
+async function generateAndStoreQuotationPdf(fastify: FastifyInstance, tenant: { id: string; name: string }, id: string) {
+  const quotation = await getQuotationOrThrow(fastify, tenant.id, id);
+  let pdfUrl: string;
+  try {
+    pdfUrl = await generateQuotationPdf({
+      quotation,
+      tenant: await fastify.prisma.tenant.findUniqueOrThrow({ where: { id: tenant.id } }),
+      minio: fastify.minio,
+      bucket: fastify.minioBucket,
+    });
+  } catch (error) {
+    fastify.log.error({ error, quotationId: id, tenantId: tenant.id }, "Quotation PDF generation failed");
+    throw new QuotationError(`Quotation PDF generation failed: ${safeErrorMessage(error)}`, 502);
+  }
+
+  await fastify.prisma.quotation.updateMany({
+    where: { id, tenantId: tenant.id },
+    data: { pdfUrl },
+  });
+
+  return {
+    pdfUrl,
+    downloadUrl: quotationPdfViewUrl(id),
+  };
+}
+
+function quotationPdfViewUrl(quotationId: string): string {
+  const baseUrl = process.env.PUBLIC_APP_URL ?? (process.env.APP_DOMAIN ? `https://${process.env.APP_DOMAIN}` : "");
+  return `${baseUrl}/api/quotations/${quotationId}/pdf/view`;
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return "Unknown PDF renderer error";
+  }
+
+  return error.message.replace(/\s+/g, " ").slice(0, 180) || "Unknown PDF renderer error";
 }
 
 async function handleError<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {

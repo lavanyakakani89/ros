@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, MessageCircle, Pencil, Printer, Search, XCircle } from "lucide-react";
+import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, XCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
@@ -17,6 +18,7 @@ export interface InvoiceRecord {
   totalDiscount?: string | number;
   totalCgst?: string | number;
   totalSgst?: string | number;
+  deliveryCharge?: string | number;
   grandTotal: string | number;
   amountPaid?: string | number;
   amountDue: string | number;
@@ -24,6 +26,7 @@ export interface InvoiceRecord {
   dueDate?: string | null;
   paymentMode: string;
   notes?: string | null;
+  paymentLinkId?: string | null;
   verticalData?: Record<string, unknown> | null;
   customer?: {
     id: string;
@@ -37,6 +40,7 @@ export interface InvoiceRecord {
     id?: string;
     status: string;
     deliveryAddress?: string | null;
+    scheduledAt?: string | null;
     notes?: string | null;
   } | null;
   items?: Array<{
@@ -65,6 +69,7 @@ export function InvoiceHistory({
   surface?: "embedded" | "drawer";
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
 }>) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [from, setFrom] = useState(today);
@@ -73,7 +78,11 @@ export function InvoiceHistory({
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
+  const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const isDrawer = surface === "drawer";
   const canCancelInvoices = getStoredAuthSession()?.user?.role !== "STAFF";
   const query = useMemo(() => {
@@ -101,10 +110,23 @@ export function InvoiceHistory({
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/billing/invoices/${id}/cancel`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["invoices"] }),
   });
+  const createReturn = useMutation({
+    mutationFn: ({ invoiceId, payload }: { invoiceId: string; payload: object }) => createAuthenticatedApiClient().post(`/billing/invoices/${invoiceId}/return`, payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+        queryClient.invalidateQueries({ queryKey: ["credit-notes"] }),
+      ]);
+      setReturnInvoice(null);
+      setReturnReason("");
+      setReturnQuantities({});
+      router.push("/credit-notes");
+    },
+  });
   const invoices = invoicesQuery.data?.data ?? [];
   const total = invoicesQuery.data?.total ?? 0;
   const totalPages = Math.max(Math.ceil(total / 10), 1);
-  const error = invoicesQuery.error ?? cancelInvoice.error;
+  const error = invoicesQuery.error ?? cancelInvoice.error ?? createReturn.error;
 
   function resetPage(action: () => void) {
     action();
@@ -113,6 +135,7 @@ export function InvoiceHistory({
 
   async function printInvoice(invoice: InvoiceRecord) {
     setActionError(null);
+    setActionNotice(null);
     try {
       await createAuthenticatedApiClient().post(`/billing/invoices/${invoice.id}/pdf`, {});
       window.open(apiUrl(`/billing/invoices/${invoice.id}/pdf/view`), "_blank", "noopener,noreferrer");
@@ -123,6 +146,7 @@ export function InvoiceHistory({
 
   function shareInvoiceWhatsApp(invoice: InvoiceRecord) {
     setActionError(null);
+    setActionNotice(null);
     if (!invoice.customer?.phone) {
       setActionError("Invoice does not have a customer phone number.");
       return;
@@ -137,7 +161,73 @@ export function InvoiceHistory({
     }
   }
 
+  async function sendPaymentLink(invoice: InvoiceRecord) {
+    setActionError(null);
+    setActionNotice(null);
+    if (!invoice.customer?.phone) {
+      setActionError("Invoice customer phone number is required for payment link sharing.");
+      return;
+    }
+
+    const amountDue = Number(invoice.amountDue);
+    if (!Number.isFinite(amountDue) || amountDue <= 0) {
+      setActionError("This invoice has no pending amount.");
+      return;
+    }
+
+    try {
+      const link = await createAuthenticatedApiClient().post<{ paymentLinkId: string; shortUrl: string }>("/payments/razorpay/payment-link", {
+        invoiceId: invoice.id,
+        amount: amountDue,
+        description: `Payment for invoice ${invoice.invoiceNumber}`,
+        customerId: invoice.customer.id,
+      });
+      await createAuthenticatedApiClient().post(`/payments/razorpay/payment-link/${encodeURIComponent(link.paymentLinkId)}/share`, {});
+      setActionNotice(`Payment link sent on WhatsApp. ${link.shortUrl}`);
+      await queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to create or share payment link.");
+    }
+  }
+
+  function openReturnDialog(invoice: InvoiceRecord) {
+    setActionError(null);
+    setActionNotice(null);
+    setReturnInvoice(invoice);
+    setReturnReason("");
+    setReturnQuantities(Object.fromEntries((invoice.items ?? []).map((item) => [item.productId, String(Number(item.quantity))])));
+  }
+
+  function submitReturn() {
+    if (!returnInvoice) {
+      return;
+    }
+
+    const items = Object.entries(returnQuantities).flatMap(([productId, value]) => {
+      const quantity = Number(value);
+      return Number.isFinite(quantity) && quantity > 0 ? [{ productId, quantity }] : [];
+    });
+    if (!returnReason.trim()) {
+      setActionError("Return reason is required.");
+      return;
+    }
+    if (items.length === 0) {
+      setActionError("Select at least one return quantity.");
+      return;
+    }
+
+    setActionError(null);
+    createReturn.mutate({
+      invoiceId: returnInvoice.id,
+      payload: {
+        reason: returnReason.trim(),
+        items,
+      },
+    });
+  }
+
   return (
+    <>
     <section className={cn("flex min-h-0 flex-col bg-white", isDrawer ? "flex-1" : "max-h-[72vh] rounded-md border border-border")}>
       <div className="border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -156,6 +246,7 @@ export function InvoiceHistory({
           </div>
         </div>
         {error || actionError ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError ?? error?.message}</div> : null}
+        {actionNotice ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{actionNotice}</div> : null}
       </div>
 
       <div className={cn("min-h-0 flex-1", isDrawer ? "grid lg:grid-cols-[minmax(0,1fr)_360px]" : "flex flex-col")}>
@@ -227,10 +318,98 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onEdit={onEdit} canCancel={canCancelInvoices} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
+    {returnInvoice ? (
+      <InvoiceReturnDialog
+        invoice={returnInvoice}
+        quantities={returnQuantities}
+        reason={returnReason}
+        isPending={createReturn.isPending}
+        onQuantityChange={(productId, value) => setReturnQuantities((current) => ({ ...current, [productId]: value }))}
+        onReasonChange={setReturnReason}
+        onClose={() => setReturnInvoice(null)}
+        onSubmit={submitReturn}
+      />
+    ) : null}
+    </>
+  );
+}
+
+function InvoiceReturnDialog({
+  invoice,
+  quantities,
+  reason,
+  isPending,
+  onQuantityChange,
+  onReasonChange,
+  onClose,
+  onSubmit,
+}: Readonly<{
+  invoice: InvoiceRecord;
+  quantities: Record<string, string>;
+  reason: string;
+  isPending: boolean;
+  onQuantityChange: (productId: string, value: string) => void;
+  onReasonChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}>) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="w-full max-w-2xl rounded-md border border-border bg-white shadow-xl">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold text-slate-950">Process return</div>
+          <div className="text-xs text-slate-500">{invoice.invoiceNumber}</div>
+        </div>
+        <div className="max-h-[70vh] space-y-3 overflow-auto p-4">
+          <label className="block text-sm font-medium text-slate-700">
+            Reason
+            <input value={reason} onChange={(event) => onReasonChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Return reason" />
+          </label>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Product</th>
+                  <th className="px-3 py-2 text-right font-medium">Sold</th>
+                  <th className="px-3 py-2 text-right font-medium">Return qty</th>
+                  <th className="px-3 py-2 text-right font-medium">Line total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(invoice.items ?? []).map((item) => (
+                  <tr key={item.id ?? item.productId}>
+                    <td className="px-3 py-2 font-medium text-slate-900">{item.productName}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{Number(item.quantity).toLocaleString("en-IN")}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        max={Number(item.quantity)}
+                        step="0.001"
+                        value={quantities[item.productId] ?? "0"}
+                        onChange={(event) => onQuantityChange(item.productId, event.target.value)}
+                        className="h-9 w-24 rounded-md border border-border px-2 text-right text-sm"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold">₹{Number(item.total).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+          <button type="button" onClick={onClose} className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700">Cancel</button>
+          <button type="button" onClick={onSubmit} disabled={isPending} className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white disabled:opacity-50">
+            {isPending ? "Creating..." : "Create draft credit note"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -238,14 +417,18 @@ function InvoiceDetailPanel({
   invoice,
   onPrint,
   onShareWhatsapp,
+  onSendPaymentLink,
   onEdit,
+  onReturn,
   canCancel,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
   onShareWhatsapp: (invoice: InvoiceRecord) => void;
+  onSendPaymentLink: (invoice: InvoiceRecord) => void | Promise<void>;
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
+  onReturn: (invoice: InvoiceRecord) => void;
   canCancel: boolean;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
@@ -314,6 +497,18 @@ function InvoiceDetailPanel({
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => onShareWhatsapp(invoice)}>
               <MessageCircle className="size-4" aria-hidden="true" />
               Send WhatsApp
+            </button>
+          ) : null}
+          {invoice.customer?.phone && Number(invoice.amountDue) > 0 && ["CONFIRMED", "PARTIAL"].includes(invoice.status) ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-800" onClick={() => void onSendPaymentLink(invoice)}>
+              <MessageCircle className="size-4" aria-hidden="true" />
+              Send payment link
+            </button>
+          ) : null}
+          {["CONFIRMED", "PAID", "PARTIAL"].includes(invoice.status) ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-800" onClick={() => onReturn(invoice)}>
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Process return
             </button>
           ) : null}
           {canCancel ? (

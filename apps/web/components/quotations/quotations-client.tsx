@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowRight, Download, MessageCircle, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -60,6 +60,7 @@ export function QuotationsClient() {
   const [billDiscount, setBillDiscount] = useState(0);
   const [lines, setLines] = useState<QuoteLine[]>([]);
   const [status, setStatus] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [from, setFrom] = useState(() => defaultFromDate(30));
   const [to, setTo] = useState(() => todayDate());
   const [page, setPage] = useState(1);
@@ -113,6 +114,17 @@ export function QuotationsClient() {
     mutationFn: ({ id, status }: { id: string; status: string }) => createAuthenticatedApiClient().put(`/quotations/${id}/status`, { status }),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["quotations"] }),
   });
+  const generatePdf = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().post<{ downloadUrl: string }>(`/quotations/${id}/pdf`, {}),
+    onSuccess: (result) => {
+      window.open(result.downloadUrl, "_blank", "noopener,noreferrer");
+      setActionMessage("Quotation PDF is ready.");
+    },
+  });
+  const shareQuotation = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().post<{ status: string }>(`/quotations/${id}/share`, { channel: "whatsapp" }),
+    onSuccess: () => setActionMessage("Quotation queued for WhatsApp."),
+  });
 
   const quotations = quotationsQuery.data?.data ?? [];
   const products = productsQuery.data?.data ?? [];
@@ -131,7 +143,7 @@ export function QuotationsClient() {
     setPage(1);
   }, [status, from, to]);
   const totals = useMemo(() => calculateTotals(lines, billDiscount, gstEnabled), [billDiscount, gstEnabled, lines]);
-  const error = createQuotation.error ?? createCustomer.error ?? quotationsQuery.error;
+  const error = createQuotation.error ?? createCustomer.error ?? generatePdf.error ?? shareQuotation.error ?? quotationsQuery.error;
 
   function handleProductKey(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Escape") {
@@ -234,6 +246,7 @@ export function QuotationsClient() {
       </div>
 
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
+      {actionMessage ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{actionMessage}</div> : null}
 
       {showForm ? (
         <form onSubmit={handleSubmit} className="grid gap-4 rounded-md border border-border bg-white p-4 xl:grid-cols-[1fr_340px]">
@@ -426,11 +439,37 @@ export function QuotationsClient() {
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-500">{quotation.validUntil ? new Date(quotation.validUntil).toLocaleDateString("en-IN") : "-"}</td>
                     <td className="px-4 py-2 text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setActionMessage("");
+                          generatePdf.mutate(quotation.id);
+                        }}
+                        disabled={generatePdf.isPending}
+                        className="inline-flex min-h-9 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 disabled:opacity-50"
+                        type="button"
+                      >
+                        <Download className="size-3" aria-hidden="true" />
+                        PDF
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActionMessage("");
+                          shareQuotation.mutate(quotation.id);
+                        }}
+                        disabled={shareQuotation.isPending}
+                        className="inline-flex min-h-9 items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 disabled:opacity-50"
+                        type="button"
+                      >
+                        <MessageCircle className="size-3" aria-hidden="true" />
+                        WhatsApp
+                      </button>
                       {quotation.status !== "CONVERTED" ? (
-                        <button onClick={() => convertToInvoice.mutate(quotation.id)} className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                        <button onClick={() => convertToInvoice.mutate(quotation.id)} className="inline-flex min-h-9 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700" type="button">
                           Convert <ArrowRight className="size-3" aria-hidden="true" />
                         </button>
                       ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}

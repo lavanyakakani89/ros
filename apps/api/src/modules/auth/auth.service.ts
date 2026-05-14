@@ -31,10 +31,7 @@ export class AuthService {
 
     try {
       const user = await this.repository.createTenantWithOwner(input, passwordHash);
-      return {
-        user: toAuthUser(user),
-        tokens: await this.createTokens(user),
-      };
+      return this.createAuthResponse(user);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         throw new AuthError("Tenant slug or owner email already exists", 409);
@@ -55,10 +52,7 @@ export class AuthService {
       throw new AuthError("Account suspended. Contact your RetailOS administrator to reactivate access.", 403);
     }
 
-    return {
-      user: toAuthUser(user),
-      tokens: await this.createTokens(user),
-    };
+    return this.createAuthResponse(user);
   }
 
   async refresh(input: RefreshInput): Promise<AuthResponse> {
@@ -84,10 +78,7 @@ export class AuthService {
       },
     };
 
-    return {
-      user: toAuthUser(user),
-      tokens: await this.createTokens(user),
-    };
+    return this.createAuthResponse(user);
   }
 
   async logout(input: LogoutInput): Promise<void> {
@@ -99,13 +90,22 @@ export class AuthService {
     await this.repository.revokeRefreshToken(parsed.id);
   }
 
-  private async createTokens(user: UserWithTenant): Promise<AuthTokens> {
+  private async createAuthResponse(user: UserWithTenant): Promise<AuthResponse> {
+    const storeId = await this.resolveStoreId(user);
+    return {
+      user: toAuthUser(user, storeId),
+      tokens: await this.createTokens(user, storeId),
+    };
+  }
+
+  private async createTokens(user: UserWithTenant, storeId: string | null): Promise<AuthTokens> {
     const refreshToken = await this.createRefreshToken(user);
     const accessToken = this.fastify.jwt.sign(
       {
         userId: user.id,
         tenantId: user.tenantId,
         role: user.role,
+        storeId,
       },
       {
         expiresIn: this.accessTokenExpiresIn,
@@ -135,9 +135,28 @@ export class AuthService {
 
     return `${id}.${secret}`;
   }
+
+  private async resolveStoreId(user: UserWithTenant): Promise<string | null> {
+    if (user.primaryStoreId) {
+      return user.primaryStoreId;
+    }
+
+    const defaultStore = await this.fastify.prisma.store.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        isActive: true,
+        isDefault: true,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return defaultStore?.id ?? null;
+  }
 }
 
-function toAuthUser(user: UserWithTenant) {
+function toAuthUser(user: UserWithTenant, storeId: string | null) {
   return {
     id: user.id,
     tenantId: user.tenantId,
@@ -145,6 +164,7 @@ function toAuthUser(user: UserWithTenant) {
     email: user.email,
     username: user.username,
     role: user.role,
+    storeId,
   };
 }
 

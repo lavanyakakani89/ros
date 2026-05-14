@@ -313,6 +313,7 @@ export class DeliveryService {
         deliveryId: delivery.id,
         jobName: "delivery-assigned",
         message,
+        eventKey: "deliveryAssigned",
       });
     }
   }
@@ -348,6 +349,7 @@ export class DeliveryService {
       deliveryId: delivery.id,
       message,
       jobName: `delivery-${label.replaceAll(" ", "-")}`,
+      eventKey: "deliveryStatusUpdate",
     });
   }
 }

@@ -82,8 +82,10 @@ export class BillingRepository {
           totalCgst: input.totals.totalCgst,
           totalSgst: input.totals.totalSgst,
           totalIgst: 0,
+          deliveryCharge: input.totals.deliveryCharge,
           grandTotal: input.totals.grandTotal,
           amountDue: input.totals.grandTotal,
+          ...(input.invoice.storeId ? { storeId: input.invoice.storeId } : {}),
           ...(input.invoice.customerId ? { customerId: input.invoice.customerId } : {}),
           ...(input.invoice.dueDate ? { dueDate: input.invoice.dueDate } : {}),
           ...(input.invoice.verticalData ? { verticalData: input.invoice.verticalData as Prisma.InputJsonValue } : {}),
@@ -112,6 +114,7 @@ export class BillingRepository {
         : {}),
       ...(query.status ? { status: query.status as InvoiceStatus } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
+      ...(query.storeId ? { storeId: query.storeId } : {}),
       ...(query.from || query.to
         ? {
             invoiceDate: {
@@ -278,11 +281,13 @@ export class BillingRepository {
         totalCgst: input.totals.totalCgst,
         totalSgst: input.totals.totalSgst,
         totalIgst: 0,
+        deliveryCharge: input.totals.deliveryCharge,
         grandTotal: input.totals.grandTotal,
         amountPaid: paymentState.amountPaid,
         amountDue: paymentState.amountDue,
         status: paymentState.status,
         customerId: input.invoice.customerId ?? null,
+        storeId: input.invoice.storeId ?? null,
         dueDate: input.invoice.dueDate ?? null,
         notes: input.invoice.notes ?? null,
         pdfUrl: null,
@@ -484,6 +489,7 @@ export interface InvoiceTotals {
   totalDiscount: number;
   totalCgst: number;
   totalSgst: number;
+  deliveryCharge: number;
   grandTotal: number;
 }
 

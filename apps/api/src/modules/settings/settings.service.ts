@@ -49,6 +49,7 @@ export class SettingsService {
         ...(input.phone !== undefined ? { phone: input.phone } : {}),
         ...(input.gstNumber !== undefined ? { gstNumber: input.gstNumber } : {}),
         ...(input.gstEnabled !== undefined ? { gstEnabled: input.gstEnabled } : {}),
+        ...(input.requirePoApproval !== undefined ? { requirePoApproval: input.requirePoApproval } : {}),
         ...(input.address !== undefined ? { address: input.address } : {}),
       },
     });
@@ -226,6 +227,7 @@ export class SettingsService {
 const userSelect = {
   id: true,
   tenantId: true,
+  primaryStoreId: true,
   name: true,
   email: true,
   username: true,

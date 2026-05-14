@@ -36,6 +36,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
 
     if (impersonation) {
       request.tenant = impersonation.tenant;
+      request.storeId = null;
       request.isImpersonated = true;
       request.impersonation = toRequestImpersonationContext(impersonation);
       await setTenantContext(impersonation.tenant.id);
@@ -63,7 +64,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
       return reply.status(401).send({ error: "Unauthorized" });
     }
 
-    const user = request.user as { tenantId?: string } | undefined;
+    const user = request.user as { tenantId?: string; storeId?: string | null } | undefined;
     const tenantId = user?.tenantId;
 
     if (!tenantId) {
@@ -97,6 +98,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
     }
 
     request.tenant = tenant;
+    request.storeId = typeof user.storeId === "string" ? user.storeId : null;
     await setTenantContext(tenantId);
     return enforceRbac(request, reply);
   });

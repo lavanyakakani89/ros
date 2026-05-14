@@ -7,6 +7,7 @@ export interface AuthUser {
   email: string;
   username?: string | null;
   role: UserRole;
+  storeId?: string | null;
 }
 
 export interface AuthTokens {

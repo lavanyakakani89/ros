@@ -13,6 +13,7 @@ export interface StoredAuthSession {
     name?: string;
     email?: string;
     role?: "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
+    storeId?: string | null;
   };
 }
 
@@ -33,6 +34,7 @@ export function storeAuthSession(input: StoredAuthSession) {
           name: input.user.name,
           email: input.user.email,
           role: input.user.role,
+          storeId: input.user.storeId,
         }
       : undefined,
   }));

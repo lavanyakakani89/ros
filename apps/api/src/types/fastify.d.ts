@@ -17,6 +17,7 @@ declare module "fastify" {
   interface FastifyRequest {
     rawBody?: string;
     tenant: Tenant;
+    storeId?: string | null;
     superAdmin?: {
       id: string;
       name: string;
@@ -35,11 +36,13 @@ declare module "@fastify/jwt" {
       userId: string;
       tenantId: string;
       role: UserRole;
+      storeId?: string | null;
     };
     user: {
       userId: string;
       tenantId: string;
       role: UserRole;
+      storeId?: string | null;
     };
   }
 }

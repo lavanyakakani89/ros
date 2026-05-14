@@ -4,6 +4,9 @@ import { createAuthenticatedApiClient } from "@/lib/api-client";
 export const WHATSAPP_TEMPLATE_KEYS = [
   "invoiceReady",
   "paymentReminder",
+  "paymentLink",
+  "quotationReady",
+  "creditNoteReady",
   "deliveryOutForDelivery",
   "deliveryDelivered",
   "deliveryAssigned",

@@ -2,11 +2,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { WhatsappIntegrationStatus } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 
 import { WhatsappIntegrationError, WhatsappService, type InboundWhatsappMessage } from "./whatsapp.service.js";
 import {
   whatsappEmbeddedSignupCompleteSchema,
   whatsappMessageTemplatesSchema,
+  whatsappOrderIdParamsSchema,
+  whatsappOrderItemsSchema,
   whatsappOrdersQuerySchema,
   whatsappPasteOrderSchema,
   whatsappTenantParamsSchema,
@@ -118,6 +121,80 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
   fastify.get("/api/whatsapp/orders", async (request, reply) => {
     const query = whatsappOrdersQuerySchema.parse(request.query);
     return handleWhatsapp(reply, () => service.listOrders(request.tenant, query));
+  });
+
+  fastify.get("/api/whatsapp/orders/:id", async (request, reply) => {
+    return handleWhatsapp(reply, () => {
+      const { id } = whatsappOrderIdParamsSchema.parse(request.params);
+      return service.getOrder(request.tenant, id);
+    });
+  });
+
+  fastify.put("/api/whatsapp/orders/:id/items", async (request, reply) => {
+    return handleWhatsapp(reply, async () => {
+      const { id } = whatsappOrderIdParamsSchema.parse(request.params);
+      const input = whatsappOrderItemsSchema.parse(request.body);
+      const order = await service.updateOrderItems(request.tenant, request.user, id, input);
+      await fastify.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenant.id,
+          userId: request.user.userId,
+          action: "WHATSAPP_ORDER_ITEMS_UPDATED",
+          entity: "WHATSAPP_ORDER",
+          entityId: id,
+          changes: input,
+          ip: request.ip,
+        },
+      });
+
+      return order;
+    });
+  });
+
+  fastify.post("/api/whatsapp/orders/:id/confirm", async (request, reply) => {
+    return handleWhatsapp(reply, async () => {
+      const { id } = whatsappOrderIdParamsSchema.parse(request.params);
+      const order = await service.confirmOrder(request.tenant, request.user, id);
+      await fastify.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenant.id,
+          userId: request.user.userId,
+          action: "WHATSAPP_ORDER_CONFIRMED",
+          entity: "WHATSAPP_ORDER",
+          entityId: id,
+          changes: {
+            invoiceId: order.invoice?.id ?? null,
+            itemCount: order.summary.itemCount,
+            grandTotal: order.summary.grandTotal,
+          },
+          ip: request.ip,
+        },
+      });
+
+      return order;
+    });
+  });
+
+  fastify.post("/api/whatsapp/orders/:id/dismiss", async (request, reply) => {
+    return handleWhatsapp(reply, async () => {
+      const { id } = whatsappOrderIdParamsSchema.parse(request.params);
+      const order = await service.dismissOrder(request.tenant, request.user, id);
+      await fastify.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenant.id,
+          userId: request.user.userId,
+          action: "WHATSAPP_ORDER_DISMISSED",
+          entity: "WHATSAPP_ORDER",
+          entityId: id,
+          changes: {
+            status: order.status,
+          },
+          ip: request.ip,
+        },
+      });
+
+      return order;
+    });
   });
 
   fastify.post("/api/whatsapp/orders/paste", async (request, reply) => {
@@ -316,6 +393,10 @@ async function handleWhatsapp<T>(reply: FastifyReply, handler: () => Promise<T>)
   } catch (error) {
     if (error instanceof WhatsappIntegrationError) {
       return reply.status(error.statusCode).send({ error: error.message });
+    }
+
+    if (error instanceof z.ZodError) {
+      return reply.status(400).send({ error: "Validation failed", issues: error.flatten() });
     }
 
     throw error;

@@ -19,6 +19,13 @@ export interface RazorpayOrderInput {
   invoiceId?: string | undefined;
 }
 
+export interface RazorpayPaymentLinkInput {
+  invoiceId: string;
+  amount: number;
+  description?: string | undefined;
+  customerId?: string | undefined;
+}
+
 export interface RazorpayVerifyInput {
   orderId: string;
   paymentId: string;

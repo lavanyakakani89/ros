@@ -1,6 +1,7 @@
 import { PaperSize, RenderType, type Customer, type Invoice, type InvoiceItem, type InvoiceTemplate, type Tenant } from "@prisma/client";
 import Handlebars from "handlebars";
 import type { Client } from "minio";
+import type { Readable } from "node:stream";
 import puppeteer, { type PDFOptions, type Page } from "puppeteer";
 
 import { buildEscposInvoice } from "../printer/printer.service.js";
@@ -19,11 +20,15 @@ export async function generateGstInvoicePdf(input: {
 }): Promise<string> {
   registerInvoiceTemplateHelpers();
   const gstEnabled = input.tenant.gstEnabled;
+  const deliveryCharge = toNumber(input.invoice.deliveryCharge);
+  const logoDataUrl = await loadLogoDataUrl(input.minio, input.bucket, input.tenant.logoUrl);
   const templateData = {
     invoice: input.invoice,
     tenant: input.tenant,
     shop: input.tenant,
     business: input.tenant,
+    logoDataUrl,
+    tenantLogoDataUrl: logoDataUrl,
     customer: input.invoice.customer ?? null,
     gstEnabled,
     invoiceTitle: gstEnabled ? "GST Invoice" : "Sales Invoice",
@@ -45,6 +50,8 @@ export async function generateGstInvoicePdf(input: {
     totalDiscount: money(input.invoice.totalDiscount),
     totalCgst: gstEnabled ? money(input.invoice.totalCgst) : "",
     totalSgst: gstEnabled ? money(input.invoice.totalSgst) : "",
+    deliveryCharge: money(input.invoice.deliveryCharge),
+    hasDeliveryCharge: deliveryCharge > 0,
     grandTotal: money(input.invoice.grandTotal),
     amountPaid: money(input.invoice.amountPaid),
     amountDue: money(input.invoice.amountDue),
@@ -54,6 +61,7 @@ export async function generateGstInvoicePdf(input: {
       totalDiscount: money(input.invoice.totalDiscount),
       cgst: gstEnabled ? money(input.invoice.totalCgst) : "0.00",
       sgst: gstEnabled ? money(input.invoice.totalSgst) : "0.00",
+      deliveryCharge: money(input.invoice.deliveryCharge),
       grandTotal: money(input.invoice.grandTotal),
       amountPaid: money(input.invoice.amountPaid),
       amountDue: money(input.invoice.amountDue),
@@ -339,6 +347,35 @@ function money(value: { toNumber: () => number }): string {
   return value.toNumber().toFixed(2);
 }
 
+async function loadLogoDataUrl(minio: Client, bucket: string, objectName: string | null): Promise<string | null> {
+  if (!objectName) {
+    return null;
+  }
+
+  try {
+    const stream = await minio.getObject(bucket, objectName);
+    const buffer = await readableToBuffer(stream);
+    return `data:${mimeForObjectName(objectName)};base64,${buffer.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+async function readableToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+function mimeForObjectName(objectName: string): string {
+  if (objectName.endsWith(".png")) return "image/png";
+  if (objectName.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
+
 function getTemplate(): string {
   return `<!doctype html>
 <html>
@@ -347,6 +384,8 @@ function getTemplate(): string {
     <style>
       body { font-family: Arial, sans-serif; color: #111827; margin: 32px; }
       .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111827; padding-bottom: 16px; }
+      .brand { display: flex; align-items: flex-start; gap: 12px; }
+      .logo { width: 56px; height: 56px; object-fit: contain; }
       .tenant { font-size: 24px; font-weight: 700; }
       .muted { color: #4b5563; font-size: 12px; line-height: 1.5; }
       .title { text-align: right; font-size: 20px; font-weight: 700; }
@@ -363,11 +402,14 @@ function getTemplate(): string {
   </head>
   <body>
     <section class="header">
-      <div>
-        <div class="tenant">{{tenant.name}}</div>
-        <div class="muted">{{tenant.address}}</div>
-        <div class="muted">Phone: {{tenant.phone}}</div>
-        {{#if gstEnabled}}<div class="muted">GSTIN: {{tenant.gstNumber}}</div>{{/if}}
+      <div class="brand">
+        {{#if logoDataUrl}}<img class="logo" src="{{logoDataUrl}}" alt="Shop logo" />{{/if}}
+        <div>
+          <div class="tenant">{{tenant.name}}</div>
+          <div class="muted">{{tenant.address}}</div>
+          <div class="muted">Phone: {{tenant.phone}}</div>
+          {{#if gstEnabled}}<div class="muted">GSTIN: {{tenant.gstNumber}}</div>{{/if}}
+        </div>
       </div>
       <div>
         <div class="title">{{invoiceTitle}}</div>
@@ -418,6 +460,7 @@ function getTemplate(): string {
       <div><span>Discount</span><span>₹{{totalDiscount}}</span></div>
       {{#if gstEnabled}}<div><span>CGST</span><span>₹{{totalCgst}}</span></div>{{/if}}
       {{#if gstEnabled}}<div><span>SGST</span><span>₹{{totalSgst}}</span></div>{{/if}}
+      {{#if hasDeliveryCharge}}<div><span>Delivery charge</span><span>₹{{deliveryCharge}}</span></div>{{/if}}
       <div class="grand"><span>Grand total</span><span>₹{{grandTotal}}</span></div>
       <div><span>Paid</span><span>₹{{amountPaid}}</span></div>
       <div><span>Due</span><span>₹{{amountDue}}</span></div>

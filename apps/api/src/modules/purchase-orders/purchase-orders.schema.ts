@@ -9,6 +9,7 @@ export const purchaseOrderListQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(25),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
+  storeId: z.string().min(1).optional(),
 });
 
 export const purchaseOrderIdParamsSchema = z.object({
@@ -17,6 +18,7 @@ export const purchaseOrderIdParamsSchema = z.object({
 
 export const createPurchaseOrderSchema = z.object({
   supplierId: z.string().min(1),
+  storeId: z.string().min(1).optional(),
   items: z.array(z.object({
     productId: z.string().min(1).optional(),
     productName: z.string().trim().min(1),
@@ -41,7 +43,12 @@ export const receivePurchaseOrderSchema = z.object({
   })).min(1),
 });
 
+export const rejectPurchaseOrderSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
+
 export type PurchaseOrderListQuery = z.infer<typeof purchaseOrderListQuerySchema>;
 export type CreatePurchaseOrderInput = z.infer<typeof createPurchaseOrderSchema>;
 export type UpdatePurchaseOrderStatusInput = z.infer<typeof updatePurchaseOrderStatusSchema>;
 export type ReceivePurchaseOrderInput = z.infer<typeof receivePurchaseOrderSchema>;
+export type RejectPurchaseOrderInput = z.infer<typeof rejectPurchaseOrderSchema>;

@@ -19,6 +19,18 @@ export const whatsappOrdersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+export const whatsappOrderIdParamsSchema = z.object({
+  id: z.string().trim().min(1),
+});
+
+export const whatsappOrderItemsSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string().trim().min(1),
+    quantity: z.coerce.number().positive(),
+    sellingPrice: z.coerce.number().nonnegative(),
+  })).min(1),
+});
+
 export const whatsappEmbeddedSignupCompleteSchema = z.object({
   code: z.string().trim().min(1),
   phoneNumberId: z.string().trim().min(1).optional(),
@@ -45,6 +57,8 @@ export const whatsappMessageTemplatesSchema = z.object({
 });
 
 export type WhatsappOrdersQuery = z.infer<typeof whatsappOrdersQuerySchema>;
+export type WhatsappOrderIdParams = z.infer<typeof whatsappOrderIdParamsSchema>;
+export type WhatsappOrderItemsInput = z.infer<typeof whatsappOrderItemsSchema>;
 export type WhatsappEmbeddedSignupCompleteInput = z.infer<typeof whatsappEmbeddedSignupCompleteSchema>;
 export type WhatsappTestMessageInput = z.infer<typeof whatsappTestMessageSchema>;
 export type WhatsappPasteOrderInput = z.infer<typeof whatsappPasteOrderSchema>;

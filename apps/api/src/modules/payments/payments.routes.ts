@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { PaymentsError, PaymentsService } from "./payments.service.js";
-import { paymentListQuerySchema, razorpayOrderSchema, razorpayVerifySchema, recordPaymentSchema } from "./payments.schema.js";
+import { paymentListQuerySchema, razorpayOrderSchema, razorpayPaymentLinkParamsSchema, razorpayPaymentLinkSchema, razorpayVerifySchema, recordPaymentSchema } from "./payments.schema.js";
 
 export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new PaymentsService(fastify);
@@ -19,6 +19,16 @@ export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) =
   fastify.post("/api/payments/razorpay/order", async (request, reply) => {
     const input = razorpayOrderSchema.parse(request.body);
     return handlePayments(reply, () => service.createRazorpayOrder(request.tenant, input));
+  });
+
+  fastify.post("/api/payments/razorpay/payment-link", async (request, reply) => {
+    const input = razorpayPaymentLinkSchema.parse(request.body);
+    return handlePayments(reply, () => service.createRazorpayPaymentLink(request.tenant, input));
+  });
+
+  fastify.post("/api/payments/razorpay/payment-link/:linkId/share", async (request, reply) => {
+    const params = razorpayPaymentLinkParamsSchema.parse(request.params);
+    return handlePayments(reply, () => service.shareRazorpayPaymentLink(request.tenant, params.linkId));
   });
 
   fastify.post("/api/payments/razorpay/verify", async (request, reply) => {

@@ -20,6 +20,7 @@ export const updateTenantSchema = z.object({
   phone: z.string().trim().min(10).max(16).optional(),
   gstNumber: z.string().trim().min(15).max(15).nullable().optional(),
   gstEnabled: z.boolean().optional(),
+  requirePoApproval: z.boolean().optional(),
   address: z.string().trim().min(3).nullable().optional(),
 });
 

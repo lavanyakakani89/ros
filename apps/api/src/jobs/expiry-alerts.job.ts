@@ -3,6 +3,7 @@ import { Queue, Worker } from "bullmq";
 
 import { createQueueConnection } from "./connection.js";
 import { whatsappNotifyQueue } from "./whatsapp-notify.job.js";
+import { shouldSendNotificationForPrisma } from "../modules/whatsapp/whatsapp.notifications.js";
 
 export const expiryAlertsQueue = new Queue("expiry-alerts", {
   connection: createQueueConnection(),
@@ -55,12 +56,17 @@ export function createExpiryAlertsWorker() {
           continue;
         }
 
+        if (!(await shouldSendNotificationForPrisma(prisma, tenant.id, "expiryAlert"))) {
+          continue;
+        }
+
         const lines = batches.map((batch) => {
           const daysLeft = batch.expiryDate ? Math.ceil((batch.expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : 0;
           return `${batch.product.name} batch ${batch.batchNumber}: ${String(daysLeft)} days left, qty ${batch.quantity.toString()}`;
         });
 
         await whatsappNotifyQueue.add("send-expiry-alert", {
+          tenantId: tenant.id,
           phone: tenant.phone,
           message: `RetailOS expiry alert for ${tenant.name}\n${lines.join("\n")}`,
         });

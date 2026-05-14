@@ -108,4 +108,49 @@ export class PaymentsRepository {
       },
     });
   }
+
+  findInvoiceForPaymentLink(tenantId: string, invoiceId: string) {
+    return this.prisma.invoice.findFirst({
+      where: {
+        id: invoiceId,
+        tenantId,
+      },
+      include: {
+        customer: true,
+      },
+    });
+  }
+
+  findInvoiceByPaymentLinkId(tenantId: string, paymentLinkId: string) {
+    return this.prisma.invoice.findFirst({
+      where: {
+        tenantId,
+        paymentLinkId,
+      },
+      include: {
+        customer: true,
+      },
+    });
+  }
+
+  findCustomer(tenantId: string, customerId: string) {
+    return this.prisma.customer.findFirst({
+      where: {
+        id: customerId,
+        tenantId,
+      },
+    });
+  }
+
+  updateInvoicePaymentLinkId(tenantId: string, invoiceId: string, paymentLinkId: string) {
+    return this.prisma.invoice.updateMany({
+      where: {
+        id: invoiceId,
+        tenantId,
+      },
+      data: {
+        paymentLinkId,
+      },
+    });
+  }
 }

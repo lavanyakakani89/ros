@@ -24,6 +24,32 @@ interface WhatsappIntegrationResponse {
   updatedAt: string | null;
 }
 
+interface WhatsappNotificationSettings {
+  invoiceConfirmed: boolean;
+  deliveryAssigned: boolean;
+  deliveryStatusUpdate: boolean;
+  expiryAlert: boolean;
+  paymentLink: boolean;
+  quotationShared: boolean;
+  creditNoteShared: boolean;
+  birthdayGreeting: boolean;
+  anniversaryGreeting: boolean;
+}
+
+type WhatsappNotificationKey = keyof WhatsappNotificationSettings;
+
+const notificationEvents: Array<{ key: WhatsappNotificationKey; label: string; description: string }> = [
+  { key: "invoiceConfirmed", label: "Invoice confirmed -> customer", description: "Sends invoice/order confirmation after an invoice is confirmed." },
+  { key: "deliveryAssigned", label: "Delivery assigned -> agent", description: "Notifies the delivery person when a delivery is assigned." },
+  { key: "deliveryStatusUpdate", label: "Delivery status update -> customer", description: "Sends out-for-delivery and delivered updates." },
+  { key: "expiryAlert", label: "Expiry alerts -> owner", description: "Daily expiry alerts for relevant shop types." },
+  { key: "paymentLink", label: "Payment link sent -> customer", description: "Sends Razorpay payment links for pending dues." },
+  { key: "quotationShared", label: "Quotation shared -> customer", description: "Sends quotation PDF links to customers." },
+  { key: "creditNoteShared", label: "Credit note shared -> customer", description: "Sends credit note PDF links to customers." },
+  { key: "birthdayGreeting", label: "Birthday greeting -> customer", description: "Reserved for the birthday reminder job." },
+  { key: "anniversaryGreeting", label: "Anniversary greeting -> customer", description: "Reserved for the anniversary reminder job." },
+];
+
 interface EmbeddedSignupConfigResponse {
   isConfigured: boolean;
   appId: string | null;
@@ -74,6 +100,10 @@ export function WhatsappSettings() {
     queryKey: ["whatsapp-message-templates"],
     queryFn: fetchWhatsappMessageTemplates,
   });
+  const notificationsQuery = useQuery({
+    queryKey: ["whatsapp-notification-settings"],
+    queryFn: () => createAuthenticatedApiClient().get<WhatsappNotificationSettings>("/settings/whatsapp-notifications"),
+  });
   const [templateDrafts, setTemplateDrafts] = useState<Record<string, string>>({});
   const completeSignup = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post<WhatsappIntegrationResponse & { warnings?: string[] }>("/whatsapp/embedded-signup/complete", payload),
@@ -103,6 +133,15 @@ export function WhatsappSettings() {
       await queryClient.invalidateQueries({ queryKey: ["whatsapp-message-templates"] });
     },
   });
+  const saveNotifications = useMutation({
+    mutationFn: (payload: Partial<WhatsappNotificationSettings>) =>
+      createAuthenticatedApiClient().put<WhatsappNotificationSettings>("/settings/whatsapp-notifications", payload),
+    onSuccess: async (result) => {
+      setMessage("WhatsApp notification settings saved.");
+      queryClient.setQueryData(["whatsapp-notification-settings"], result);
+      await queryClient.invalidateQueries({ queryKey: ["whatsapp-notification-settings"] });
+    },
+  });
 
   useEffect(() => {
     if (!templatesQuery.data) {
@@ -114,7 +153,8 @@ export function WhatsappSettings() {
 
   const integration = integrationQuery.data;
   const config = configQuery.data;
-  const error = integrationQuery.error ?? configQuery.error ?? templatesQuery.error ?? completeSignup.error ?? disconnect.error ?? sendTest.error ?? saveTemplates.error;
+  const notificationSettings = notificationsQuery.data;
+  const error = integrationQuery.error ?? configQuery.error ?? templatesQuery.error ?? notificationsQuery.error ?? completeSignup.error ?? disconnect.error ?? sendTest.error ?? saveTemplates.error ?? saveNotifications.error;
 
   async function handleConnect() {
     if (!config?.isConfigured || !config.appId || !config.configurationId) {
@@ -217,6 +257,13 @@ export function WhatsappSettings() {
     }));
   }
 
+  function handleNotificationToggle(key: WhatsappNotificationKey, enabled: boolean) {
+    const payload: Partial<WhatsappNotificationSettings> = {};
+    payload[key] = enabled;
+    setMessage(null);
+    saveNotifications.mutate(payload);
+  }
+
   return (
     <div className="space-y-4">
       {error ? <Alert tone="error">{error.message}</Alert> : null}
@@ -286,6 +333,31 @@ export function WhatsappSettings() {
             Missing server config: {(config?.missing ?? []).join(", ") || "loading"}.
           </div>
         ) : null}
+      </section>
+
+      <section className="rounded-md border border-border bg-white p-4">
+        <div>
+          <div className="text-sm font-semibold text-slate-950">Notification events</div>
+          <div className="mt-1 text-xs text-slate-500">Turn automatic WhatsApp sends on or off by event. Manual wa.me buttons still work.</div>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          {notificationEvents.map((event) => (
+            <label key={event.key} className="flex min-h-16 items-center justify-between gap-3 rounded-md border border-slate-200 p-3">
+              <span>
+                <span className="block text-sm font-semibold text-slate-950">{event.label}</span>
+                <span className="mt-1 block text-xs text-slate-500">{event.description}</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={notificationSettings?.[event.key] ?? true}
+                disabled={notificationsQuery.isLoading || saveNotifications.isPending}
+                onChange={(changeEvent) => handleNotificationToggle(event.key, changeEvent.target.checked)}
+                className="size-5 accent-emerald-600"
+              />
+            </label>
+          ))}
+        </div>
+        {notificationsQuery.isLoading ? <div className="mt-3 text-sm text-slate-500">Loading notification settings...</div> : null}
       </section>
 
       <section className="rounded-md border border-border bg-white p-4">

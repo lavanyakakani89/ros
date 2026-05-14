@@ -78,3 +78,11 @@ export const stockAdjustmentSchema = z.object({
   reason: z.string().trim().min(3),
   notes: z.string().trim().min(1).optional(),
 });
+
+export const stockMovementQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  type: z.enum(["adjustment", "sale", "purchase", "return"]).optional(),
+});

@@ -2,14 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { StatStrip } from "@/components/shared/stat-strip";
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { createAuthenticatedApiClient, downloadApiFile, listProducts } from "@/lib/api-client";
 import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 
-type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend";
+type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend" | "customers" | "suppliers" | "aging" | "stock" | "comparison" | "tally";
 
 interface ReportSummary {
   grossSales: number;
@@ -55,6 +55,72 @@ interface DayEndReport {
   closingCash: number;
 }
 
+interface PaginatedReport<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+interface CustomerSalesReportRow {
+  id: string;
+  name: string;
+  phone: string;
+  invoiceCount: number;
+  totalRevenue: number;
+  totalPaid: number;
+  outstanding: number;
+  lastPurchaseDate: string | null;
+  invoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    status: string;
+    grandTotal: number;
+    amountPaid: number;
+    amountDue: number;
+  }>;
+}
+
+interface SupplierPurchasesReportRow {
+  id: string;
+  name: string;
+  phone: string;
+  poCount: number;
+  totalPurchased: number;
+  totalPaid: number;
+  outstanding: number;
+}
+
+interface AgingReport {
+  buckets: Array<{ bucket: string; customerCount: number; totalOutstanding: number }>;
+  customers: Array<{ id: string; name: string; phone: string; totalOutstanding: number; invoiceCount: number; oldestInvoiceDate: string; bucket: string }>;
+}
+
+interface StockMovementReportRow {
+  productId: string;
+  productName: string;
+  date: string;
+  type: string;
+  qty: number;
+  reference: string;
+  notes: string;
+  runningBalance: number;
+}
+
+interface ComparisonReport {
+  metric: "revenue" | "invoices" | "customers" | "expenses";
+  period: "monthly" | "weekly";
+  year1: number;
+  year2: number;
+  rows: Array<{
+    period: string;
+    year1Value: number;
+    year2Value: number;
+    changePct: number | null;
+  }>;
+}
+
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 function weekAgoStr() { return new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10); }
 
@@ -65,6 +131,15 @@ export function ReportsDashboard() {
   const [from, setFrom] = useState(weekAgoStr());
   const [to, setTo] = useState(todayStr());
   const [gstEnabled, setGstEnabled] = useState(true);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [stockProductSearch, setStockProductSearch] = useState("");
+  const [stockProductId, setStockProductId] = useState("");
+  const [stockMovementType, setStockMovementType] = useState("");
+  const currentYear = new Date().getFullYear();
+  const [comparisonMetric, setComparisonMetric] = useState<ComparisonReport["metric"]>("revenue");
+  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonReport["period"]>("monthly");
+  const [comparisonYear1, setComparisonYear1] = useState(currentYear - 1);
+  const [comparisonYear2, setComparisonYear2] = useState(currentYear);
   const canViewPnl = getStoredAuthSession()?.user?.role === "OWNER";
 
   useEffect(() => {
@@ -96,11 +171,47 @@ export function ReportsDashboard() {
     queryFn: () => createAuthenticatedApiClient().get<DayEndReport>(`/reports/day-end?date=${to}`),
     enabled: tab === "dayend",
   });
+  const customerSalesQuery = useQuery({
+    queryKey: ["reports-customer-sales", from, to],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<CustomerSalesReportRow>>(`/reports/customer-sales?from=${from}&to=${to}&limit=50&sortBy=revenue`),
+    enabled: tab === "customers",
+  });
+  const supplierPurchasesQuery = useQuery({
+    queryKey: ["reports-supplier-purchases", from, to],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<SupplierPurchasesReportRow>>(`/reports/supplier-purchases?from=${from}&to=${to}&limit=50`),
+    enabled: tab === "suppliers",
+  });
+  const agingQuery = useQuery({
+    queryKey: ["reports-aging"],
+    queryFn: () => createAuthenticatedApiClient().get<AgingReport>("/reports/outstanding-aging"),
+    enabled: tab === "aging",
+  });
+  const stockMovementQuery = useQuery({
+    queryKey: ["reports-stock-movement", from, to, stockProductId, stockMovementType],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<StockMovementReportRow>>(`/reports/stock-movement?${stockMovementQueryString(from, to, stockProductId, stockMovementType)}`),
+    enabled: tab === "stock",
+  });
+  const stockProductSearchQuery = useQuery({
+    queryKey: ["reports-stock-product-search", stockProductSearch],
+    queryFn: () => listProducts({ search: stockProductSearch.trim(), limit: 20 }),
+    enabled: tab === "stock" && stockProductSearch.trim().length > 0,
+  });
+  const comparisonQuery = useQuery({
+    queryKey: ["reports-comparison", comparisonMetric, comparisonPeriod, comparisonYear1, comparisonYear2],
+    queryFn: () => createAuthenticatedApiClient().get<ComparisonReport>(`/reports/comparison?metric=${comparisonMetric}&period=${comparisonPeriod}&year1=${String(comparisonYear1)}&year2=${String(comparisonYear2)}`),
+    enabled: tab === "comparison" && comparisonYear1 !== comparisonYear2,
+  });
 
   const summary = summaryQuery.data;
   const inventory = inventoryQuery.data;
   const pnl = pnlQuery.data;
   const dayEnd = dayEndQuery.data;
+  const customerSales = customerSalesQuery.data;
+  const supplierPurchases = supplierPurchasesQuery.data;
+  const aging = agingQuery.data;
+  const stockMovement = stockMovementQuery.data;
+  const stockProductResults = stockProductSearchQuery.data?.data ?? [];
+  const comparison = comparisonQuery.data;
 
   const salesData = summary?.dailySales.map((item) => ({
     day: item.date.slice(5),
@@ -115,6 +226,12 @@ export function ReportsDashboard() {
     ...(canViewPnl ? [{ id: "pnl" as const, label: "P&L" }] : []),
     ...(gstEnabled ? [{ id: "gstr" as const, label: "GSTR Export" }] : []),
     { id: "dayend", label: "Day-End" },
+    { id: "customers", label: "Customers" },
+    { id: "suppliers", label: "Suppliers" },
+    { id: "aging", label: "Aging" },
+    { id: "stock", label: "Stock Movement" },
+    { id: "comparison", label: "YoY / MoM" },
+    { id: "tally", label: "Tally Export" },
   ];
 
   function downloadCsv(content: string, filename: string) {
@@ -143,6 +260,28 @@ export function ReportsDashboard() {
     downloadCsv(rows.map((r) => r.join(",")).join("\n"), `GSTR3B_${from}_${to}.csv`);
   }
 
+  async function downloadReportExport(endpoint: string, filename: string, format: "csv" | "xlsx") {
+    const query = new URLSearchParams({ format });
+    if (tab !== "inventory") {
+      query.set("from", from);
+      query.set("to", to);
+    }
+    await downloadApiFile(`/reports/${endpoint}/export?${query.toString()}`, `${filename}.${format}`);
+  }
+
+  async function downloadAdvancedReportExport(endpoint: string, filename: string, format: "csv" | "xlsx") {
+    const query = new URLSearchParams({ format, from, to });
+    await downloadApiFile(`/reports/${endpoint}/export?${query.toString()}`, `${filename}.${format}`);
+  }
+
+  async function downloadStockMovementExport(format: "csv" | "xlsx") {
+    await downloadApiFile(`/reports/stock-movement/export?${stockMovementQueryString(from, to, stockProductId, stockMovementType, format)}`, `stock-movement-${from}-${to}.${format}`);
+  }
+
+  async function downloadTallyExport() {
+    await downloadApiFile(`/reports/tally-export?from=${from}&to=${to}`, `tally-export-${from}-${to}.xml`);
+  }
+
   return (
     <div className="space-y-4">
       {/* Tab bar */}
@@ -156,7 +295,7 @@ export function ReportsDashboard() {
       </div>
 
       {/* Date range picker (shown for sales/pnl/gstr/dayend) */}
-      {tab !== "inventory" && (
+      {tab !== "inventory" && tab !== "aging" && tab !== "comparison" && (
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-slate-600">
             From <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
@@ -173,6 +312,58 @@ export function ReportsDashboard() {
           ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {tab === "sales" ? (
+          <>
+            <ExportButton label="Summary CSV" onClick={() => void downloadReportExport("summary", `summary-${from}-${to}`, "csv")} />
+            <ExportButton label="Daily Excel" onClick={() => void downloadReportExport("daily-sales", `daily-sales-${from}-${to}`, "xlsx")} />
+            <ExportButton label="Moving items CSV" onClick={() => void downloadReportExport("moving-items", `moving-items-${from}-${to}`, "csv")} />
+          </>
+        ) : null}
+        {tab === "inventory" ? (
+          <>
+            <ExportButton label="Inventory CSV" onClick={() => void downloadReportExport("inventory", "inventory", "csv")} />
+            <ExportButton label="Inventory Excel" onClick={() => void downloadReportExport("inventory", "inventory", "xlsx")} />
+          </>
+        ) : null}
+        {tab === "pnl" && canViewPnl ? (
+          <>
+            <ExportButton label="P&L CSV" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "csv")} />
+            <ExportButton label="P&L Excel" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "gstr" ? (
+          <>
+            <ExportButton label="GST CSV" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "csv")} />
+            <ExportButton label="GST Excel" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "customers" ? (
+          <>
+            <ExportButton label="Customer sales CSV" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "csv")} />
+            <ExportButton label="Customer sales Excel" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "suppliers" ? (
+          <>
+            <ExportButton label="Supplier purchases CSV" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "csv")} />
+            <ExportButton label="Supplier purchases Excel" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "aging" ? (
+          <>
+            <ExportButton label="Aging CSV" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "csv")} />
+            <ExportButton label="Aging Excel" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "xlsx")} />
+          </>
+        ) : null}
+        {tab === "stock" ? (
+          <ExportButton label="Stock movement CSV" onClick={() => void downloadStockMovementExport("csv")} />
+        ) : null}
+        {tab === "tally" ? (
+          <ExportButton label="Download Tally XML" onClick={() => void downloadTallyExport()} />
+        ) : null}
+      </div>
 
       {/* --- SALES TAB --- */}
       {tab === "sales" && (
@@ -381,6 +572,310 @@ export function ReportsDashboard() {
           </div>
         </div>
       )}
+
+      {tab === "customers" && (
+        <TableShell title="Customer sales" loading={customerSalesQuery.isLoading} empty={(customerSales?.data ?? []).length === 0}>
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Customer</th>
+                <th className="px-4 py-2 text-right font-medium">Invoices</th>
+                <th className="px-4 py-2 text-right font-medium">Revenue</th>
+                <th className="px-4 py-2 text-right font-medium">Paid</th>
+                <th className="px-4 py-2 text-right font-medium">Outstanding</th>
+                <th className="px-4 py-2 text-right font-medium">Last purchase</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {(customerSales?.data ?? []).map((row) => (
+                <Fragment key={row.id}>
+                  <tr className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedCustomerId((current) => current === row.id ? null : row.id)}>
+                    <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
+                    <td className="px-4 py-2 text-right">{row.invoiceCount}</td>
+                    <td className="px-4 py-2 text-right">{money(row.totalRevenue)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.totalPaid)}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.outstanding)}</td>
+                    <td className="px-4 py-2 text-right">{row.lastPurchaseDate ? new Date(row.lastPurchaseDate).toLocaleDateString("en-IN") : "-"}</td>
+                  </tr>
+                  {expandedCustomerId === row.id ? (
+                    <tr className="bg-slate-50">
+                      <td colSpan={6} className="px-4 py-3">
+                        <div className="overflow-x-auto rounded-md border border-border bg-white">
+                          <table className="w-full min-w-[620px] text-xs">
+                            <thead className="bg-slate-50 text-slate-500">
+                              <tr>
+                                <th className="px-3 py-2 text-left font-medium">Invoice</th>
+                                <th className="px-3 py-2 text-left font-medium">Date</th>
+                                <th className="px-3 py-2 text-left font-medium">Status</th>
+                                <th className="px-3 py-2 text-right font-medium">Total</th>
+                                <th className="px-3 py-2 text-right font-medium">Paid</th>
+                                <th className="px-3 py-2 text-right font-medium">Due</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {row.invoices.map((invoice) => (
+                                <tr key={invoice.id}>
+                                  <td className="px-3 py-2 font-mono">{invoice.invoiceNumber}</td>
+                                  <td className="px-3 py-2">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</td>
+                                  <td className="px-3 py-2">{invoice.status}</td>
+                                  <td className="px-3 py-2 text-right">{money(invoice.grandTotal)}</td>
+                                  <td className="px-3 py-2 text-right">{money(invoice.amountPaid)}</td>
+                                  <td className="px-3 py-2 text-right font-semibold text-amber-700">{money(invoice.amountDue)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+
+      {tab === "suppliers" && (
+        <TableShell title="Supplier purchases" loading={supplierPurchasesQuery.isLoading} empty={(supplierPurchases?.data ?? []).length === 0}>
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium">Supplier</th>
+                <th className="px-4 py-2 text-right font-medium">POs</th>
+                <th className="px-4 py-2 text-right font-medium">Purchased</th>
+                <th className="px-4 py-2 text-right font-medium">Paid</th>
+                <th className="px-4 py-2 text-right font-medium">Outstanding</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {(supplierPurchases?.data ?? []).map((row) => (
+                <tr key={row.id}>
+                  <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
+                  <td className="px-4 py-2 text-right">{row.poCount}</td>
+                  <td className="px-4 py-2 text-right">{money(row.totalPurchased)}</td>
+                  <td className="px-4 py-2 text-right">{money(row.totalPaid)}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.outstanding)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      )}
+
+      {tab === "aging" && (
+        <div className="space-y-4">
+          <section className="rounded-md border border-border bg-white p-4">
+            <div className="mb-3 text-sm font-semibold text-slate-950">Outstanding breakdown</div>
+            <div className="flex h-4 overflow-hidden rounded-full bg-slate-100">
+              {(aging?.buckets ?? []).map((bucket, index) => (
+                <div
+                  key={bucket.bucket}
+                  className={agingBucketBarClass(index)}
+                  style={{ width: `${agingBucketWidth(bucket.totalOutstanding, aging?.buckets ?? [])}%` }}
+                  title={`${bucket.bucket} days: ${money(bucket.totalOutstanding)}`}
+                />
+              ))}
+            </div>
+            <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
+              {(aging?.buckets ?? []).map((bucket, index) => (
+                <div key={bucket.bucket} className="flex items-center gap-2">
+                  <span className={`size-2 rounded-full ${agingBucketDotClass(index)}`} />
+                  <span>{bucket.bucket} days · {money(bucket.totalOutstanding)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="grid gap-3 md:grid-cols-4">
+            {(aging?.buckets ?? []).map((bucket) => (
+              <div key={bucket.bucket} className="rounded-md border border-border bg-white p-4">
+                <div className="text-xs text-slate-500">{bucket.bucket} days</div>
+                <div className="mt-1 text-xl font-bold text-slate-950">{money(bucket.totalOutstanding)}</div>
+                <div className="text-xs text-slate-400">{bucket.customerCount} customers</div>
+              </div>
+            ))}
+          </div>
+          <TableShell title="Outstanding aging" loading={agingQuery.isLoading} empty={(aging?.customers ?? []).length === 0}>
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Customer</th>
+                  <th className="px-4 py-2 text-right font-medium">Outstanding</th>
+                  <th className="px-4 py-2 text-right font-medium">Invoices</th>
+                  <th className="px-4 py-2 text-right font-medium">Oldest unpaid</th>
+                  <th className="px-4 py-2 text-right font-medium">Bucket</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(aging?.customers ?? []).map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
+                    <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.totalOutstanding)}</td>
+                    <td className="px-4 py-2 text-right">{row.invoiceCount}</td>
+                    <td className="px-4 py-2 text-right">{new Date(row.oldestInvoiceDate).toLocaleDateString("en-IN")}</td>
+                    <td className="px-4 py-2 text-right">{row.bucket}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      )}
+
+      {tab === "stock" && (
+        <div className="space-y-4">
+          <section className="rounded-md border border-border bg-white p-4">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto]">
+              <div className="relative">
+                <label className="text-xs font-medium text-slate-500">Product filter</label>
+                <input
+                  value={stockProductSearch}
+                  onChange={(event) => {
+                    setStockProductSearch(event.target.value);
+                    if (!event.target.value.trim()) {
+                      setStockProductId("");
+                    }
+                  }}
+                  placeholder="Search product name, SKU, or barcode"
+                  className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+                />
+                {stockProductSearch.trim() && stockProductResults.length > 0 ? (
+                  <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-white shadow-lg">
+                    {stockProductResults.map((product) => (
+                      <button key={product.id} type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-emerald-50" onClick={() => {
+                        setStockProductId(product.id);
+                        setStockProductSearch(product.name);
+                      }}>
+                        <span className="font-medium text-slate-900">{product.name}</span>
+                        <span className="ml-2 text-xs text-slate-400">{product.barcode ?? product.sku ?? ""}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <label className="text-xs font-medium text-slate-500">
+                Movement type
+                <select value={stockMovementType} onChange={(event) => setStockMovementType(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
+                  <option value="">All types</option>
+                  <option value="sale">Sale</option>
+                  <option value="purchase">Purchase</option>
+                  <option value="return">Return</option>
+                  <option value="adjustment">Adjustment</option>
+                </select>
+              </label>
+              <button type="button" className="h-10 self-end rounded-md border border-border px-3 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => {
+                setStockProductSearch("");
+                setStockProductId("");
+                setStockMovementType("");
+              }}>
+                Clear filters
+              </button>
+            </div>
+          </section>
+          <TableShell title="Stock movement" loading={stockMovementQuery.isLoading} empty={(stockMovement?.data ?? []).length === 0}>
+            <table className="w-full min-w-[840px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Date</th>
+                  <th className="px-4 py-2 text-left font-medium">Product</th>
+                  <th className="px-4 py-2 text-left font-medium">Type</th>
+                  <th className="px-4 py-2 text-right font-medium">Change</th>
+                  <th className="px-4 py-2 text-right font-medium">Balance</th>
+                  <th className="px-4 py-2 text-left font-medium">Reference</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(stockMovement?.data ?? []).map((row, index) => (
+                  <tr key={`${row.productId}-${row.date}-${row.reference}-${String(index)}`}>
+                    <td className="px-4 py-2">{new Date(row.date).toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-2 font-medium">{row.productName}</td>
+                    <td className="px-4 py-2 capitalize">{row.type}</td>
+                    <td className={`px-4 py-2 text-right font-semibold ${row.qty >= 0 ? "text-emerald-700" : "text-red-700"}`}>{row.qty}</td>
+                    <td className="px-4 py-2 text-right">{row.runningBalance}</td>
+                    <td className="px-4 py-2">{row.reference}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      )}
+
+      {tab === "comparison" && (
+        <div className="space-y-4">
+          <section className="rounded-md border border-border bg-white p-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <label className="text-xs font-medium text-slate-500">
+                Metric
+                <select value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as ComparisonReport["metric"])} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
+                  <option value="revenue">Revenue</option>
+                  <option value="invoices">Invoices</option>
+                  <option value="customers">New customers</option>
+                  <option value="expenses">Expenses</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                Period
+                <select value={comparisonPeriod} onChange={(event) => setComparisonPeriod(event.target.value as ComparisonReport["period"])} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
+                  <option value="monthly">Monthly</option>
+                  <option value="weekly">Weekly</option>
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                Base year
+                <input type="number" value={comparisonYear1} onChange={(event) => setComparisonYear1(Number(event.target.value))} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                Compare year
+                <input type="number" value={comparisonYear2} onChange={(event) => setComparisonYear2(Number(event.target.value))} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+              </label>
+            </div>
+            {comparisonYear1 === comparisonYear2 ? <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Select two different years.</div> : null}
+          </section>
+          <TableShell title="Year comparison" loading={comparisonQuery.isLoading} empty={(comparison?.rows ?? []).length === 0}>
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Period</th>
+                  <th className="px-4 py-2 text-right font-medium">{comparisonYear1}</th>
+                  <th className="px-4 py-2 text-right font-medium">{comparisonYear2}</th>
+                  <th className="px-4 py-2 text-right font-medium">Change</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(comparison?.rows ?? []).map((row) => (
+                  <tr key={row.period}>
+                    <td className="px-4 py-2 font-medium">{comparisonPeriod === "monthly" ? monthName(row.period) : row.period}</td>
+                    <td className="px-4 py-2 text-right">{formatComparisonValue(comparisonMetric, row.year1Value)}</td>
+                    <td className="px-4 py-2 text-right">{formatComparisonValue(comparisonMetric, row.year2Value)}</td>
+                    <td className="px-4 py-2 text-right">
+                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${comparisonBadgeClass(row.changePct)}`}>
+                        {row.changePct === null ? "New" : `${row.changePct >= 0 ? "+" : ""}${row.changePct.toFixed(1)}%`}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      )}
+
+      {tab === "tally" && (
+        <section className="rounded-md border border-border bg-white p-5">
+          <h2 className="text-base font-semibold text-slate-950">Tally Prime XML export</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Downloads sales vouchers for confirmed invoices, purchase vouchers for received purchase orders, and payment vouchers for expenses in the selected date range.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <MetricCard label="From" value={from} />
+            <MetricCard label="To" value={to} />
+            <button type="button" className="h-full min-h-20 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white" onClick={() => void downloadTallyExport()}>
+              Download XML
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -409,6 +904,108 @@ function ReportList({ title, items }: Readonly<{ title: string; items: string[] 
   );
 }
 
+function ExportButton({ label, onClick, disabled = false }: Readonly<{ label: string; onClick: () => void; disabled?: boolean }>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="h-9 rounded-md border border-border px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {label}
+    </button>
+  );
+}
+
+function MetricCard({ label, value }: Readonly<{ label: string; value: string }>) {
+  return (
+    <div className="rounded-md border border-border p-3">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-bold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function TableShell({
+  title,
+  loading,
+  empty,
+  children,
+}: Readonly<{ title: string; loading: boolean; empty: boolean; children: React.ReactNode }>) {
+  return (
+    <section className="rounded-md border border-border bg-white">
+      <div className="border-b border-border px-4 py-3 text-sm font-semibold text-slate-950">{title}</div>
+      {loading ? (
+        <div className="space-y-2 p-4">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="h-10 animate-pulse rounded-md bg-slate-100" />
+          ))}
+        </div>
+      ) : empty ? (
+        <div className="p-6 text-sm text-slate-400">No data for this filter.</div>
+      ) : (
+        <div className="overflow-x-auto">{children}</div>
+      )}
+    </section>
+  );
+}
+
 function money(v: number) {
   return `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function stockMovementQueryString(from: string, to: string, productId: string, type: string, format?: "csv" | "xlsx"): string {
+  const query = new URLSearchParams({ from, to, limit: "50" });
+  if (productId) {
+    query.set("productId", productId);
+  }
+  if (type) {
+    query.set("type", type);
+  }
+  if (format) {
+    query.set("format", format);
+  }
+  return query.toString();
+}
+
+function agingBucketWidth(value: number, buckets: Array<{ totalOutstanding: number }>): number {
+  const total = buckets.reduce((sum, bucket) => sum + bucket.totalOutstanding, 0);
+  if (total <= 0) {
+    return buckets.length > 0 ? 100 / buckets.length : 0;
+  }
+
+  return Math.max((value / total) * 100, value > 0 ? 4 : 0);
+}
+
+function agingBucketBarClass(index: number): string {
+  return ["bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-red-500"][index] ?? "bg-slate-300";
+}
+
+function agingBucketDotClass(index: number): string {
+  return ["bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-red-500"][index] ?? "bg-slate-300";
+}
+
+function monthName(value: string): string {
+  const month = Number(value);
+  if (!Number.isFinite(month) || month < 1 || month > 12) {
+    return value;
+  }
+
+  return new Date(Date.UTC(2026, month - 1, 1)).toLocaleString("en-IN", { month: "short" });
+}
+
+function formatComparisonValue(metric: ComparisonReport["metric"], value: number): string {
+  if (metric === "revenue" || metric === "expenses") {
+    return money(value);
+  }
+
+  return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
+
+function comparisonBadgeClass(value: number | null): string {
+  if (value === null) {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  return value >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700";
 }

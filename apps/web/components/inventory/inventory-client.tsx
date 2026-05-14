@@ -1,13 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, Save, Search, Trash2, Upload, X } from "lucide-react";
+import { Download, FileSpreadsheet, History, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ProductFieldForm } from "@/components/inventory/product-field-form";
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatStrip } from "@/components/shared/stat-strip";
-import { createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
@@ -19,8 +19,59 @@ interface ProductBatch {
   purchasePrice: string | number;
 }
 
+interface StockMovement {
+  date: string;
+  type: "adjustment" | "sale" | "purchase" | "return";
+  qty: number;
+  reference: string;
+  notes: string;
+  runningBalance: number;
+}
+
+interface PaginatedMovements {
+  data: StockMovement[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+type InventoryView = "products" | "stock-count";
+
+interface StockCountSummary {
+  id: string;
+  name: string;
+  status: string;
+  countedAt: string;
+  submittedAt?: string | null;
+  approvedAt?: string | null;
+  _count: {
+    items: number;
+  };
+}
+
+interface StockCountDetail extends Omit<StockCountSummary, "_count"> {
+  createdBy: string;
+  approvedBy?: string | null;
+  items: StockCountItem[];
+}
+
+interface StockCountItem {
+  id: string;
+  productId: string;
+  productName: string;
+  systemQty: number | string;
+  countedQty: number | string | null;
+  variance: number | string;
+  product: {
+    sku?: string | null;
+    barcode?: string | null;
+    unit: string;
+  };
+}
+
 export function InventoryClient() {
   const queryClient = useQueryClient();
+  const [activeView, setActiveView] = useState<InventoryView>("products");
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -75,12 +126,19 @@ export function InventoryClient() {
           { label: "Visible stock value", value: `₹${stockValue.toFixed(2)}`, tone: "slate" },
         ]}
       />
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
-        <div className="space-y-4">
-          {canManageProducts ? <ProductFieldForm onCreated={() => void productsQuery.refetch()} /> : null}
-          <StockAdjustment onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
-        </div>
-        <section className="rounded-md border border-border bg-white">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "products" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("products")}>Products</button>
+        <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "stock-count" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("stock-count")}>Stock Count</button>
+      </div>
+      {activeView === "stock-count" ? (
+        <StockCountWorkspace canManage={Boolean(canManageProducts)} onStockChanged={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
+      ) : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="space-y-4">
+            {canManageProducts ? <ProductFieldForm onCreated={() => void productsQuery.refetch()} /> : null}
+            <StockAdjustment onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
+          </div>
+          <section className="rounded-md border border-border bg-white">
           <div className="space-y-3 border-b border-border px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold text-slate-950">Products</div>
@@ -126,9 +184,232 @@ export function InventoryClient() {
           </div>
           <ProductList products={products} loading={productsQuery.isLoading} error={productsQuery.error} hasSearch={Boolean(searchTerm)} canManageProducts={canManageProducts} />
           <PaginationControls page={page} limit={pageSize} total={productsQuery.data?.total ?? 0} onPageChange={setPage} />
-        </section>
-      </div>
+          </section>
+        </div>
+      )}
     </>
+  );
+}
+
+function StockCountWorkspace({ canManage, onStockChanged }: Readonly<{ canManage: boolean; onStockChanged: () => void }>) {
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [newCountName, setNewCountName] = useState("");
+  const [search, setSearch] = useState("");
+  const [countValues, setCountValues] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
+
+  const countsQuery = useQuery({
+    queryKey: ["stock-counts", status],
+    queryFn: () => {
+      const query = new URLSearchParams();
+      if (status) {
+        query.set("status", status);
+      }
+
+      return createAuthenticatedApiClient().get<StockCountSummary[]>(`/inventory/stock-counts${query.toString() ? `?${query.toString()}` : ""}`);
+    },
+  });
+  const detailQuery = useQuery({
+    queryKey: ["stock-count", selectedId],
+    enabled: Boolean(selectedId),
+    queryFn: () => createAuthenticatedApiClient().get<StockCountDetail>(`/inventory/stock-counts/${selectedId ?? ""}`),
+  });
+  const startCount = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<StockCountDetail>("/inventory/stock-counts", newCountName.trim() ? { name: newCountName.trim() } : {}),
+    onSuccess: async (count) => {
+      setSelectedId(count.id);
+      setNewCountName("");
+      setMessage("Stock count started.");
+      await queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+    },
+  });
+  const saveItems = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().put<StockCountDetail>(`/inventory/stock-counts/${selectedId ?? ""}/items`, {
+      items: Object.entries(countValues).flatMap(([productId, value]) => {
+        const trimmed = value.trim();
+        const countedQty = Number(trimmed);
+        return trimmed && Number.isFinite(countedQty) ? [{ productId, countedQty }] : [];
+      }),
+    }),
+    onSuccess: async (count) => {
+      setMessage("Counted quantities saved.");
+      queryClient.setQueryData(["stock-count", count.id], count);
+      await queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+    },
+  });
+  const submitCount = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<StockCountDetail>(`/inventory/stock-counts/${selectedId ?? ""}/submit`, {}),
+    onSuccess: async (count) => {
+      setMessage("Stock count submitted for approval.");
+      queryClient.setQueryData(["stock-count", count.id], count);
+      await queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+    },
+  });
+  const approveCount = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<StockCountDetail>(`/inventory/stock-counts/${selectedId ?? ""}/approve`, {}),
+    onSuccess: async (count) => {
+      setMessage("Stock variances applied.");
+      queryClient.setQueryData(["stock-count", count.id], count);
+      await queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+      onStockChanged();
+    },
+  });
+  const cancelCount = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<StockCountDetail>(`/inventory/stock-counts/${selectedId ?? ""}/cancel`, {}),
+    onSuccess: async (count) => {
+      setMessage("Stock count cancelled.");
+      queryClient.setQueryData(["stock-count", count.id], count);
+      await queryClient.invalidateQueries({ queryKey: ["stock-counts"] });
+    },
+  });
+
+  const counts = countsQuery.data ?? [];
+  const detail = detailQuery.data ?? null;
+  const filteredItems = (detail?.items ?? []).filter((item) => {
+    const term = search.trim().toLowerCase();
+    if (!term) {
+      return true;
+    }
+
+    return [item.productName, item.product.sku, item.product.barcode].filter(Boolean).some((value) => String(value).toLowerCase().includes(term));
+  });
+  const error = countsQuery.error ?? detailQuery.error ?? startCount.error ?? saveItems.error ?? submitCount.error ?? approveCount.error ?? cancelCount.error;
+  const busy = startCount.isPending || saveItems.isPending || submitCount.isPending || approveCount.isPending || cancelCount.isPending;
+
+  useEffect(() => {
+    if (!selectedId && counts[0]) {
+      setSelectedId(counts[0].id);
+    }
+  }, [counts, selectedId]);
+
+  useEffect(() => {
+    if (!detail) {
+      setCountValues({});
+      return;
+    }
+
+    setCountValues(Object.fromEntries(detail.items.map((item) => [item.productId, item.countedQty === null ? "" : String(Number(item.countedQty))])));
+  }, [detail?.id, detail?.items, detail?.status]);
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="rounded-md border border-border bg-white">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold text-slate-950">Physical stock counts</div>
+          <p className="text-xs text-slate-500">Snapshot stock, enter counted quantities, then approve variances.</p>
+          <div className="mt-3 flex gap-2">
+            <select value={status} onChange={(event) => { setStatus(event.target.value); setSelectedId(null); }} className="h-9 rounded-md border border-border px-2 text-sm">
+              <option value="">All statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="SUBMITTED">Submitted</option>
+              <option value="APPROVED">Approved</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+          </div>
+          {canManage ? (
+            <div className="mt-3 flex gap-2">
+              <input value={newCountName} onChange={(event) => setNewCountName(event.target.value)} placeholder="Count name (optional)" className="h-9 min-w-0 flex-1 rounded-md border border-border px-3 text-sm" />
+              <button type="button" className="h-9 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-60" disabled={startCount.isPending} onClick={() => startCount.mutate()}>
+                Start
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <div className="max-h-[560px] overflow-y-auto">
+          {countsQuery.isLoading ? <div className="p-4 text-sm text-slate-500">Loading stock counts...</div> : null}
+          {!countsQuery.isLoading && counts.length === 0 ? <div className="p-6 text-center text-sm text-slate-500">No stock counts yet.</div> : null}
+          {counts.map((count) => (
+            <button key={count.id} type="button" className={`block w-full border-b border-border px-4 py-3 text-left hover:bg-slate-50 ${selectedId === count.id ? "bg-emerald-50" : "bg-white"}`} onClick={() => { setSelectedId(count.id); setMessage(""); }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-slate-950">{count.name}</div>
+                  <div className="mt-1 text-xs text-slate-500">{new Date(count.countedAt).toLocaleDateString("en-IN")} | {count._count.items} products</div>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${stockCountStatusClass(count.status)}`}>{count.status}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-md border border-border bg-white">
+        {!detail ? (
+          <div className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Select or start a stock count.</div>
+        ) : (
+          <>
+            <div className="border-b border-border px-4 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-950">{detail.name}</h2>
+                  <p className="mt-1 text-xs text-slate-500">{new Date(detail.countedAt).toLocaleString("en-IN")} | {detail.items.length} products</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${stockCountStatusClass(detail.status)}`}>{detail.status}</span>
+              </div>
+              {message ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{message}</div> : null}
+              {error ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error.message}</div> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="h-10 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 disabled:opacity-50" disabled={busy || detail.status !== "OPEN" || !canManage} onClick={() => saveItems.mutate()}>Save counts</button>
+                <button type="button" className="h-10 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || detail.status !== "OPEN" || !canManage} onClick={() => submitCount.mutate()}>Submit</button>
+                <button type="button" className="h-10 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || detail.status !== "SUBMITTED" || !canManage} onClick={() => approveCount.mutate()}>Approve & apply</button>
+                <button type="button" className="h-10 rounded-md border border-red-200 px-3 text-sm font-semibold text-red-700 disabled:opacity-50" disabled={busy || detail.status !== "OPEN" || !canManage} onClick={() => cancelCount.mutate()}>Cancel</button>
+              </div>
+              <div className="relative mt-3">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product, SKU, barcode" className="h-10 w-full rounded-md border border-border px-9 text-sm outline-none focus:border-emerald-600" />
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-[760px] w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2">Product</th>
+                    <th className="px-4 py-2">Barcode / SKU</th>
+                    <th className="px-4 py-2 text-right">System</th>
+                    <th className="px-4 py-2 text-right">Counted</th>
+                    <th className="px-4 py-2 text-right">Variance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-slate-500">No products match this search.</td>
+                    </tr>
+                  ) : null}
+                  {filteredItems.map((item) => {
+                    const countedValue = countValues[item.productId] ?? "";
+                    const countedNumber = countedValue.trim() ? Number(countedValue) : Number(item.countedQty ?? item.systemQty);
+                    const variance = roundQuantity(countedNumber - Number(item.systemQty));
+                    return (
+                      <tr key={item.id} className="border-t border-border">
+                        <td className="px-4 py-2 font-medium text-slate-900">{item.productName}</td>
+                        <td className="px-4 py-2 text-xs text-slate-500">{item.product.barcode || "-"} / {item.product.sku || "-"}</td>
+                        <td className="px-4 py-2 text-right">{Number(item.systemQty).toFixed(3)} {item.product.unit}</td>
+                        <td className="px-4 py-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.001"
+                            value={countedValue}
+                            disabled={detail.status !== "OPEN" || !canManage}
+                            onChange={(event) => setCountValues((current) => ({ ...current, [item.productId]: event.target.value }))}
+                            className="h-9 w-28 rounded-md border border-border px-2 text-right text-sm disabled:bg-slate-50"
+                          />
+                        </td>
+                        <td className={`px-4 py-2 text-right font-semibold ${variance < 0 ? "text-red-700" : variance > 0 ? "text-emerald-700" : "text-slate-600"}`}>
+                          {variance.toFixed(3)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -177,16 +458,97 @@ function ProductList({ products, loading, error, hasSearch, canManageProducts }:
   );
 }
 
+function ProductImageControls({
+  canManage,
+  imageSrc,
+  uploadPending,
+  removePending,
+  error,
+  onUpload,
+  onRemove,
+}: Readonly<{
+  canManage: boolean;
+  imageSrc: string | null;
+  uploadPending: boolean;
+  removePending: boolean;
+  error: Error | null;
+  onUpload: (file: File | undefined) => void;
+  onRemove: () => void;
+}>) {
+  return (
+    <div className="md:col-span-2 rounded-md border border-border bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ProductImageThumb src={imageSrc} name="Product image" large />
+        {canManage ? (
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-900">Product image</div>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                {uploadPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
+                  onUpload(event.target.files?.[0]);
+                  event.currentTarget.value = "";
+                }} />
+              </label>
+              {imageSrc ? (
+                <button type="button" className="h-9 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50" disabled={removePending} onClick={onRemove}>
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            {error ? <div className="text-xs text-red-700">{error.message}</div> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ProductImageThumb({ src, name, large = false }: Readonly<{ src: string | null; name: string; large?: boolean }>) {
+  const sizeClass = large ? "size-20" : "size-12";
+  if (!src) {
+    return (
+      <div className={`${sizeClass} flex shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-[10px] font-semibold uppercase text-slate-400`}>
+        Image
+      </div>
+    );
+  }
+
+  return <img src={src} alt={`${name} product image`} className={`${sizeClass} shrink-0 rounded-md border border-border object-cover`} />;
+}
+
 function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; canManageProducts: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
+  const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [showBatches, setShowBatches] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const gstEnabled = getStoredTenant()?.gstEnabled !== false;
+  const imageSrc = product.imageUrl ? `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}` : null;
   const batchesQuery = useQuery({
     queryKey: ["product-batches", product.id],
     queryFn: () => createAuthenticatedApiClient().get<ProductBatch[]>(`/inventory/products/${product.id}/batches`),
     enabled: showBatches,
     retry: false,
   });
+  const movementsQuery = useQuery({
+    queryKey: ["product-movements", product.id],
+    queryFn: () => createAuthenticatedApiClient().get<PaginatedMovements>(`/inventory/products/${product.id}/movements?limit=25`),
+    enabled: showHistory,
+  });
+  const uploadImage = useMutation({
+    mutationFn: (file: File) => createAuthenticatedApiClient().upload<{ imageUrl: string }>(`/inventory/products/${product.id}/image`, file),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
+  const removeImage = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().delete<{ imageUrl: null }>(`/inventory/products/${product.id}/image`),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["products"] }),
+  });
+
+  function handleImageInput(file: File | undefined) {
+    if (file) {
+      uploadImage.mutate(file);
+    }
+  }
 
   function handleEdit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -235,6 +597,15 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
   if (editing) {
     return (
       <form className="grid gap-3 p-4 md:grid-cols-2" onSubmit={handleEdit}>
+        <ProductImageControls
+          canManage={canManageProducts}
+          imageSrc={imageSrc}
+          uploadPending={uploadImage.isPending}
+          removePending={removeImage.isPending}
+          error={uploadImage.error ?? removeImage.error}
+          onUpload={handleImageInput}
+          onRemove={() => removeImage.mutate()}
+        />
         <TextInput name="name" label="Name" defaultValue={product.name} required />
         <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
         <TextInput name="barcode" label="Barcode" defaultValue={product.barcode ?? ""} />
@@ -266,10 +637,13 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
   return (
     <article className="p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-slate-950">{product.name}</div>
-          <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
-          <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
+        <div className="flex min-w-0 gap-3">
+          <ProductImageThumb src={imageSrc} name={product.name} />
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-slate-950">{product.name}</div>
+            <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
+            <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
+          </div>
         </div>
         {canManageProducts ? (
           <div className="flex gap-2">
@@ -280,6 +654,32 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
             </button>
           </div>
         ) : null}
+      </div>
+      {canManageProducts ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-border px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
+            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
+              handleImageInput(event.target.files?.[0]);
+              event.currentTarget.value = "";
+            }} />
+          </label>
+          {imageSrc ? (
+            <button type="button" className="h-8 rounded-md border border-red-200 px-3 text-xs font-medium text-red-700 hover:bg-red-50" disabled={removeImage.isPending} onClick={() => removeImage.mutate()}>
+              Remove image
+            </button>
+          ) : null}
+          {uploadImage.error ?? removeImage.error ? <span className="text-xs text-red-700">{(uploadImage.error ?? removeImage.error)?.message}</span> : null}
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
+          onClick={() => setShowHistory((value) => !value)}
+        >
+          <History className="size-3.5" aria-hidden="true" />
+          {showHistory ? "Hide stock history" : "Stock history"}
+        </button>
       </div>
       {showBatchTools ? (
         <div className="mt-3 space-y-3 rounded-md bg-slate-50 p-3">
@@ -302,8 +702,69 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
           </form>
         </div>
       ) : null}
+      {showHistory ? (
+        <div className="mt-3 rounded-md border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase text-slate-500">Stock history</div>
+          {movementsQuery.isLoading ? (
+            <div className="p-3 text-sm text-slate-500">Loading stock movement...</div>
+          ) : movementsQuery.error ? (
+            <div className="p-3 text-sm text-red-700">{movementsQuery.error.message}</div>
+          ) : (movementsQuery.data?.data ?? []).length === 0 ? (
+            <div className="p-3 text-sm text-slate-500">No stock movement recorded yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px] text-xs">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Date</th>
+                    <th className="px-3 py-2 text-left font-medium">Type</th>
+                    <th className="px-3 py-2 text-right font-medium">Change</th>
+                    <th className="px-3 py-2 text-right font-medium">Balance</th>
+                    <th className="px-3 py-2 text-left font-medium">Reference</th>
+                    <th className="px-3 py-2 text-left font-medium">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(movementsQuery.data?.data ?? []).map((movement, index) => (
+                    <tr key={`${movement.date}-${movement.reference}-${String(index)}`}>
+                      <td className="px-3 py-2">{new Date(movement.date).toLocaleString("en-IN")}</td>
+                      <td className="px-3 py-2 capitalize">{movement.type}</td>
+                      <td className={`px-3 py-2 text-right font-semibold ${movement.qty >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                        {movement.qty}
+                      </td>
+                      <td className="px-3 py-2 text-right">{movement.runningBalance}</td>
+                      <td className="px-3 py-2">{movement.reference}</td>
+                      <td className="px-3 py-2 text-slate-500">{movement.notes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </article>
   );
+}
+
+function stockCountStatusClass(status: string): string {
+  if (status === "OPEN") {
+    return "bg-blue-50 text-blue-700";
+  }
+
+  if (status === "SUBMITTED") {
+    return "bg-amber-50 text-amber-800";
+  }
+
+  if (status === "APPROVED") {
+    return "bg-emerald-50 text-emerald-700";
+  }
+
+  return "bg-slate-100 text-slate-600";
+}
+
+function roundQuantity(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
 function StockAdjustment({ onSaved }: Readonly<{ onSaved: () => void }>) {

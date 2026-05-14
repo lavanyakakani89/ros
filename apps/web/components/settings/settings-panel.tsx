@@ -1,11 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, MessageCircle, Printer, Save, UserPlus } from "lucide-react";
+import { Building2, FileText, Image as ImageIcon, MessageCircle, Printer, Save, Trash2, Upload, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
 
@@ -17,7 +17,9 @@ interface SettingsResponse {
     status?: string;
     gstNumber?: string | null;
     gstEnabled?: boolean;
+    requirePoApproval?: boolean;
     address?: string | null;
+    logoUrl?: string | null;
     vertical: string;
   };
   users: UserRecord[];
@@ -25,6 +27,7 @@ interface SettingsResponse {
 
 interface UserRecord {
   id: string;
+  primaryStoreId?: string | null;
   name: string;
   email: string;
   username?: string | null;
@@ -33,10 +36,30 @@ interface UserRecord {
   isActive: boolean;
 }
 
+interface StoreRecord {
+  id: string;
+  name: string;
+  address?: string | null;
+  phone?: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  userAssignments: Array<{
+    user: {
+      id: string;
+      name: string;
+      email: string;
+      username?: string | null;
+      role: UserRecord["role"];
+    };
+  }>;
+}
+
 export function SettingsPanel() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [gstEnabled, setGstEnabled] = useState(true);
+  const [requirePoApproval, setRequirePoApproval] = useState(false);
+  const [logoRevision, setLogoRevision] = useState(0);
   const role = getStoredAuthSession()?.user?.role;
   const canViewSettings = role === "OWNER" || role === "MANAGER";
   const canEditShop = role === "OWNER";
@@ -45,6 +68,11 @@ export function SettingsPanel() {
   const settingsQuery = useQuery({
     queryKey: ["settings-current"],
     queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
+    enabled: canViewSettings,
+  });
+  const storesQuery = useQuery({
+    queryKey: ["settings-stores"],
+    queryFn: () => createAuthenticatedApiClient().get<StoreRecord[]>("/settings/stores"),
     enabled: canViewSettings,
   });
   const updateTenant = useMutation({
@@ -77,15 +105,84 @@ export function SettingsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
     },
   });
+  const uploadLogo = useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return createAuthenticatedApiClient().uploadForm<{ logoUrl: string | null }>("/settings/logo", form);
+    },
+    onSuccess: async () => {
+      setMessage("Shop logo uploaded.");
+      setLogoRevision(Date.now());
+      await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
+    },
+  });
+  const deleteLogo = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().delete<{ logoUrl: null }>("/settings/logo"),
+    onSuccess: async () => {
+      setMessage("Shop logo removed.");
+      setLogoRevision(Date.now());
+      await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
+    },
+  });
+  const createStore = useMutation({
+    mutationFn: (payload: object) => createAuthenticatedApiClient().post("/settings/stores", payload),
+    onSuccess: async () => {
+      setMessage("Store added.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings-stores"] }),
+        queryClient.invalidateQueries({ queryKey: ["settings-current"] }),
+      ]);
+    },
+  });
+  const updateStore = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: object }) => createAuthenticatedApiClient().put(`/settings/stores/${id}`, payload),
+    onSuccess: async () => {
+      setMessage("Store saved.");
+      await queryClient.invalidateQueries({ queryKey: ["settings-stores"] });
+    },
+  });
+  const setDefaultStore = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().put(`/settings/stores/${id}/set-default`, {}),
+    onSuccess: async () => {
+      setMessage("Default store updated.");
+      await queryClient.invalidateQueries({ queryKey: ["settings-stores"] });
+    },
+  });
+  const deleteStore = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().delete(`/settings/stores/${id}`),
+    onSuccess: async () => {
+      setMessage("Store deactivated.");
+      await queryClient.invalidateQueries({ queryKey: ["settings-stores"] });
+    },
+  });
+  const assignStoreUsers = useMutation({
+    mutationFn: ({ id, userIds }: { id: string; userIds: string[] }) => createAuthenticatedApiClient().put(`/settings/stores/${id}/users`, { userIds }),
+    onSuccess: async () => {
+      setMessage("Store users updated.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings-stores"] }),
+        queryClient.invalidateQueries({ queryKey: ["settings-current"] }),
+      ]);
+    },
+  });
   const verticalConfig = getStoredVerticalConfig();
   const settings = settingsQuery.data;
-  const error = (canViewSettings ? settingsQuery.error : null) ?? updateTenant.error ?? createUser.error ?? updateUser.error;
+  const stores = storesQuery.data ?? [];
+  const error = (canViewSettings ? settingsQuery.error : null) ?? storesQuery.error ?? updateTenant.error ?? createUser.error ?? updateUser.error ?? uploadLogo.error ?? deleteLogo.error ?? createStore.error ?? updateStore.error ?? setDefaultStore.error ?? deleteStore.error ?? assignStoreUsers.error;
+  const logoSrc = settings?.tenant.logoUrl ? `${apiUrl("/settings/logo/view")}?v=${String(logoRevision)}-${encodeURIComponent(settings.tenant.logoUrl)}` : null;
 
   useEffect(() => {
     if (settings?.tenant.gstEnabled !== undefined) {
       setGstEnabled(settings.tenant.gstEnabled);
     }
   }, [settings?.tenant.gstEnabled]);
+
+  useEffect(() => {
+    if (settings?.tenant.requirePoApproval !== undefined) {
+      setRequirePoApproval(settings.tenant.requirePoApproval);
+    }
+  }, [settings?.tenant.requirePoApproval]);
 
   function handleTenantSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,6 +192,7 @@ export function SettingsPanel() {
       name: formString(form, "name"),
       phone: formString(form, "phone"),
       gstEnabled,
+      requirePoApproval,
       gstNumber: gstEnabled ? formString(form, "gstNumber") || null : null,
       address: formString(form, "address") || null,
     });
@@ -118,6 +216,59 @@ export function SettingsPanel() {
         onSuccess: () => formElement.reset(),
       },
     );
+  }
+
+  function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setMessage(null);
+    uploadLogo.mutate(file);
+    event.currentTarget.value = "";
+  }
+
+  function handleStoreSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    setMessage(null);
+    createStore.mutate(
+      {
+        name: formString(form, "name"),
+        address: formString(form, "address") || null,
+        phone: formString(form, "phone") || null,
+        isDefault: form.get("isDefault") === "on",
+      },
+      {
+        onSuccess: () => formElement.reset(),
+      },
+    );
+  }
+
+  function handleStoreEditSubmit(event: React.SyntheticEvent<HTMLFormElement>, storeId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setMessage(null);
+    updateStore.mutate({
+      id: storeId,
+      payload: {
+        name: formString(form, "name"),
+        address: formString(form, "address") || null,
+        phone: formString(form, "phone") || null,
+      },
+    });
+  }
+
+  function handleStoreUsersSubmit(event: React.SyntheticEvent<HTMLFormElement>, storeId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setMessage(null);
+    assignStoreUsers.mutate({
+      id: storeId,
+      userIds: form.getAll("userIds").map(String),
+    });
   }
 
   function handleUsernameSubmit(event: React.SyntheticEvent<HTMLFormElement>, userId: string) {
@@ -169,6 +320,42 @@ export function SettingsPanel() {
           <div className="text-sm font-semibold text-slate-950">Shop details</div>
           <div className="text-xs text-slate-500">{verticalConfig?.displayName ?? settings?.tenant.vertical ?? "Retail"} | active modules from vertical config</div>
         </div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-16 items-center justify-center overflow-hidden rounded-md border border-border bg-white">
+              {logoSrc ? (
+                <img src={logoSrc} alt="Shop logo" className="h-full w-full object-contain" />
+              ) : (
+                <ImageIcon className="size-7 text-slate-300" aria-hidden="true" />
+              )}
+            </div>
+            <div>
+              <div className="text-sm font-semibold text-slate-950">Shop logo</div>
+              <div className="text-xs text-slate-500">JPG, PNG, or WEBP up to 2 MB. Used on invoice PDFs.</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <Upload className="size-4" aria-hidden="true" />
+              {uploadLogo.isPending ? "Uploading..." : "Upload"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={handleLogoChange} disabled={uploadLogo.isPending} />
+            </label>
+            {logoSrc ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMessage(null);
+                  deleteLogo.mutate();
+                }}
+                disabled={deleteLogo.isPending}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+                Remove
+              </button>
+            ) : null}
+          </div>
+        </div>
         <form className="grid gap-3 md:grid-cols-2" onSubmit={handleTenantSubmit}>
           <TextInput name="name" label="Shop name" defaultValue={settings?.tenant.name ?? ""} required />
           <TextInput name="phone" label="Phone" defaultValue={settings?.tenant.phone ?? ""} required />
@@ -177,6 +364,10 @@ export function SettingsPanel() {
             GST registered shop
           </label>
           {gstEnabled ? <TextInput name="gstNumber" label="GSTIN" defaultValue={settings?.tenant.gstNumber ?? ""} /> : null}
+          <label className="flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700 md:col-span-2">
+            <input type="checkbox" checked={requirePoApproval} onChange={(event) => setRequirePoApproval(event.target.checked)} className="size-4 accent-emerald-600" />
+            Require owner/manager approval before receiving purchase orders
+          </label>
           <TextInput name="address" label="Address" defaultValue={settings?.tenant.address ?? ""} />
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={updateTenant.isPending}>
             <Save className="size-4" aria-hidden="true" />
@@ -184,6 +375,91 @@ export function SettingsPanel() {
           </button>
         </form>
       </section> : null}
+      {canViewSettings ? (
+        <section id="stores" className="rounded-md border border-border bg-white p-4">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                <Building2 className="size-4 text-emerald-600" aria-hidden="true" />
+                Stores / Branches
+              </div>
+              <div className="text-xs text-slate-500">Use one default store now, with user assignments ready for branch-wise data.</div>
+            </div>
+            {storesQuery.isLoading ? <span className="text-xs text-slate-500">Loading stores...</span> : null}
+          </div>
+          {canEditShop ? (
+            <form className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-5" onSubmit={handleStoreSubmit}>
+              <TextInput name="name" label="Store name" required />
+              <TextInput name="phone" label="Phone" />
+              <TextInput name="address" label="Address" />
+              <label className="flex h-10 items-center gap-2 self-end rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700">
+                <input name="isDefault" type="checkbox" className="size-4 accent-emerald-600" />
+                Default
+              </label>
+              <button className="inline-flex h-10 items-center justify-center rounded-md bg-emerald-600 px-4 text-sm font-medium text-white self-end" disabled={createStore.isPending}>
+                Add store
+              </button>
+            </form>
+          ) : null}
+          <div className="space-y-3">
+            {stores.length === 0 ? (
+              <div className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">No stores configured yet. The first store you add becomes the default.</div>
+            ) : null}
+            {stores.map((store) => (
+              <div key={store.id} className="rounded-md border border-slate-200 p-3">
+                <form className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto_auto]" onSubmit={(event) => handleStoreEditSubmit(event, store.id)}>
+                  <TextInput name="name" label="Store name" defaultValue={store.name} required />
+                  <TextInput name="phone" label="Phone" defaultValue={store.phone ?? ""} />
+                  <TextInput name="address" label="Address" defaultValue={store.address ?? ""} />
+                  <button className="h-10 self-end rounded-md border border-border px-3 text-sm font-medium text-slate-700" disabled={!canEditShop || updateStore.isPending}>
+                    Save
+                  </button>
+                  <div className="flex gap-2 self-end">
+                    {store.isDefault ? (
+                      <span className="inline-flex h-10 items-center rounded-md bg-emerald-50 px-3 text-xs font-bold text-emerald-700">DEFAULT</span>
+                    ) : (
+                      <button type="button" className="h-10 rounded-md border border-border px-3 text-sm font-medium text-slate-700" disabled={!canEditShop || setDefaultStore.isPending} onClick={() => setDefaultStore.mutate(store.id)}>
+                        Set default
+                      </button>
+                    )}
+                    {!store.isDefault ? (
+                      <button type="button" className="h-10 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700" disabled={!canEditShop || deleteStore.isPending} onClick={() => deleteStore.mutate(store.id)}>
+                        Deactivate
+                      </button>
+                    ) : null}
+                  </div>
+                </form>
+                <form
+                  key={`store-users-${store.id}-${store.userAssignments.map((assignment) => assignment.user.id).sort().join("-")}`}
+                  className="mt-3 rounded-md bg-slate-50 p-3"
+                  onSubmit={(event) => handleStoreUsersSubmit(event, store.id)}
+                >
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Assigned users</div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {(settings?.users ?? []).map((user) => {
+                      const assigned = store.userAssignments.some((assignment) => assignment.user.id === user.id);
+                      return (
+                        <label key={`${store.id}-${user.id}`} className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm text-slate-700">
+                          <input name="userIds" value={user.id} type="checkbox" defaultChecked={assigned} disabled={!canEditShop} className="size-4 accent-emerald-600" />
+                          <span>
+                            <span className="block font-medium text-slate-950">{user.name}</span>
+                            <span className="block text-xs text-slate-500">{user.role}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {canEditShop ? (
+                    <button className="mt-3 h-9 rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700" disabled={assignStoreUsers.isPending}>
+                      Save user assignments
+                    </button>
+                  ) : null}
+                </form>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {canViewSettings ? <section id="users" className="rounded-md border border-border bg-white p-4">
         <div className="mb-3 text-sm font-semibold text-slate-950">Users</div>
         <div className="space-y-2">

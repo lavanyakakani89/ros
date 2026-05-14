@@ -22,11 +22,14 @@ const groupByHref: Record<string, (typeof groupOrder)[number]> = {
   "/purchase-returns": "Stock",
   "/delivery": "Stock",
   "/customers": "People",
+  "/customers/campaigns": "People",
   "/suppliers": "People",
   "/payments": "Finance",
   "/expenses": "Finance",
   "/reports": "Insights",
+  "/whatsapp": "Operations",
   "/restaurant": "Operations",
+  "/restaurant/kds": "Operations",
 };
 
 export function dashboardItem(items: readonly VerticalNavigationItem[]): VerticalNavigationItem | undefined {

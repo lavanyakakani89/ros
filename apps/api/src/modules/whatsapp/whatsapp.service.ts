@@ -1,10 +1,10 @@
-import { PaymentMode, Prisma, UserRole, WhatsappIntegrationStatus, type Product, type Tenant } from "@prisma/client";
+import { InvoiceStatus, PaymentMode, Prisma, UserRole, WhatsappIntegrationStatus, WhatsappOrderStatus, type Product, type Tenant, type WhatsappOrder } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { BillingService } from "../billing/billing.service.js";
 import { encryptWhatsappToken } from "./whatsapp.credentials.js";
 import { normalizeWhatsappPhone, queueWhatsappNotification } from "./whatsapp.notifications.js";
-import type { WhatsappEmbeddedSignupCompleteInput, WhatsappMessageTemplatesInput, WhatsappOrdersQuery, WhatsappPasteOrderInput, WhatsappTestMessageInput } from "./whatsapp.schema.js";
+import type { WhatsappEmbeddedSignupCompleteInput, WhatsappMessageTemplatesInput, WhatsappOrderItemsInput, WhatsappOrdersQuery, WhatsappPasteOrderInput, WhatsappTestMessageInput } from "./whatsapp.schema.js";
 import { getWhatsappMessageTemplates, renderWhatsappMessageTemplate, saveWhatsappMessageTemplates } from "./whatsapp.templates.js";
 
 export interface InboundWhatsappMessage {
@@ -224,8 +224,145 @@ export class WhatsappService {
 
     return orders.map((order) => ({
       ...order,
+      parsedItems: readParsedOrderLines(order.parsedItems),
+      unmatchedLines: readUnmatchedOrderLines(order.unmatchedLines),
+      summary: summarizeParsedItems(readParsedOrderLines(order.parsedItems)),
       invoice: order.invoiceId ? invoiceById.get(order.invoiceId) ?? null : null,
     }));
+  }
+
+  async getOrder(tenant: Tenant, orderId: string) {
+    const order = await this.findOrder(tenant, orderId);
+    return this.buildOrderDetail(tenant, order);
+  }
+
+  async updateOrderItems(tenant: Tenant, currentUser: { role: UserRole }, orderId: string, input: WhatsappOrderItemsInput) {
+    ensureManager(currentUser.role);
+    const order = await this.findOrder(tenant, orderId);
+    ensureReviewableOrder(order);
+    const items = await this.normalizeOrderItems(tenant, input.items);
+    const unmatched = readUnmatchedOrderLines(order.unmatchedLines);
+
+    const updated = await this.fastify.prisma.whatsappOrder.update({
+      where: {
+        id: order.id,
+      },
+      data: {
+        parsedItems: toJson(items) ?? Prisma.JsonNull,
+        status: unmatched.length > 0 ? WhatsappOrderStatus.NEEDS_REVIEW : WhatsappOrderStatus.DRAFT_CREATED,
+      },
+    });
+
+    return this.buildOrderDetail(tenant, updated);
+  }
+
+  async confirmOrder(tenant: Tenant, currentUser: { role: UserRole; userId: string }, orderId: string) {
+    ensureManager(currentUser.role);
+    const order = await this.findOrder(tenant, orderId);
+    ensureReviewableOrder(order);
+    const items = readParsedOrderLines(order.parsedItems);
+    if (items.length === 0) {
+      throw new WhatsappIntegrationError("Add at least one matched product before confirming this WhatsApp order", 400);
+    }
+
+    const customer = order.customerId
+      ? await this.fastify.prisma.customer.findFirst({
+          where: {
+            id: order.customerId,
+            tenantId: tenant.id,
+          },
+        })
+      : await this.findOrCreateCustomer(tenant, {
+          phone: order.phone,
+          ...(order.customerName ? { name: order.customerName } : {}),
+          rawOrder: order.rawText,
+        });
+
+    if (!customer) {
+      throw new WhatsappIntegrationError("Customer not found for this WhatsApp order", 404);
+    }
+
+    const invoicePayload = {
+      customerId: customer.id,
+      paymentMode: PaymentMode.CASH,
+      billDiscount: 0,
+      notes: buildInvoiceNotes(order.rawText, readUnmatchedOrderLines(order.unmatchedLines)),
+      verticalData: {
+        source: "WHATSAPP",
+        whatsappOrderId: order.id,
+        ...(order.messageId ? { whatsappMessageId: order.messageId } : {}),
+        whatsappFrom: order.phone,
+        whatsappUnmatchedLines: readUnmatchedOrderLines(order.unmatchedLines),
+      },
+      items: items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        sellingPrice: item.sellingPrice,
+      })),
+    };
+
+    const existingInvoice = order.invoiceId
+      ? await this.fastify.prisma.invoice.findFirst({
+          where: {
+            id: order.invoiceId,
+            tenantId: tenant.id,
+          },
+          select: {
+            id: true,
+            status: true,
+          },
+        })
+      : null;
+
+    const invoice = existingInvoice
+      ? await this.updateLinkedDraftInvoice(tenant, existingInvoice, invoicePayload, currentUser.userId)
+      : await this.billingService.createInvoice(tenant, invoicePayload);
+
+    const updated = await this.fastify.prisma.whatsappOrder.update({
+      where: {
+        id: order.id,
+      },
+      data: {
+        customerId: customer.id,
+        customerName: customer.name,
+        invoiceId: invoice.id,
+        status: WhatsappOrderStatus.CONFIRMED,
+      },
+    });
+
+    if (order.messageId) {
+      await this.fastify.prisma.whatsappMessage.updateMany({
+        where: {
+          id: order.messageId,
+          tenantId: tenant.id,
+        },
+        data: {
+          invoiceId: invoice.id,
+          status: "PARSED",
+        },
+      });
+    }
+
+    return this.buildOrderDetail(tenant, updated);
+  }
+
+  async dismissOrder(tenant: Tenant, currentUser: { role: UserRole }, orderId: string) {
+    ensureManager(currentUser.role);
+    const order = await this.findOrder(tenant, orderId);
+    if (order.status === WhatsappOrderStatus.CONFIRMED) {
+      throw new WhatsappIntegrationError("Confirmed WhatsApp orders cannot be dismissed", 409);
+    }
+
+    const updated = await this.fastify.prisma.whatsappOrder.update({
+      where: {
+        id: order.id,
+      },
+      data: {
+        status: WhatsappOrderStatus.DISMISSED,
+      },
+    });
+
+    return this.buildOrderDetail(tenant, updated);
   }
 
   async createManualPastedOrder(tenant: Tenant, input: WhatsappPasteOrderInput) {
@@ -416,6 +553,103 @@ export class WhatsappService {
     };
   }
 
+  private async findOrder(tenant: Tenant, orderId: string): Promise<WhatsappOrder> {
+    const order = await this.fastify.prisma.whatsappOrder.findFirst({
+      where: {
+        id: orderId,
+        tenantId: tenant.id,
+      },
+    });
+
+    if (!order) {
+      throw new WhatsappIntegrationError("WhatsApp order not found", 404);
+    }
+
+    return order;
+  }
+
+  private async buildOrderDetail(tenant: Tenant, order: WhatsappOrder) {
+    const [customer, invoice] = await Promise.all([
+      order.customerId
+        ? this.fastify.prisma.customer.findFirst({
+            where: {
+              id: order.customerId,
+              tenantId: tenant.id,
+            },
+          })
+        : Promise.resolve(null),
+      order.invoiceId
+        ? this.fastify.prisma.invoice.findFirst({
+            where: {
+              id: order.invoiceId,
+              tenantId: tenant.id,
+            },
+            include: {
+              customer: true,
+              items: true,
+              delivery: true,
+            },
+          })
+        : Promise.resolve(null),
+    ]);
+    const parsedItems = readParsedOrderLines(order.parsedItems);
+
+    return {
+      ...order,
+      customer,
+      invoice,
+      parsedItems,
+      unmatchedLines: readUnmatchedOrderLines(order.unmatchedLines),
+      summary: summarizeParsedItems(parsedItems),
+    };
+  }
+
+  private async normalizeOrderItems(tenant: Tenant, items: WhatsappOrderItemsInput["items"]): Promise<ParsedOrderLine[]> {
+    const productIds = [...new Set(items.map((item) => item.productId))];
+    const products = await this.fastify.prisma.product.findMany({
+      where: {
+        tenantId: tenant.id,
+        id: {
+          in: productIds,
+        },
+        isActive: true,
+      },
+    });
+    const productById = new Map(products.map((product) => [product.id, product]));
+
+    if (productById.size !== productIds.length) {
+      throw new WhatsappIntegrationError("One or more selected products were not found", 400);
+    }
+
+    return items.map((item) => {
+      const product = productById.get(item.productId);
+      if (!product) {
+        throw new WhatsappIntegrationError("Selected product was not found", 400);
+      }
+
+      return {
+        line: `${product.name} x ${item.quantity}`,
+        productId: product.id,
+        productName: product.name,
+        quantity: item.quantity,
+        sellingPrice: item.sellingPrice,
+      };
+    });
+  }
+
+  private async updateLinkedDraftInvoice(
+    tenant: Tenant,
+    existingInvoice: { id: string; status: InvoiceStatus },
+    invoicePayload: Parameters<BillingService["createInvoice"]>[1],
+    userId: string,
+  ) {
+    if (existingInvoice.status !== InvoiceStatus.DRAFT) {
+      throw new WhatsappIntegrationError("Linked invoice is already confirmed. Edit it from the billing screen.", 409);
+    }
+
+    return this.billingService.updateInvoice(tenant, existingInvoice.id, invoicePayload, userId);
+  }
+
   private async createIgnoredMessage(tenant: Tenant, input: InboundWhatsappMessage, phone: string, reason: string) {
     const message = await this.fastify.prisma.whatsappMessage.create({
       data: {
@@ -487,6 +721,55 @@ export class WhatsappService {
 
     return `${base}-${Date.now().toString(36).toUpperCase()}`;
   }
+}
+
+function ensureReviewableOrder(order: WhatsappOrder): void {
+  if (order.status === WhatsappOrderStatus.NEEDS_REVIEW || order.status === WhatsappOrderStatus.DRAFT_CREATED) {
+    return;
+  }
+
+  throw new WhatsappIntegrationError("Only WhatsApp orders awaiting review can be changed", 409);
+}
+
+function readParsedOrderLines(value: unknown): ParsedOrderLine[] {
+  return toArray(value).flatMap((entry) => {
+    const record = toRecord(entry);
+    const productId = stringValue(record.productId);
+    const productName = stringValue(record.productName);
+    const quantity = Number(record.quantity);
+    const sellingPrice = Number(record.sellingPrice);
+    const line = stringValue(record.line, productName);
+
+    if (!productId || !productName || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(sellingPrice) || sellingPrice < 0) {
+      return [];
+    }
+
+    return [{
+      line,
+      productId,
+      productName,
+      quantity,
+      sellingPrice,
+    }];
+  });
+}
+
+function readUnmatchedOrderLines(value: unknown): UnmatchedOrderLine[] {
+  return toArray(value).flatMap((entry) => {
+    const record = toRecord(entry);
+    const line = stringValue(record.line);
+    const reason = stringValue(record.reason, "Needs review");
+
+    return line ? [{ line, reason }] : [];
+  });
+}
+
+function summarizeParsedItems(items: ParsedOrderLine[]) {
+  return {
+    itemCount: items.length,
+    totalQuantity: roundOrderQuantity(items.reduce((sum, item) => sum + item.quantity, 0)),
+    grandTotal: roundOrderMoney(items.reduce((sum, item) => sum + item.quantity * item.sellingPrice, 0)),
+  };
 }
 
 function parseOrderText(rawText: string, products: Product[]): { items: ParsedOrderLine[]; unmatched: UnmatchedOrderLine[] } {
@@ -610,6 +893,14 @@ function normalizeSearch(value: string): string {
 
 function compact(value: string): string {
   return value.replace(/\s+/g, "");
+}
+
+function roundOrderMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function roundOrderQuantity(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
 function toRecord(value: unknown): Record<string, unknown> {

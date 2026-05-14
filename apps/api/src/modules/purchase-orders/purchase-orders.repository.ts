@@ -20,6 +20,7 @@ export class PurchaseOrdersRepository {
     const where: Prisma.PurchaseOrderWhereInput = {
       tenantId,
       ...(query.status ? { status: query.status } : {}),
+      ...(query.storeId ? { storeId: query.storeId } : {}),
       ...(createdAt ? { createdAt } : {}),
     };
 
@@ -61,7 +62,7 @@ export class PurchaseOrdersRepository {
     });
   }
 
-  create(tenantId: string, input: CreatePurchaseOrderInput) {
+  create(tenantId: string, input: CreatePurchaseOrderInput, approvalStatus: "APPROVED" | "PENDING_APPROVAL") {
     return this.prisma.$transaction(async (tx) => {
       const supplier = await tx.supplier.findFirst({
         where: {
@@ -95,7 +96,9 @@ export class PurchaseOrdersRepository {
         data: {
           tenantId,
           supplierId: input.supplierId,
+          ...(input.storeId ? { storeId: input.storeId } : {}),
           poNumber: `PO-${datePart}-${String(count + 1).padStart(4, "0")}`,
+          approvalStatus,
           totalAmount,
           items: {
             create: input.items.map((item) => ({
@@ -129,12 +132,42 @@ export class PurchaseOrdersRepository {
     });
   }
 
+  updateApproval(
+    tenantId: string,
+    id: string,
+    input: { approvalStatus: "APPROVED"; approvedBy: string; approvedAt: Date } | { approvalStatus: "REJECTED"; rejectedBy: string; rejectedAt: Date; rejectionReason: string },
+  ) {
+    return this.prisma.purchaseOrder.updateMany({
+      where: {
+        id,
+        tenantId,
+      },
+      data: {
+        approvalStatus: input.approvalStatus,
+        ...(input.approvalStatus === "APPROVED"
+          ? {
+              approvedBy: input.approvedBy,
+              approvedAt: input.approvedAt,
+              rejectedBy: null,
+              rejectedAt: null,
+              rejectionReason: null,
+            }
+          : {
+              rejectedBy: input.rejectedBy,
+              rejectedAt: input.rejectedAt,
+              rejectionReason: input.rejectionReason,
+            }),
+      },
+    });
+  }
+
   receive(tenantId: string, id: string, input: ReceivePurchaseOrderInput) {
     return this.prisma.$transaction(async (tx) => {
       const purchaseOrder = await tx.purchaseOrder.findFirst({
         where: {
           id,
           tenantId,
+          approvalStatus: "APPROVED",
           status: {
             notIn: [POStatus.CANCELLED, POStatus.RECEIVED],
           },

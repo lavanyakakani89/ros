@@ -21,6 +21,7 @@ export interface AuthUser {
   email: string;
   username?: string | null;
   role: ShopRole;
+  storeId?: string | null;
 }
 
 export interface AuthResponse {
@@ -81,6 +82,7 @@ export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPric
   reorderLevel?: number | string | null;
   conversionValue?: number | string | null;
   defaultSaleQty?: number | string | null;
+  imageUrl?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -131,6 +133,7 @@ export async function getCurrentVerticalConfig(): Promise<{
     id: string;
     tenantId: string;
     role: ShopRole;
+    storeId?: string | null;
   } | null;
   isImpersonated?: boolean;
   impersonation?: StoredImpersonation | null;
@@ -151,6 +154,7 @@ export async function getCurrentVerticalConfig(): Promise<{
       id: string;
       tenantId: string;
       role: ShopRole;
+      storeId?: string | null;
     } | null;
     isImpersonated?: boolean;
     impersonation?: StoredImpersonation | null;
