@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma, QuotationStatus } from "@prisma/client";
+import { QuotationStatus, type Prisma } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { generateQuotationPdf, type QuotationWithItems } from "./quotation.pdf.js";

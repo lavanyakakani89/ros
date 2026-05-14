@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Prisma, PurchaseReturnStatus } from "@prisma/client";
+import { PurchaseReturnStatus, type Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class PurchaseReturnError extends Error {

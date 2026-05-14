@@ -364,7 +364,14 @@ async function loadLogoDataUrl(minio: Client, bucket: string, objectName: string
 async function readableToBuffer(stream: Readable): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const value: unknown = chunk;
+    if (Buffer.isBuffer(value)) {
+      chunks.push(value);
+    } else if (typeof value === "string") {
+      chunks.push(Buffer.from(value));
+    } else if (value instanceof Uint8Array) {
+      chunks.push(Buffer.from(value));
+    }
   }
 
   return Buffer.concat(chunks);

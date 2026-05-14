@@ -628,7 +628,7 @@ export class WhatsappService {
       }
 
       return {
-        line: `${product.name} x ${item.quantity}`,
+        line: `${product.name} x ${String(item.quantity)}`,
         productId: product.id,
         productName: product.name,
         quantity: item.quantity,

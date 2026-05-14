@@ -19,7 +19,7 @@ interface PurchaseOrderRecord {
   id: string;
   poNumber: string;
   status: string;
-  approvalStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | string;
+  approvalStatus: string;
   rejectionReason?: string | null;
   totalAmount: string | number;
   createdAt: string;

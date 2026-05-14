@@ -64,12 +64,21 @@ export function CustomersClient() {
   const canSeeCustomerFinancials = role === "OWNER" || role === "MANAGER";
   const customersQuery = useQuery({
     queryKey: ["customers", searchTerm, page, pageSize],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?page=${page}&limit=${pageSize}${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`),
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (searchTerm) {
+        params.set("search", searchTerm);
+      }
+      return createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?${params.toString()}`);
+    },
     enabled: listMode === "all",
   });
   const outstandingQuery = useQuery({
     queryKey: ["customers", "outstanding", page, pageSize],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<OutstandingCustomer>>(`/customers/outstanding?page=${page}&limit=${pageSize}&sortBy=amount_due`),
+    queryFn: () => {
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize), sortBy: "amount_due" });
+      return createAuthenticatedApiClient().get<PaginatedResponse<OutstandingCustomer>>(`/customers/outstanding?${params.toString()}`);
+    },
     enabled: listMode === "outstanding" && canSeeCustomerFinancials,
   });
   const createCustomer = useMutation({
@@ -258,7 +267,7 @@ function CustomerRow({ customer, canSeeFinancials, onSave }: Readonly<{ customer
         <div className="text-sm font-medium text-slate-950">{customer.name}</div>
         <div className="text-xs text-slate-500">{customer.phone}{customer.email ? ` | ${customer.email}` : ""}</div>
         <div className="mt-1 text-xs text-slate-500">{customer.address ?? ""}{customer.gstin ? ` | GSTIN ${customer.gstin}` : ""}</div>
-        {canSeeFinancials ? <div className="mt-1 text-xs text-slate-500">Due {money(Number(customer.outstandingDue ?? 0))} | Spent {money(customer.totalSpent ?? 0)}</div> : null}
+        {canSeeFinancials ? <div className="mt-1 text-xs text-slate-500">Due {money(Number(customer.outstandingDue))} | Spent {money(customer.totalSpent ?? 0)}</div> : null}
       </div>
       <div className="flex items-center gap-2">
         {canSeeFinancials ? <Link href={`/customers/${customer.id}/ledger`} className="h-9 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 flex items-center">Ledger</Link> : null}

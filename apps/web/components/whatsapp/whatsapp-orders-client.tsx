@@ -154,8 +154,8 @@ export function WhatsappOrdersClient() {
     setDraftItems(selectedOrder.parsedItems.map((item) => ({
       productId: item.productId,
       productName: item.productName,
-      quantity: Number(item.quantity),
-      sellingPrice: Number(item.sellingPrice),
+      quantity: item.quantity,
+      sellingPrice: item.sellingPrice,
     })));
   }, [selectedOrder?.id, selectedOrder?.updatedAt]);
 
@@ -300,7 +300,7 @@ export function WhatsappOrdersClient() {
                           </tr>
                         ) : null}
                         {draftItems.map((item, index) => (
-                          <tr key={`${item.productId}-${index}`} className="border-t border-border">
+                          <tr key={`${item.productId}-${String(index)}`} className="border-t border-border">
                             <td className="px-3 py-2 font-medium text-slate-900">{item.productName}</td>
                             <td className="px-3 py-2">
                               <input

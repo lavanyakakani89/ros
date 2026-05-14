@@ -97,7 +97,8 @@ export function DeliveryAgentApp() {
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const tenant = typeof window !== "undefined" ? getStoredTenant() : null;
   const session = typeof window !== "undefined" ? getStoredAuthSession() : null;
-  const canUseDeliveryApp = session?.user?.role === "DELIVERY";
+  const activeUser = session?.user ?? null;
+  const canUseDeliveryApp = activeUser?.role === "DELIVERY";
 
   const syncQuery = useQuery({
     queryKey: ["delivery-agent", "mobile-sync"],
@@ -306,7 +307,7 @@ export function DeliveryAgentApp() {
     window.location.href = "/login";
   }
 
-  if (!hasSession) {
+  if (!hasSession || !activeUser) {
     return (
       <main className="min-h-screen bg-slate-950 px-5 py-10 text-white">
         <div className="mx-auto max-w-sm">
@@ -338,7 +339,7 @@ export function DeliveryAgentApp() {
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">{tenant?.name ?? "RetailOS"}</div>
-            <div className="truncate text-xs text-emerald-100">{session?.user?.name ?? "Delivery app"}</div>
+            <div className="truncate text-xs text-emerald-100">{activeUser.name}</div>
           </div>
           <button className="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-semibold" onClick={() => void handleLogout()}>Logout</button>
         </div>

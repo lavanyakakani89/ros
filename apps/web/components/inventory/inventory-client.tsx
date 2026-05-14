@@ -131,7 +131,7 @@ export function InventoryClient() {
         <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "stock-count" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("stock-count")}>Stock Count</button>
       </div>
       {activeView === "stock-count" ? (
-        <StockCountWorkspace canManage={Boolean(canManageProducts)} onStockChanged={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
+        <StockCountWorkspace canManage={canManageProducts} onStockChanged={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
           <div className="space-y-4">

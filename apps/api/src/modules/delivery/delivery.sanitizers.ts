@@ -11,20 +11,18 @@ export function stripDeliveryFinancials<T>(delivery: T): T {
 
   const typedInvoice = invoice as Record<string, unknown>;
   const codAmount = typedInvoice.amountDue ?? typedInvoice.grandTotal ?? null;
-  const {
-    subtotal: _subtotal,
-    totalDiscount: _totalDiscount,
-    totalCgst: _totalCgst,
-    totalSgst: _totalSgst,
-    totalIgst: _totalIgst,
-    grandTotal: _grandTotal,
-    amountPaid: _amountPaid,
-    amountDue: _amountDue,
-    paymentMode: _paymentMode,
-    items: _items,
-    lineItems: _lineItems,
-    ...safeInvoice
-  } = typedInvoice;
+  const safeInvoice = { ...typedInvoice };
+  delete safeInvoice.subtotal;
+  delete safeInvoice.totalDiscount;
+  delete safeInvoice.totalCgst;
+  delete safeInvoice.totalSgst;
+  delete safeInvoice.totalIgst;
+  delete safeInvoice.grandTotal;
+  delete safeInvoice.amountPaid;
+  delete safeInvoice.amountDue;
+  delete safeInvoice.paymentMode;
+  delete safeInvoice.items;
+  delete safeInvoice.lineItems;
 
   return {
     ...typedDelivery,
@@ -43,9 +41,10 @@ export function stripRouteFinancials<T>(route: T): T {
     return route;
   }
 
+  const stops = typedRoute.stops as unknown[];
   return {
     ...typedRoute,
-    stops: typedRoute.stops.map((stop) => {
+    stops: stops.map((stop): unknown => {
       if (!stop || typeof stop !== "object") {
         return stop;
       }

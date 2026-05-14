@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CreditNoteStatus, Prisma } from "@prisma/client";
+import { CreditNoteStatus, type Prisma } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { generateCreditNotePdf, type CreditNoteWithItems } from "./credit-note.pdf.js";

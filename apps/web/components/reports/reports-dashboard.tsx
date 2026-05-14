@@ -672,7 +672,7 @@ export function ReportsDashboard() {
                 <div
                   key={bucket.bucket}
                   className={agingBucketBarClass(index)}
-                  style={{ width: `${agingBucketWidth(bucket.totalOutstanding, aging?.buckets ?? [])}%` }}
+                  style={{ width: `${String(agingBucketWidth(bucket.totalOutstanding, aging?.buckets ?? []))}%` }}
                   title={`${bucket.bucket} days: ${money(bucket.totalOutstanding)}`}
                 />
               ))}

@@ -83,17 +83,14 @@ function sanitizeCustomerInputForRole<T extends CreateCustomerInput | UpdateCust
     return input;
   }
 
-  const {
-    openingBalanceType: _openingBalanceType,
-    openingBalance: _openingBalance,
-    tcsEnabled: _tcsEnabled,
-    creditLimit: _creditLimit,
-    creditLimitEnabled: _creditLimitEnabled,
-    creditDays: _creditDays,
-    itemDiscountPercent: _itemDiscountPercent,
-    itemDiscountEnabled: _itemDiscountEnabled,
-    ...basicInput
-  } = input;
-
-  return basicInput as T;
+  const basicInput = { ...input };
+  delete basicInput.openingBalanceType;
+  delete basicInput.openingBalance;
+  delete basicInput.tcsEnabled;
+  delete basicInput.creditLimit;
+  delete basicInput.creditLimitEnabled;
+  delete basicInput.creditDays;
+  delete basicInput.itemDiscountPercent;
+  delete basicInput.itemDiscountEnabled;
+  return basicInput;
 }

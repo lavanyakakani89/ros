@@ -119,10 +119,7 @@ export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
     return;
   }
 
-  const role = request.user?.role;
-  if (!role) {
-    return reply.status(401).send({ error: "Unauthorized" });
-  }
+  const role = request.user.role;
 
   const permission = requiredPermission(request.method, request.url);
   if (!permission) {

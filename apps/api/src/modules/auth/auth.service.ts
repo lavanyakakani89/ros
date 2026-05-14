@@ -31,7 +31,7 @@ export class AuthService {
 
     try {
       const user = await this.repository.createTenantWithOwner(input, passwordHash);
-      return this.createAuthResponse(user);
+      return await this.createAuthResponse(user);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
         throw new AuthError("Tenant slug or owner email already exists", 409);

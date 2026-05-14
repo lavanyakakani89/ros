@@ -10,14 +10,12 @@ export const verticalConfigRoutes: FastifyPluginCallback = (fastify, _options, d
     currentVerticalConfigParamsSchema.parse(request.params);
     return {
       ...service.getCurrentTenantConfig(request.tenant),
-      user: request.user
-        ? {
-            id: request.user.userId,
-            tenantId: request.user.tenantId,
-            role: request.user.role,
-            storeId: request.user.storeId ?? null,
-          }
-        : null,
+      user: {
+        id: request.user.userId,
+        tenantId: request.user.tenantId,
+        role: request.user.role,
+        storeId: request.user.storeId ?? null,
+      },
       isImpersonated: Boolean(request.isImpersonated),
       impersonation: request.impersonation ?? null,
     };

@@ -166,7 +166,7 @@ export const restaurantRoutes: FastifyPluginCallback = (fastify, _options, done)
         ...(customerIds.length === 1 ? { customerId: customerIds[0] } : {}),
         paymentMode: PaymentMode.CASH,
         billDiscount: 0,
-        notes: `Restaurant table ${table.number} bill from ${kots.length} KOT(s).`,
+        notes: `Restaurant table ${table.number} bill from ${String(kots.length)} KOT(s).`,
         verticalData: {
           source: "RESTAURANT_KOT",
           tableId,

@@ -161,7 +161,7 @@ export const stockCountRoutes: FastifyPluginCallback = (fastify, _options, done)
       ensureStatus(count.status, "OPEN", "Only open stock counts can be submitted");
       const missingCount = count.items.filter((item) => item.countedQty === null).length;
       if (missingCount > 0) {
-        throw new StockCountError(`${missingCount} products still need counted quantity`, 400);
+        throw new StockCountError(`${String(missingCount)} products still need counted quantity`, 400);
       }
 
       await fastify.prisma.$transaction([
@@ -205,13 +205,14 @@ export const stockCountRoutes: FastifyPluginCallback = (fastify, _options, done)
             continue;
           }
 
+          const countedQtyText = item.countedQty?.toString() ?? "0";
           await tx.stockAdjustment.create({
             data: {
               tenantId: request.tenant.id,
               productId: item.productId,
               quantityChange: variance,
               reason: "Physical stock count",
-              notes: `Stock count ${count.name}: system ${Number(item.systemQty)}, counted ${Number(item.countedQty)}`,
+              notes: `Stock count ${count.name}: system ${item.systemQty.toString()}, counted ${countedQtyText}`,
               createdBy: request.user.userId,
             },
           });
