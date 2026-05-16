@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { CreditNoteStatus, Prisma } from "@prisma/client";
+import { CreditNoteStatus } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class CreditNoteError extends Error {

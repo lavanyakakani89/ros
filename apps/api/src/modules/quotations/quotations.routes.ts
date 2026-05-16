@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { Prisma, QuotationStatus } from "@prisma/client";
+import { QuotationStatus } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 export class QuotationError extends Error {
