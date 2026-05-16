@@ -5,11 +5,16 @@ import { clearStoredImpersonation } from "@/lib/impersonation";
 const authStorageKey = "retailos.auth";
 const verticalConfigStorageKey = "retailos.verticalConfig";
 const tenantStorageKey = "retailos.tenant";
+let authSessionMemory: StoredAuthSession | null = null;
+let tenantMemory: StoredTenant | null = null;
+let verticalConfigMemory: VerticalConfig | null = null;
 
 export interface StoredAuthSession {
   user?: {
+    id?: string;
     name?: string;
     email?: string;
+    role?: string;
   };
 }
 
@@ -22,9 +27,9 @@ export interface StoredTenant {
 }
 
 export function storeAuthSession(input: StoredAuthSession) {
-  window.localStorage.setItem(authStorageKey, JSON.stringify({
-    user: input.user ? { name: input.user.name, email: input.user.email } : undefined,
-  }));
+  const safeSession = toSafeAuthSession(input);
+  authSessionMemory = safeSession;
+  window.localStorage.setItem(authStorageKey, JSON.stringify(safeSession));
 }
 
 export function hasStoredAuthSession(): boolean {
@@ -33,11 +38,18 @@ export function hasStoredAuthSession(): boolean {
 }
 
 export function getStoredAuthSession(): StoredAuthSession | null {
+  if (authSessionMemory) {
+    return authSessionMemory;
+  }
+
   const raw = window.localStorage.getItem(authStorageKey);
-  return raw ? (JSON.parse(raw) as StoredAuthSession) : null;
+  return raw ? toSafeAuthSession(JSON.parse(raw) as StoredAuthSession) : null;
 }
 
 export function clearStoredSession() {
+  authSessionMemory = null;
+  tenantMemory = null;
+  verticalConfigMemory = null;
   window.localStorage.removeItem(authStorageKey);
   window.localStorage.removeItem(verticalConfigStorageKey);
   window.localStorage.removeItem(tenantStorageKey);
@@ -45,19 +57,38 @@ export function clearStoredSession() {
 }
 
 export function storeTenant(tenant: StoredTenant) {
-  window.localStorage.setItem(tenantStorageKey, JSON.stringify(tenant));
+  tenantMemory = tenant;
+  window.localStorage.removeItem(tenantStorageKey);
 }
 
 export function getStoredTenant(): StoredTenant | null {
-  const raw = window.localStorage.getItem(tenantStorageKey);
-  return raw ? (JSON.parse(raw) as StoredTenant) : null;
+  return tenantMemory;
 }
 
 export function storeVerticalConfig(config: VerticalConfig) {
-  window.localStorage.setItem(verticalConfigStorageKey, JSON.stringify(config));
+  verticalConfigMemory = config;
+  window.localStorage.removeItem(verticalConfigStorageKey);
 }
 
 export function getStoredVerticalConfig(): VerticalConfig | null {
-  const raw = window.localStorage.getItem(verticalConfigStorageKey);
-  return raw ? (JSON.parse(raw) as VerticalConfig) : null;
+  return verticalConfigMemory;
+}
+
+function toSafeAuthSession(input: StoredAuthSession): StoredAuthSession {
+  if (!input.user) {
+    return {};
+  }
+
+  const user = Object.fromEntries(
+    Object.entries({
+      id: input.user.id,
+      name: input.user.name,
+      email: input.user.email,
+      role: input.user.role,
+    }).filter(([, value]) => value !== undefined),
+  ) as NonNullable<StoredAuthSession["user"]>;
+
+  return {
+    user,
+  };
 }

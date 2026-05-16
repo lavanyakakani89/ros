@@ -2,13 +2,9 @@ import { randomBytes } from "node:crypto";
 
 import { verify } from "@node-rs/argon2";
 import type { ImpersonationAccessLevel, ImpersonationEndReason, Prisma, Tenant } from "@prisma/client";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
-import { getCookieValue } from "./auth.js";
-
-export const impersonationCookieName = "imp_token";
 export const impersonationTtlMs = 2 * 60 * 60 * 1000;
-export const impersonationTtlSeconds = impersonationTtlMs / 1000;
 
 export interface RequestImpersonationContext {
   sessionId: string;
@@ -64,20 +60,17 @@ export function createImpersonationSecret(): string {
   return randomBytes(64).toString("base64url");
 }
 
-export function getImpersonationCookie(request: FastifyRequest): string | undefined {
-  return getCookieValue(request.headers.cookie, impersonationCookieName);
-}
-
-export async function verifyImpersonationCookie(
+export async function resolveImpersonationFromHeader(
   fastify: FastifyInstance,
   request: FastifyRequest,
 ): Promise<VerifiedImpersonationSession | null> {
-  const cookie = getImpersonationCookie(request);
-  if (!cookie) {
+  const rawHeader = request.headers["x-impersonation-token"];
+  const token = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  if (!token) {
     return null;
   }
 
-  return verifyImpersonationToken(fastify, cookie);
+  return verifyImpersonationToken(fastify, token);
 }
 
 export async function verifyImpersonationToken(fastify: FastifyInstance, cookieValue: string): Promise<VerifiedImpersonationSession> {
@@ -139,61 +132,6 @@ export function toRequestImpersonationContext(session: VerifiedImpersonationSess
     superAdminName: session.superAdmin.name,
     superAdminEmail: session.superAdmin.email,
   };
-}
-
-export function setImpersonationCookie(reply: FastifyReply, token: string): void {
-  reply.header(
-    "Set-Cookie",
-    serializeCookie(impersonationCookieName, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Strict",
-      path: "/",
-      maxAge: impersonationTtlSeconds,
-    }),
-  );
-}
-
-export function clearImpersonationCookie(reply: FastifyReply): void {
-  reply.header(
-    "Set-Cookie",
-    serializeCookie(impersonationCookieName, "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Strict",
-      path: "/",
-      maxAge: 0,
-    }),
-  );
-}
-
-export function serializeCookie(
-  name: string,
-  value: string,
-  options: {
-    httpOnly: boolean;
-    secure: boolean;
-    sameSite: "Strict" | "Lax" | "None";
-    path: string;
-    maxAge: number;
-  },
-): string {
-  const parts = [
-    `${name}=${encodeURIComponent(value)}`,
-    `Max-Age=${String(options.maxAge)}`,
-    `Path=${options.path}`,
-    `SameSite=${options.sameSite}`,
-  ];
-
-  if (options.httpOnly) {
-    parts.push("HttpOnly");
-  }
-
-  if (options.secure) {
-    parts.push("Secure");
-  }
-
-  return parts.join("; ");
 }
 
 export function requestIp(request: FastifyRequest): string | undefined {

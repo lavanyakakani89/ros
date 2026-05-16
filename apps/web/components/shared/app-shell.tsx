@@ -25,19 +25,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
 import {
   clearStoredImpersonation,
-  getStoredImpersonation,
-  storeImpersonation,
   type StoredImpersonation,
+  useImpersonationStore,
 } from "@/lib/impersonation";
 import { dashboardItem, groupedNavigation } from "@/lib/navigation-groups";
 import { cn } from "@/lib/utils";
 import {
-  getStoredAuthSession,
-  getStoredTenant,
-  getStoredVerticalConfig,
   storeTenant,
   storeVerticalConfig,
   type StoredAuthSession,
@@ -54,33 +50,19 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [online, setOnline] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [impersonation, setImpersonation] = useState<StoredImpersonation | null>(null);
+  const impersonation = useImpersonationStore((state) => state.impersonation);
+  const setImpersonation = useImpersonationStore((state) => state.setImpersonation);
   const [now, setNow] = useState(() => Date.now());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const storedConfig = getStoredVerticalConfig();
-    const storedTenant = getStoredTenant();
-    const storedSession = getStoredAuthSession();
-    const storedImpersonation = getStoredImpersonation();
+    if (pathname === "/impersonate") {
+      setCheckingSession(false);
+      return;
+    }
+
     const storedSidebar = window.localStorage.getItem("retailos.sidebarCollapsed");
-
-    if (storedConfig) {
-      setVerticalConfig(storedConfig);
-    }
-
-    if (storedTenant) {
-      setTenant(storedTenant);
-    }
-
-    if (storedSession) {
-      setSession(storedSession);
-    }
-
-    if (storedImpersonation) {
-      setImpersonation(storedImpersonation);
-    }
 
     if (storedSidebar) {
       setSidebarCollapsed(storedSidebar === "true");
@@ -93,8 +75,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         setVerticalConfig(current.config);
         storeTenant(current.tenant);
         storeVerticalConfig(current.config);
+        if (current.user) {
+          setSession({ user: current.user });
+        } else {
+          setSession(null);
+          setBadgeCounts({});
+        }
         setImpersonation(current.impersonation ?? null);
-        storeImpersonation(current.impersonation ?? null);
         setCheckingSession(false);
       } catch {
         router.replace("/login");
@@ -141,7 +128,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       window.removeEventListener("offline", handleOnlineState);
       window.clearInterval(timer);
     };
-  }, [router]);
+  }, [pathname, router, setImpersonation]);
 
   useEffect(() => {
     if (!accountMenuOpen) {
@@ -179,6 +166,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   const tenantName = tenant?.name ?? "RetailOS";
   const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
+  const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
   const environmentLabel = appEnvironment === "production" ? null : appEnvironment.toUpperCase();
@@ -194,6 +182,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     { href: "/settings#password", label: "Change password", description: "Secure this login", icon: KeyRound },
     { href: "/audit", label: "Audit log", description: "Track important activity", icon: History },
   ] satisfies AccountMenuLink[];
+
+  if (pathname === "/impersonate") {
+    return <>{children}</>;
+  }
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
@@ -213,13 +205,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   async function handleEndImpersonation() {
-    await fetch(apiUrl("/superadmin/impersonate/end"), {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => null);
+    await createAuthenticatedApiClient()
+      .post("/superadmin/impersonate/end", { sessionId: impersonation?.sessionId })
+      .catch(() => null);
     clearStoredImpersonation();
     setImpersonation(null);
-    router.replace("/superadmin/dashboard");
+    window.close();
+    window.location.href = "/impersonation-ended";
   }
 
   return (
@@ -299,7 +291,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                   <AccountMenu
                     links={accountLinks}
                     userName={userName}
-                    userEmail={session?.user?.email ?? null}
+                    userEmail={userEmail}
                     tenantName={tenantName}
                     online={online}
                     impersonation={impersonation}

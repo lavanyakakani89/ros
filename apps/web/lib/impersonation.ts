@@ -1,43 +1,55 @@
-const impersonationStorageKey = "retailos.impersonation";
+import { create } from "zustand";
 
 export interface StoredImpersonation {
   sessionId: string;
+  token?: string;
+  tenantName?: string;
   accessLevel: "READ_ONLY" | "WRITE";
   reason: string | null;
   expiresAt: string;
-  superAdminId: string;
-  superAdminName: string;
+  superAdminId?: string;
+  superAdminName?: string;
   superAdminEmail: string;
 }
 
+interface ImpersonationStore {
+  impersonation: StoredImpersonation | null;
+  setImpersonation: (input: StoredImpersonation | null) => void;
+  clearImpersonation: () => void;
+}
+
+export const useImpersonationStore = create<ImpersonationStore>((set, get) => ({
+  impersonation: null,
+  setImpersonation: (input) => {
+    if (!input) {
+      set({ impersonation: null });
+      return;
+    }
+
+    set({
+      impersonation: {
+        ...get().impersonation,
+        ...input,
+      },
+    });
+  },
+  clearImpersonation: () => set({ impersonation: null }),
+}));
+
 export function storeImpersonation(input: StoredImpersonation | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!input) {
-    window.localStorage.removeItem(impersonationStorageKey);
-    return;
-  }
-
-  window.localStorage.setItem(impersonationStorageKey, JSON.stringify(input));
+  useImpersonationStore.getState().setImpersonation(input);
 }
 
 export function getStoredImpersonation(): StoredImpersonation | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+  return useImpersonationStore.getState().impersonation;
+}
 
-  const raw = window.localStorage.getItem(impersonationStorageKey);
-  return raw ? (JSON.parse(raw) as StoredImpersonation) : null;
+export function getImpersonation(): StoredImpersonation | null {
+  return getStoredImpersonation();
 }
 
 export function clearStoredImpersonation() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(impersonationStorageKey);
+  useImpersonationStore.getState().clearImpersonation();
 }
 
 export function isImpersonationReadOnly(): boolean {
@@ -52,4 +64,13 @@ export function ensureWriteAllowedDuringImpersonation() {
 
 export function isImpersonated(): boolean {
   return Boolean(getStoredImpersonation());
+}
+
+export function getImpersonationHeaderToken(): string | null {
+  const impersonation = getStoredImpersonation();
+  if (!impersonation?.sessionId || !impersonation.token) {
+    return null;
+  }
+
+  return impersonation.token.includes(".") ? impersonation.token : `${impersonation.sessionId}.${impersonation.token}`;
 }

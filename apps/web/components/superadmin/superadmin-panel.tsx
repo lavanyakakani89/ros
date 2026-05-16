@@ -350,7 +350,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
       accessLevel: impersonationAccessLevel,
       reason: impersonationReason,
     });
-    window.location.href = body.shopUrl || "/dashboard";
+    window.open(body.shopUrl, "_blank", "noopener");
   }
 
   async function forceEndImpersonation(session: ImpersonationSessionRecord) {
