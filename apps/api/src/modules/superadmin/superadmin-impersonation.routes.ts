@@ -127,7 +127,7 @@ export const superAdminImpersonationRoutes: FastifyPluginCallback = (fastify, _o
     try {
       const session = await verifyImpersonationToken(fastify, input.token);
       if (session.id !== input.sessionId) {
-        return reply.status(401).send({ valid: false, error: "Invalid or expired" });
+        return await reply.status(401).send({ valid: false, error: "Invalid or expired" });
       }
 
       return {
@@ -140,7 +140,7 @@ export const superAdminImpersonationRoutes: FastifyPluginCallback = (fastify, _o
         sessionId: session.id,
       };
     } catch {
-      return reply.status(401).send({ valid: false, error: "Invalid or expired" });
+      return await reply.status(401).send({ valid: false, error: "Invalid or expired" });
     }
   });
 
