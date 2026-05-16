@@ -47,7 +47,10 @@ export function CustomersClient() {
   const searchTerm = search.trim();
   const customersQuery = useQuery({
     queryKey: ["customers", searchTerm, page, pageSize],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(`/customers?page=${page}&limit=${pageSize}${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`),
+    queryFn: () =>
+      createAuthenticatedApiClient().get<PaginatedResponse<CustomerRecord>>(
+        `/customers?page=${String(page)}&limit=${String(pageSize)}${searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : ""}`,
+      ),
   });
   const createCustomer = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/customers", payload),
