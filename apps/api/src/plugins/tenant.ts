@@ -5,8 +5,8 @@ import fp from "fastify-plugin";
 import { verifyRequestJwt } from "./auth.js";
 import {
   ImpersonationAuthError,
+  resolveImpersonationFromHeader,
   toRequestImpersonationContext,
-  verifyImpersonationCookie,
 } from "./impersonation.js";
 import { enforceRbac } from "./rbac.js";
 
@@ -166,7 +166,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
 
   async function resolveImpersonation(request: FastifyRequest, reply: FastifyReply) {
     try {
-      return await verifyImpersonationCookie(fastify, request);
+      return await resolveImpersonationFromHeader(fastify, request);
     } catch (error) {
       if (error instanceof ImpersonationAuthError) {
         await reply.status(error.statusCode).send({

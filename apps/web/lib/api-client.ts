@@ -1,6 +1,11 @@
 import type { TenantVertical, VerticalConfig } from "@retailos/shared";
 
-import { ensureWriteAllowedDuringImpersonation, type StoredImpersonation } from "@/lib/impersonation";
+import {
+  clearStoredImpersonation,
+  ensureWriteAllowedDuringImpersonation,
+  getImpersonationHeaderToken,
+  type StoredImpersonation,
+} from "@/lib/impersonation";
 import { clearStoredSession } from "@/lib/vertical-config";
 
 const apiBaseUrl =
@@ -303,9 +308,9 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
     credentials: "include",
-    headers: {
+    headers: withImpersonationHeader({
       "Content-Type": "application/json",
-    },
+    }),
     body: JSON.stringify(payload),
   });
 
@@ -321,10 +326,17 @@ async function fetchWithCookieAuth(path: string, init: RequestInit = {}, retry =
     ensureWriteAllowedDuringImpersonation();
   }
 
+  const impersonationToken = getImpersonationHeaderToken();
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",
+    headers: withImpersonationHeader(init.headers),
   });
+
+  if (response.status === 401 && impersonationToken) {
+    clearStoredImpersonation();
+    throw new Error(await readApiError(response));
+  }
 
   if (response.status === 401 && retry) {
     try {
@@ -357,6 +369,16 @@ function clearBrowserSession() {
   }
 
   clearStoredSession();
+}
+
+function withImpersonationHeader(headers: HeadersInit | undefined): Headers {
+  const nextHeaders = new Headers(headers);
+  const impersonationToken = getImpersonationHeaderToken();
+  if (impersonationToken) {
+    nextHeaders.set("X-Impersonation-Token", impersonationToken);
+  }
+
+  return nextHeaders;
 }
 
 async function readApiError(response: Response): Promise<string> {

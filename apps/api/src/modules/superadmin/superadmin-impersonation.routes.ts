@@ -5,12 +5,12 @@ import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import {
-  clearImpersonationCookie,
   createImpersonationSecret,
+  impersonationTtlMs,
   requestIp,
   requestUserAgent,
-  setImpersonationCookie,
-  verifyImpersonationCookie,
+  resolveImpersonationFromHeader,
+  verifyImpersonationToken,
 } from "../../plugins/impersonation.js";
 import { requireRole, requireSuperAdmin } from "./superadmin-auth.routes.js";
 
@@ -27,6 +27,15 @@ const sessionParamsSchema = z.object({
 const startImpersonationSchema = z.object({
   accessLevel: z.nativeEnum(ImpersonationAccessLevel).default(ImpersonationAccessLevel.READ_ONLY),
   reason: z.string().trim().max(500).optional(),
+});
+
+const endImpersonationSchema = z.object({
+  sessionId: z.string().min(1),
+});
+
+const verifyImpersonationSchema = z.object({
+  token: z.string().min(1),
+  sessionId: z.string().min(1),
 });
 
 const listSessionsSchema = z.object({
@@ -98,15 +107,41 @@ export const superAdminImpersonationRoutes: FastifyPluginCallback = (fastify, _o
   });
 
   fastify.post("/api/superadmin/impersonate/end", async (request, reply) => {
-    const session = await verifyImpersonationCookie(fastify, request);
+    const input = endImpersonationSchema.parse(request.body ?? {});
+    const session = await resolveImpersonationFromHeader(fastify, request).catch(() => null);
     if (!session) {
-      clearImpersonationCookie(reply);
       return reply.status(401).send({ error: "No active impersonation session", code: "IMPERSONATION_REQUIRED" });
     }
 
+    if (session.id !== input.sessionId) {
+      return reply.status(401).send({ error: "Invalid impersonation session", code: "IMPERSONATION_INVALID" });
+    }
+
     await endSession(request, session.id, ImpersonationEndReason.EXIT);
-    clearImpersonationCookie(reply);
     return { status: "ok" };
+  });
+
+  fastify.post("/api/superadmin/impersonate/verify", async (request, reply) => {
+    const input = verifyImpersonationSchema.parse(request.body ?? {});
+
+    try {
+      const session = await verifyImpersonationToken(fastify, input.token);
+      if (session.id !== input.sessionId) {
+        return reply.status(401).send({ valid: false, error: "Invalid or expired" });
+      }
+
+      return {
+        valid: true,
+        tenantName: session.tenant.name,
+        superAdminEmail: session.superAdmin.email,
+        superAdminName: session.superAdmin.name,
+        accessLevel: session.accessLevel,
+        expiresAt: session.expiresAt,
+        sessionId: session.id,
+      };
+    } catch {
+      return reply.status(401).send({ valid: false, error: "Invalid or expired" });
+    }
   });
 
   fastify.post(
@@ -195,7 +230,7 @@ export const superAdminImpersonationRoutes: FastifyPluginCallback = (fastify, _o
       }
 
       const secret = createImpersonationSecret();
-      const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + impersonationTtlMs);
       const session = await fastify.prisma.impersonationSession.create({
         data: {
           superAdminId: actor.id,
@@ -263,11 +298,11 @@ export const superAdminImpersonationRoutes: FastifyPluginCallback = (fastify, _o
       ]);
 
       const token = `${session.id}.${secret}`;
-      setImpersonationCookie(reply, token);
       return reply.status(201).send({
         session: formatSession(session),
         token,
-        shopUrl: "/dashboard",
+        sessionId: session.id,
+        shopUrl: `/impersonate?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(session.id)}`,
       });
     },
   );

@@ -26,20 +26,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ComponentType } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
 import {
   clearStoredImpersonation,
-  getStoredImpersonation,
-  storeImpersonation,
   type StoredImpersonation,
+  useImpersonationStore,
 } from "@/lib/impersonation";
 import { dashboardItem, groupedNavigation } from "@/lib/navigation-groups";
 import { cn } from "@/lib/utils";
 import {
-  getStoredAuthSession,
-  getStoredTenant,
-  getStoredVerticalConfig,
-  storeAuthSession,
   storeTenant,
   storeVerticalConfig,
   type StoredAuthSession,
@@ -56,7 +51,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [online, setOnline] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [impersonation, setImpersonation] = useState<StoredImpersonation | null>(null);
+  const impersonation = useImpersonationStore((state) => state.impersonation);
+  const setImpersonation = useImpersonationStore((state) => state.setImpersonation);
   const [now, setNow] = useState(() => Date.now());
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -65,27 +61,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const storedConfig = getStoredVerticalConfig();
-    const storedTenant = getStoredTenant();
-    const storedSession = getStoredAuthSession();
-    const storedImpersonation = getStoredImpersonation();
+    if (pathname === "/impersonate") {
+      setCheckingSession(false);
+      return;
+    }
+
     const storedSidebar = window.localStorage.getItem("retailos.sidebarCollapsed");
-
-    if (storedConfig) {
-      setVerticalConfig(storedConfig);
-    }
-
-    if (storedTenant) {
-      setTenant(storedTenant);
-    }
-
-    if (storedSession) {
-      setSession(storedSession);
-    }
-
-    if (storedImpersonation) {
-      setImpersonation(storedImpersonation);
-    }
 
     if (storedSidebar) {
       setSidebarCollapsed(storedSidebar === "true");
@@ -99,10 +80,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         storeTenant(current.tenant);
         storeVerticalConfig(current.config);
         if (current.user) {
-          const existingSession = getStoredAuthSession();
           const nextSession = {
             user: {
-              ...existingSession?.user,
               id: current.user.id,
               tenantId: current.user.tenantId,
               role: current.user.role,
@@ -110,7 +89,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             },
           };
           setSession(nextSession);
-          storeAuthSession(nextSession);
           if (current.user.role === "DELIVERY" && pathname !== "/delivery-app") {
             router.replace("/delivery-app");
             return;
@@ -119,9 +97,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             router.replace(defaultPathForRole(current.user.role));
             return;
           }
+          void fetchBadges(current.user.role);
+        } else {
+          setSession(null);
+          setBadgeCounts({});
         }
         setImpersonation(current.impersonation ?? null);
-        storeImpersonation(current.impersonation ?? null);
         setCheckingSession(false);
       } catch {
         router.replace("/login");
@@ -140,9 +121,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     window.addEventListener("offline", handleOnlineState);
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 
-    async function fetchBadges() {
+    async function fetchBadges(role: ShopRole | undefined) {
       try {
-        const role = getStoredAuthSession()?.user?.role;
         if (role === "STAFF" || role === "DELIVERY") {
           setBadgeCounts({});
           return;
@@ -167,14 +147,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     }
 
     void verifySession();
-    void fetchBadges();
 
     return () => {
       window.removeEventListener("online", handleOnlineState);
       window.removeEventListener("offline", handleOnlineState);
       window.clearInterval(timer);
     };
-  }, [pathname, router]);
+  }, [pathname, router, setImpersonation]);
 
   useEffect(() => {
     if (!accountMenuOpen) {
@@ -241,6 +220,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   const tenantName = tenant?.name ?? "RetailOS";
   const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
+  const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
   const environmentLabel = appEnvironment === "production" ? null : appEnvironment.toUpperCase();
@@ -275,6 +255,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const visibleAccountLinks = accountLinks.filter((link) => canAccessAccountLink(role, link.href));
   const canSwitchStores = role === "OWNER" || role === "MANAGER";
 
+  if (pathname === "/impersonate") {
+    return <>{children}</>;
+  }
+
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
       window.localStorage.setItem("retailos.sidebarCollapsed", String(!value));
@@ -293,13 +277,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   async function handleEndImpersonation() {
-    await fetch(apiUrl("/superadmin/impersonate/end"), {
-      method: "POST",
-      credentials: "include",
-    }).catch(() => null);
+    await createAuthenticatedApiClient()
+      .post("/superadmin/impersonate/end", { sessionId: impersonation?.sessionId })
+      .catch(() => null);
     clearStoredImpersonation();
     setImpersonation(null);
-    router.replace("/superadmin/dashboard");
+    window.close();
+    window.location.href = "/impersonation-ended";
   }
 
   async function handleStoreSelection(value: string) {
@@ -311,7 +295,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       const auth = await refreshAuthSession();
       const nextSession = { user: auth.user };
       setSession(nextSession);
-      storeAuthSession(nextSession);
       router.refresh();
       window.location.reload();
     } catch (error) {
@@ -419,7 +402,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                   <AccountMenu
                     links={visibleAccountLinks}
                     userName={userName}
-                    userEmail={session?.user?.email ?? null}
+                    userEmail={userEmail}
                     tenantName={tenantName}
                     online={online}
                     impersonation={impersonation}

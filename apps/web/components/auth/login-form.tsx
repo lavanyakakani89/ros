@@ -4,8 +4,8 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { getCurrentVerticalConfig, login } from "@/lib/api-client";
-import { storeAuthSession, storeTenant, storeVerticalConfig } from "@/lib/vertical-config";
+import { login } from "@/lib/api-client";
+import { storeAuthSession } from "@/lib/vertical-config";
 
 export function LoginForm() {
   const router = useRouter();
@@ -25,10 +25,7 @@ export function LoginForm() {
         identifier: getFormString(form, "identifier"),
         password: getFormString(form, "password"),
       });
-      const verticalConfig = await getCurrentVerticalConfig();
       storeAuthSession(auth);
-      storeTenant(verticalConfig.tenant);
-      storeVerticalConfig(verticalConfig.config);
       router.push(auth.user.role === "DELIVERY" ? "/delivery-app" : auth.user.role === "STAFF" ? "/billing" : "/dashboard");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to sign in");
