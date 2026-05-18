@@ -67,7 +67,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   addLine: () => {
     const line = createEmptyLine();
     set((state) => ({
-      lines: [...state.lines, line],
+      lines: [line, ...state.lines],
     }));
     return line.id;
   },
