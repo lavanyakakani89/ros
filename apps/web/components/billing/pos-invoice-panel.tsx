@@ -495,7 +495,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setKnownProducts((current) => mergeProducts(current, [product]));
     const existing = lines.find((line) => line.productId === product.id);
     if (existing) {
-      setLine(existing.id, { quantity: existing.quantity + 1 });
+      setLines([
+        { ...existing, quantity: existing.quantity + 1 },
+        ...lines.filter((line) => line.id !== existing.id),
+      ]);
     } else {
       const lineId = addLine();
       setLine(lineId, {
@@ -1305,13 +1308,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           <table className="w-full min-w-[860px] text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-3 py-3 font-medium">Product</th>
-                <th className="px-3 py-3 font-medium">Qty</th>
-                <th className="px-3 py-3 font-medium">Rate</th>
-                <th className="px-3 py-3 font-medium">Discount %</th>
-                {gstEnabled ? <th className="px-3 py-3 font-medium">GST%</th> : null}
-                <th className="px-3 py-3 text-right font-medium">Total</th>
-                <th className="px-3 py-3" />
+                <th className="px-3 py-2 font-medium">Product</th>
+                <th className="px-2 py-2 font-medium">Qty</th>
+                <th className="px-2 py-2 font-medium">Rate</th>
+                <th className="px-2 py-2 font-medium">Discount %</th>
+                {gstEnabled ? <th className="px-2 py-2 font-medium">GST%</th> : null}
+                <th className="px-2 py-2 text-right font-medium">Total</th>
+                <th className="px-2 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -1326,18 +1329,22 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 const mrp = product ? decimalToNumber(product.mrp) : null;
                 const reorderLevel = product?.reorderLevel ? decimalToNumber(product.reorderLevel) : null;
                 const stockTone = stock !== null && stock <= 0 ? "bg-red-50 text-red-700" : stock !== null && reorderLevel !== null && stock <= reorderLevel ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600";
+                const barcode = product?.barcode?.trim();
                 const total = lineTotal(line, gstEnabled);
                 const aboveMrp = mrp !== null && line.sellingPrice > mrp;
                 return (
                   <tr key={line.id} className="border-t border-border">
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-slate-900">{line.productName}</div>
-                      {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
-                      {aboveMrp ? <div className="mt-1 text-xs font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
+                    <td className="px-3 py-1.5">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="min-w-0 truncate font-medium text-slate-900">{line.productName}</span>
+                        {barcode ? <span className="inline-flex rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">Barcode {barcode}</span> : null}
+                        {stock !== null ? <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
+                      </div>
+                      {aboveMrp ? <div className="mt-0.5 text-[11px] font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-2 py-1.5">
                       <input
-                        className="h-9 w-20 rounded-md border border-border px-2"
+                        className="h-8 w-16 rounded-md border border-border px-2"
                         type="number"
                         inputMode="decimal"
                         min="0.5"
@@ -1347,12 +1354,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                         onBlur={() => handleQuantityBlur(line.id, line.quantity)}
                       />
                     </td>
-                    <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
-                    <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
-                    {gstEnabled ? <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td> : null}
-                    <td className="px-3 py-2 text-right font-semibold">₹{total.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)}>
+                    <td className="px-2 py-1.5"><input className="h-8 w-20 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
+                    <td className="px-2 py-1.5"><input className="h-8 w-20 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
+                    {gstEnabled ? <td className="px-2 py-1.5 text-slate-500">{line.gstRate}%</td> : null}
+                    <td className="px-2 py-1.5 text-right font-semibold">₹{total.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)}>
                         <Trash2 className="size-4" aria-hidden="true" />
                       </button>
                     </td>
