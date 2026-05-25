@@ -199,6 +199,17 @@ export function createAuthenticatedApiClient() {
 
       return response.json() as Promise<T>;
     },
+    async patch<T = unknown>(path: string, payload: object) {
+      const response = await fetchWithCookieAuth(path, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return response.json() as Promise<T>;
+    },
     async delete<T = unknown>(path: string) {
       const response = await fetchWithCookieAuth(path, {
         method: "DELETE",

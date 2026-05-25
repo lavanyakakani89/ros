@@ -1,4 +1,4 @@
-import { InvoiceStatus, type PrismaClient } from "@prisma/client";
+import { InvoiceStatus, PaymentMethodType, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { PaymentListQuery, RecordPaymentInput } from "./payments.types.js";
 
@@ -25,6 +25,7 @@ export class PaymentsRepository {
           id: input.invoiceId,
           tenantId,
         },
+        include: { store: true },
       });
 
       if (
@@ -42,8 +43,8 @@ export class PaymentsRepository {
           where: {
             tenantId,
             invoiceId: input.invoiceId,
-            mode: input.mode,
             amount: input.amount,
+            ...(input.mode ? { mode: input.mode } : {}),
           },
         });
 
@@ -57,6 +58,18 @@ export class PaymentsRepository {
         throw new Error("Payment amount cannot exceed invoice amount due");
       }
 
+      const paymentMethod = input.payment_method_id
+        ? await tx.paymentMethod.findFirst({
+            where: { id: input.payment_method_id, tenantId, isActive: true, deletedAt: null },
+          })
+        : await findDefaultMethodForMode(tx, tenantId, invoice.storeId, input.mode ?? PaymentMode.CASH);
+      if (!paymentMethod) {
+        throw new Error("Payment method not found");
+      }
+      if (paymentMethod.requiresReference && !input.referenceNumber) {
+        throw new Error(`Reference required for ${paymentMethod.name}`);
+      }
+
       const nextAmountPaid = invoice.amountPaid.toNumber() + input.amount;
       const nextAmountDue = Math.max(invoice.grandTotal.toNumber() - nextAmountPaid, 0);
       const nextStatus = nextAmountDue === 0 ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
@@ -66,8 +79,9 @@ export class PaymentsRepository {
           tenantId,
           invoiceId: input.invoiceId,
           amount: input.amount,
-          mode: input.mode,
-          createdBy,
+          paymentMethodId: paymentMethod.id,
+          mode: input.mode ?? legacyMode(paymentMethod.type),
+          cashierId: createdBy,
           ...(input.referenceNumber ? { referenceNumber: input.referenceNumber } : {}),
           ...(input.razorpayId ? { razorpayId: input.razorpayId } : {}),
         },
@@ -81,7 +95,8 @@ export class PaymentsRepository {
           amountPaid: nextAmountPaid,
           amountDue: nextAmountDue,
           status: nextStatus,
-          paymentMode: input.mode,
+          paymentMode: input.mode ?? legacyMode(paymentMethod.type),
+          paymentMethodId: paymentMethod.id,
         },
       });
 
@@ -98,7 +113,7 @@ export class PaymentsRepository {
         tenantId,
         ...(query.from || query.to
           ? {
-              paidAt: {
+              recordedAt: {
                 ...(query.from ? { gte: query.from } : {}),
                 ...(query.to ? { lte: query.to } : {}),
               },
@@ -107,9 +122,10 @@ export class PaymentsRepository {
       },
       include: {
         invoice: true,
+        paymentMethod: true,
       },
       orderBy: {
-        paidAt: "desc",
+        recordedAt: "desc",
       },
     });
   }
@@ -158,4 +174,32 @@ export class PaymentsRepository {
       },
     });
   }
+}
+
+async function findDefaultMethodForMode(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  storeId: string | null,
+  mode: PaymentMode,
+) {
+  const store = storeId
+    ? { id: storeId }
+    : await tx.store.findFirst({ where: { tenantId, isActive: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] });
+  if (!store?.id) return null;
+  return tx.paymentMethod.findFirst({
+    where: {
+      tenantId,
+      storeId: store.id,
+      shortCode: mode === PaymentMode.CREDIT ? "CRED" : mode,
+      isActive: true,
+      deletedAt: null,
+    },
+  });
+}
+
+function legacyMode(type: PaymentMethodType) {
+  if (type === PaymentMethodType.UPI) return PaymentMode.UPI;
+  if (type === PaymentMethodType.CARD) return PaymentMode.CARD;
+  if (type === PaymentMethodType.CREDIT) return PaymentMode.CREDIT;
+  return PaymentMode.CASH;
 }

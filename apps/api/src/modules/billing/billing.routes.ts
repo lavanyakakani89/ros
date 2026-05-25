@@ -319,7 +319,7 @@ async function buildCustomerLedger(
   const invoices = await fastify.prisma.invoice.findMany({
     where: { tenantId, customerId, status: { not: "CANCELLED" } },
     include: {
-      payments: { orderBy: { paidAt: "asc" } },
+      payments: { orderBy: { recordedAt: "asc" } },
     },
     orderBy: { invoiceDate: "asc" },
   });
@@ -348,7 +348,7 @@ async function buildCustomerLedger(
       rawEntries.push({
         id: `payment-${payment.id}`,
         invoiceNumber: invoice.invoiceNumber,
-        date: payment.paidAt,
+        date: payment.recordedAt,
         type: "payment",
         amount: payment.amount.toNumber(),
         sortOrder: 1,

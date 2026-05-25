@@ -103,6 +103,11 @@ export function requiredPermission(method: string, url: string): Permission | un
   }
 
   if (path.startsWith("/api/loyalty")) return "loyalty:use";
+  if (path.startsWith("/api/payment-methods") || path.startsWith("/api/partners") || path.startsWith("/api/settlements")) {
+    return verb === "GET" ? "payments:use" : "settings:tenant";
+  }
+  if (path.startsWith("/api/invoices/") && path.endsWith("/payments")) return "payments:use";
+  if (path.startsWith("/api/invoice-payments")) return "payments:use";
   if (path.startsWith("/api/payments")) return "payments:use";
   if (path.startsWith("/api/purchase-orders") || path.startsWith("/api/purchase-returns")) return "purchase-orders:manage";
 

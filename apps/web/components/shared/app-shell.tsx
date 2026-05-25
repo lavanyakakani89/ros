@@ -241,6 +241,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const accountLinks = [
     { href: "/settings#shop-details", label: "Shop settings", description: "GST, address, and shop details", icon: Settings },
     { href: "/settings#users", label: "Users & roles", description: "Owners, managers, staff, delivery", icon: Users },
+    { href: "/settings/payment-methods", label: "Payment methods", description: "Custom methods, UPI QR, and settlements", icon: CreditCard },
     { href: "/settings/whatsapp", label: "WhatsApp Business", description: "Orders and customer updates", icon: MessageCircle },
     { href: "/settings/printer", label: "Printer setup", description: "Thermal printer and local agent", icon: Printer },
     { href: "/settings/templates", label: "Invoice templates", description: "Thermal, A5, and A4 formats", icon: FileText },
@@ -744,6 +745,7 @@ function canAccessAccountLink(role: ShopRole | undefined, href: string): boolean
   if (role === "MANAGER") {
     return [
       "/settings#users",
+      "/settings/payment-methods",
       "/settings/printer",
       "/settings/templates",
       "/settings#password",

@@ -6,7 +6,8 @@ const decimalSchema = z.coerce.number().finite();
 export const recordPaymentSchema = z.object({
   invoiceId: z.string().min(1),
   amount: decimalSchema.positive(),
-  mode: z.nativeEnum(PaymentMode),
+  mode: z.nativeEnum(PaymentMode).optional(),
+  payment_method_id: z.string().min(1).optional(),
   referenceNumber: z.string().trim().min(1).optional(),
   razorpayId: z.string().trim().min(1).optional(),
 });

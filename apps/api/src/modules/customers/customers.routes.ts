@@ -225,7 +225,7 @@ async function buildCustomerStatement(
     },
     include: {
       payments: {
-        orderBy: { paidAt: "asc" },
+        orderBy: { recordedAt: "asc" },
       },
     },
     orderBy: { invoiceDate: "asc" },
@@ -253,7 +253,7 @@ async function buildCustomerStatement(
       rawEntries.push({
         id: `payment-${payment.id}`,
         invoiceNumber: invoice.invoiceNumber,
-        date: payment.paidAt,
+        date: payment.recordedAt,
         type: "payment",
         amount: payment.amount.toNumber(),
         sortOrder: 1,
