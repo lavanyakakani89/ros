@@ -92,11 +92,27 @@ export function buildExcelHtml(input: {
 </html>`;
 }
 
+export function buildCsv(input: {
+  columns: readonly ExcelColumn[];
+  rows: readonly Record<string, unknown>[];
+}): string {
+  const header = input.columns.map((column) => escapeCsvCell(column.header)).join(",");
+  const rows = input.rows.map((row) => input.columns.map((column) => escapeCsvCell(readCell(row, column.header))).join(","));
+  return [header, ...rows].join("\r\n") + "\r\n";
+}
+
 export function sendExcelHtml(reply: { header: (name: string, value: string) => typeof reply; send: (payload: string) => unknown }, filename: string, html: string): unknown {
   return reply
     .header("Content-Type", "application/vnd.ms-excel; charset=utf-8")
     .header("Content-Disposition", `attachment; filename="${filename}"`)
     .send(html);
+}
+
+export function sendCsv(reply: { header: (name: string, value: string) => typeof reply; send: (payload: string) => unknown }, filename: string, csv: string): unknown {
+  return reply
+    .header("Content-Type", "text/csv; charset=utf-8")
+    .header("Content-Disposition", `attachment; filename="${filename}"`)
+    .send(csv);
 }
 
 export function getString(row: ExcelRow, headers: readonly string[]): string | undefined {
@@ -238,4 +254,12 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function escapeCsvCell(value: string): string {
+  if (!/[",\r\n]/.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll('"', '""')}"`;
 }

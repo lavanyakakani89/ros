@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -314,6 +315,8 @@ export function ReportsDashboard() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
+        <Link href="/reports/payment-methods" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Payment statements</Link>
+        <Link href="/reports/settlements" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settlements</Link>
         {tab === "sales" ? (
           <>
             <ExportButton label="Summary CSV" onClick={() => void downloadReportExport("summary", `summary-${from}-${to}`, "csv")} />

@@ -1,8 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, UserRole } from "@prisma/client";
 import { Queue, Worker } from "bullmq";
 
 import { createQueueConnection } from "./connection.js";
 import { whatsappNotifyQueue } from "./whatsapp-notify.job.js";
+import { sendPushToTenant } from "../lib/push-notifications.js";
 import { shouldSendNotificationForPrisma } from "../modules/whatsapp/whatsapp.notifications.js";
 
 export const expiryAlertsQueue = new Queue("expiry-alerts", {
@@ -69,6 +70,12 @@ export function createExpiryAlertsWorker() {
           tenantId: tenant.id,
           phone: tenant.phone,
           message: `RetailOS expiry alert for ${tenant.name}\n${lines.join("\n")}`,
+        });
+
+        await sendPushToTenant(prisma, tenant.id, [UserRole.OWNER, UserRole.MANAGER], {
+          title: "Expiry Alert",
+          body: `${String(batches.length)} items expiring within 90 days`,
+          data: { type: "EXPIRY_ALERT" },
         });
       }
     },

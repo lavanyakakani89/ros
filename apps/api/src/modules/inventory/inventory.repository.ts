@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { AddBatchInput, CreateProductInput, ProductListQuery, StockAdjustmentInput, UpdateProductInput } from "./inventory.types.js";
 
@@ -59,18 +59,46 @@ export class InventoryRepository {
     };
 
     if (query.lowStock) {
-      const products = await this.prisma.product.findMany({
-        where,
-        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
-      });
-      const filteredProducts = products.filter((product) => product.reorderLevel !== null && product.currentStock.lte(product.reorderLevel));
       const offset = (query.page - 1) * query.limit;
+      const searchFilter = query.search
+        ? Prisma.sql`AND ("name" ILIKE ${`%${query.search}%`} OR "sku" ILIKE ${`%${query.search}%`} OR "barcode" ILIKE ${`%${query.search}%`})`
+        : Prisma.empty;
+      const [rows, countRows] = await Promise.all([
+        this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT "id"
+          FROM "products"
+          WHERE "tenant_id" = ${tenantId}
+            AND "is_active" = TRUE
+            AND "reorder_level" IS NOT NULL
+            AND "current_stock" <= "reorder_level"
+            ${searchFilter}
+          ORDER BY "updated_at" DESC, "id" ASC
+          OFFSET ${offset}
+          LIMIT ${query.limit}
+        `),
+        this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "products"
+          WHERE "tenant_id" = ${tenantId}
+            AND "is_active" = TRUE
+            AND "reorder_level" IS NOT NULL
+            AND "current_stock" <= "reorder_level"
+            ${searchFilter}
+        `),
+      ]);
+      const ids = rows.map((row) => row.id);
+      const products = ids.length === 0
+        ? []
+        : await this.prisma.product.findMany({
+            where: { tenantId, id: { in: ids }, isActive: true },
+          });
+      const productById = new Map(products.map((product) => [product.id, product]));
 
       return {
-        data: filteredProducts.slice(offset, offset + query.limit),
+        data: ids.flatMap((id) => productById.get(id) ?? []),
         page: query.page,
         limit: query.limit,
-        total: filteredProducts.length,
+        total: Number(countRows[0]?.count ?? 0),
       };
     }
 

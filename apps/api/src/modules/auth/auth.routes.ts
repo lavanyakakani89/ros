@@ -74,6 +74,12 @@ async function handleAuth<T>(
 function toAuthBody(auth: AuthResponse) {
   return {
     user: auth.user,
+    tokens: {
+      accessToken: auth.tokens.accessToken,
+      refreshToken: auth.tokens.refreshToken,
+      accessTokenExpiresIn: 900,
+      refreshTokenExpiresIn: 2592000,
+    },
   };
 }
 

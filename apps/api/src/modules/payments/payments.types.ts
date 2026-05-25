@@ -3,7 +3,8 @@ import type { PaymentMode } from "@prisma/client";
 export interface RecordPaymentInput {
   invoiceId: string;
   amount: number;
-  mode: PaymentMode;
+  mode?: PaymentMode | undefined;
+  payment_method_id?: string | undefined;
   referenceNumber?: string | undefined;
   razorpayId?: string | undefined;
 }

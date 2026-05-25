@@ -1,3 +1,4 @@
+import { loginSchema } from "@retailos/shared";
 import { VerticalType } from "@prisma/client";
 import { z } from "zod";
 
@@ -23,6 +24,8 @@ const optionalUsernameSchema = z.preprocess(
     .optional(),
 );
 
+export { loginSchema };
+
 export const registerSchema = z.object({
   tenantName: z.string().trim().min(2),
   tenantSlug: z
@@ -41,22 +44,6 @@ export const registerSchema = z.object({
   ownerPhone: z.string().trim().min(10).max(16).optional(),
   password: z.string().min(8).max(128),
 });
-
-export const loginSchema = z
-  .object({
-    tenantSlug: z.string().trim().min(3).toLowerCase(),
-    identifier: loginIdentifierSchema.optional(),
-    email: loginIdentifierSchema.optional(),
-    password: z.string().min(1),
-  })
-  .refine((value) => value.identifier || value.email, {
-    message: "Username or email is required",
-    path: ["identifier"],
-  })
-  .transform(({ email, identifier, ...value }) => ({
-    ...value,
-    identifier: identifier ?? email ?? "",
-  }));
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(32),

@@ -1,4 +1,4 @@
-import type { VerticalConfig } from "@retailos/shared";
+import type { UserRole, VerticalConfig } from "@retailos/shared";
 
 export interface CurrentVerticalConfigResponse {
   tenantId: string;
@@ -10,4 +10,12 @@ export interface CurrentVerticalConfigResponse {
     gstNumber?: string | null;
   };
   config: VerticalConfig;
+  user?: {
+    id: string;
+    tenantId: string;
+    name: string;
+    email: string;
+    role: UserRole;
+    storeId?: string | null;
+  } | null;
 }

@@ -35,7 +35,7 @@ interface PaginatedMovements {
   total: number;
 }
 
-type InventoryView = "products" | "stock-count";
+type InventoryView = "products" | "stock-count" | "expiry";
 
 interface StockCountSummary {
   id: string;
@@ -69,9 +69,22 @@ interface StockCountItem {
   };
 }
 
+interface ExpiringProductBatch {
+  id: string;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+  quantity?: string | number | null;
+  product?: {
+    name?: string | null;
+    sku?: string | null;
+  } | null;
+}
+
 export function InventoryClient() {
   const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState<InventoryView>("products");
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [showStockAdjustment, setShowStockAdjustment] = useState(false);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -129,23 +142,48 @@ export function InventoryClient() {
       <div className="flex flex-wrap gap-2">
         <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "products" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("products")}>Products</button>
         <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "stock-count" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("stock-count")}>Stock Count</button>
+        {supportsExpiryAlerts ? (
+          <button type="button" className={`h-10 rounded-md border px-4 text-sm font-semibold ${activeView === "expiry" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-border text-slate-600"}`} onClick={() => setActiveView("expiry")}>Expiry Dashboard</button>
+        ) : null}
       </div>
       {activeView === "stock-count" ? (
         <StockCountWorkspace canManage={canManageProducts} onStockChanged={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
+      ) : activeView === "expiry" ? (
+        <ExpiryDashboard />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
-          <div className="space-y-4">
-            {canManageProducts ? <ProductFieldForm onCreated={() => void productsQuery.refetch()} /> : null}
-            <StockAdjustment onSaved={() => void queryClient.invalidateQueries({ queryKey: ["products"] })} />
-          </div>
+        <div className="space-y-4">
+          {canManageProducts && showProductForm ? (
+            <ProductFieldForm onCreated={() => {
+              setShowProductForm(false);
+              void productsQuery.refetch();
+            }} />
+          ) : null}
+          {showStockAdjustment ? (
+            <StockAdjustment onSaved={() => {
+              setShowStockAdjustment(false);
+              void queryClient.invalidateQueries({ queryKey: ["products"] });
+            }} />
+          ) : null}
           <section className="rounded-md border border-border bg-white">
           <div className="space-y-3 border-b border-border px-4 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm font-semibold text-slate-950">Products</div>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input type="checkbox" checked={lowStockOnly} onChange={(event) => setLowStockOnly(event.target.checked)} className="size-4 accent-emerald-600" />
-                Low stock
-              </label>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canManageProducts ? (
+                  <>
+                    <button type="button" className="h-9 rounded-md bg-emerald-600 px-3 text-sm font-semibold text-white" onClick={() => setShowProductForm((value) => !value)}>
+                      {showProductForm ? "Hide product form" : "New product"}
+                    </button>
+                    <button type="button" className="h-9 rounded-md border border-border px-3 text-sm font-semibold text-slate-700" onClick={() => setShowStockAdjustment((value) => !value)}>
+                      {showStockAdjustment ? "Hide adjustment" : "Stock adjustment"}
+                    </button>
+                  </>
+                ) : null}
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input type="checkbox" checked={lowStockOnly} onChange={(event) => setLowStockOnly(event.target.checked)} className="size-4 accent-emerald-600" />
+                  Low stock
+                </label>
+              </div>
             </div>
             {canManageProducts ? (
               <div className="flex flex-wrap items-center gap-2">
@@ -153,7 +191,7 @@ export function InventoryClient() {
                   <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
                   Template
                 </button>
-                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export", "retailos-products-export.xls")}>
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export?format=csv", "retailos-products-export.csv")}>
                   <Download className="size-4 text-blue-700" aria-hidden="true" />
                   Export
                 </button>
@@ -189,6 +227,81 @@ export function InventoryClient() {
       )}
     </>
   );
+}
+
+function ExpiryDashboard() {
+  const thirtyDaysQuery = useQuery({
+    queryKey: ["expiring-products", 30],
+    queryFn: () => createAuthenticatedApiClient().get<ExpiringProductBatch[]>("/inventory/products/expiring?days=30"),
+    retry: false,
+  });
+  const sixtyDaysQuery = useQuery({
+    queryKey: ["expiring-products", 60],
+    queryFn: () => createAuthenticatedApiClient().get<ExpiringProductBatch[]>("/inventory/products/expiring?days=60"),
+    retry: false,
+  });
+  const ninetyDaysQuery = useQuery({
+    queryKey: ["expiring-products", 90],
+    queryFn: () => createAuthenticatedApiClient().get<ExpiringProductBatch[]>("/inventory/products/expiring?days=90"),
+    retry: false,
+  });
+  const buckets = [
+    { days: 30, label: "Next 30 days", tone: "red", query: thirtyDaysQuery },
+    { days: 60, label: "31-60 days", tone: "amber", query: sixtyDaysQuery },
+    { days: 90, label: "61-90 days", tone: "emerald", query: ninetyDaysQuery },
+  ] as const;
+
+  return (
+    <section className="rounded-md border border-border bg-white">
+      <div className="border-b border-border px-4 py-3">
+        <div className="text-sm font-semibold text-slate-950">Expiry dashboard</div>
+        <div className="text-sm text-slate-500">Batches grouped by 30, 60, and 90 day windows.</div>
+      </div>
+      <div className="grid gap-3 p-4 lg:grid-cols-3">
+        {buckets.map((bucket) => {
+          const records = bucket.query.data ?? [];
+          return (
+            <div key={bucket.days} className={`rounded-md border p-3 ${expiryToneClass(bucket.tone)}`}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold">{bucket.label}</div>
+                <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-semibold">{records.length}</span>
+              </div>
+              {bucket.query.isLoading ? (
+                <div className="text-sm text-slate-500">Loading expiring batches...</div>
+              ) : bucket.query.error ? (
+                <div className="text-sm text-red-700">{bucket.query.error.message}</div>
+              ) : records.length === 0 ? (
+                <div className="text-sm text-slate-500">No batches in this window.</div>
+              ) : (
+                <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                  {records.map((batch) => (
+                    <div key={batch.id} className="rounded-md bg-white/80 p-2 text-sm">
+                      <div className="font-medium text-slate-950">{batch.product?.name ?? "Product"}</div>
+                      <div className="text-xs text-slate-500">
+                        Batch {batch.batchNumber || "-"} | Qty {batch.quantity ?? "-"} | Exp {batch.expiryDate ? new Date(batch.expiryDate).toLocaleDateString("en-IN") : "-"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function expiryToneClass(tone: "red" | "amber" | "emerald"): string {
+  if (tone === "red") {
+    return "border-red-200 bg-red-50 text-red-900";
+  }
+
+  if (tone === "amber") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+
+  return "border-emerald-200 bg-emerald-50 text-emerald-900";
 }
 
 function StockCountWorkspace({ canManage, onStockChanged }: Readonly<{ canManage: boolean; onStockChanged: () => void }>) {
@@ -440,7 +553,7 @@ function ProductList({ products, loading, error, hasSearch, canManageProducts }:
   return (
     <div className="divide-y divide-border">
       {products.length === 0 ? (
-        <div className="p-4 text-sm text-slate-500">{hasSearch ? "No products found." : "No products yet. Add your first item from the form."}</div>
+        <div className="p-4 text-sm text-slate-500">{hasSearch ? "No products found." : "No products yet. Use New product to add your first item."}</div>
       ) : (
         products.map((product) => (
           <ProductRow
@@ -449,7 +562,11 @@ function ProductList({ products, loading, error, hasSearch, canManageProducts }:
             showBatchTools={(verticalConfig?.batchFields?.length ?? 0) > 0}
             canManageProducts={canManageProducts}
             onUpdate={(payload) => updateProduct.mutate({ id: product.id, payload })}
-            onDelete={() => deleteProduct.mutate(product.id)}
+            onDelete={() => {
+              if (window.confirm(`Delete ${product.name}? This will hide it from billing and inventory lists.`)) {
+                deleteProduct.mutate(product.id);
+              }
+            }}
             onBatch={(payload) => addBatch.mutate({ id: product.id, payload })}
           />
         ))
@@ -596,41 +713,59 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
 
   if (editing) {
     return (
-      <form className="grid gap-3 p-4 md:grid-cols-2" onSubmit={handleEdit}>
-        <ProductImageControls
-          canManage={canManageProducts}
-          imageSrc={imageSrc}
-          uploadPending={uploadImage.isPending}
-          removePending={removeImage.isPending}
-          error={uploadImage.error ?? removeImage.error}
-          onUpload={handleImageInput}
-          onRemove={() => removeImage.mutate()}
-        />
-        <TextInput name="name" label="Name" defaultValue={product.name} required />
-        <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
-        <TextInput name="barcode" label="Barcode" defaultValue={product.barcode ?? ""} />
-        <TextInput name="description" label="Description" defaultValue={product.description ?? ""} />
-        <TextInput name="partGroup" label="Part / group" defaultValue={product.partGroup ?? ""} />
-        <TextInput name="legacySubCategoryId" label="Category/Sub Category Code" defaultValue={product.legacySubCategoryId ?? ""} />
-        <TextInput name="unit" label="Unit" defaultValue={product.unit} required />
-        <TextInput name="mrp" label="MRP" type="number" defaultValue={String(product.mrp)} required />
-        <TextInput name="sellingPrice" label="Selling price" type="number" defaultValue={String(product.sellingPrice)} required />
-        <TextInput name="purchasePrice" label="Purchase price" type="number" defaultValue={String(product.purchasePrice ?? "")} />
-        <TextInput name="wholesalePrice" label="Wholesale price" type="number" defaultValue={String(product.wholesalePrice ?? "")} />
-        <TextInput name="defaultDiscountPercent" label="Discount %" type="number" defaultValue={String(product.defaultDiscountPercent ?? "")} />
-        {gstEnabled ? <TextInput name="gstRate" label="GST %" type="number" defaultValue={String(product.gstRate)} required /> : null}
-        <TextInput name="cessRate" label="CESS %" type="number" defaultValue={String(product.cessRate ?? 0)} />
-        <TextInput name="hsnCode" label="HSN / SAC code" defaultValue={product.hsnCode ?? ""} />
-        <TextInput name="reorderLevel" label="Reorder level" type="number" defaultValue={String(product.reorderLevel ?? "")} />
-        <TextInput name="purchaseUnit" label="Purchase unit" defaultValue={product.purchaseUnit ?? ""} />
-        <TextInput name="salesUnit" label="Sales unit" defaultValue={product.salesUnit ?? ""} />
-        <TextInput name="alternateUnit" label="Alter unit" defaultValue={product.alternateUnit ?? ""} />
-        <TextInput name="conversionValue" label="Conversion value" type="number" defaultValue={String(product.conversionValue ?? "")} />
-        <TextInput name="godown" label="Godown" defaultValue={product.godown ?? ""} />
-        <TextInput name="rack" label="Rack" defaultValue={product.rack ?? ""} />
-        <TextInput name="defaultSaleQty" label="Default sale qty" type="number" defaultValue={String(product.defaultSaleQty ?? "")} />
-        <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2">Save changes</button>
-      </form>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+        <form className="grid max-h-[90vh] w-full max-w-4xl gap-3 overflow-y-auto rounded-md border border-border bg-white p-4 shadow-xl md:grid-cols-2" onSubmit={handleEdit}>
+          <div className="flex items-start justify-between gap-3 md:col-span-2">
+            <div>
+              <div className="text-base font-semibold text-slate-950">Edit product</div>
+              <div className="text-sm text-slate-500">{product.name}</div>
+            </div>
+            <button type="button" className="inline-flex size-9 items-center justify-center rounded-md border border-border text-slate-600" onClick={() => setEditing(false)} aria-label="Close edit product">
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+          <ProductImageControls
+            canManage={canManageProducts}
+            imageSrc={imageSrc}
+            uploadPending={uploadImage.isPending}
+            removePending={removeImage.isPending}
+            error={uploadImage.error ?? removeImage.error}
+            onUpload={handleImageInput}
+            onRemove={() => removeImage.mutate()}
+          />
+          <TextInput name="name" label="Name" defaultValue={product.name} required />
+          <TextInput name="sku" label="SKU" defaultValue={product.sku ?? ""} />
+          <TextInput name="barcode" label="Barcode" defaultValue={product.barcode ?? ""} />
+          <TextInput name="description" label="Description" defaultValue={product.description ?? ""} />
+          <TextInput name="partGroup" label="Part / group" defaultValue={product.partGroup ?? ""} />
+          <TextInput name="legacySubCategoryId" label="Category/Sub Category Code" defaultValue={product.legacySubCategoryId ?? ""} />
+          <TextInput name="unit" label="Unit" defaultValue={product.unit} required />
+          <TextInput name="mrp" label="MRP" type="number" defaultValue={String(product.mrp)} required />
+          <TextInput name="sellingPrice" label="Selling price" type="number" defaultValue={String(product.sellingPrice)} required />
+          <TextInput name="purchasePrice" label="Purchase price" type="number" defaultValue={String(product.purchasePrice ?? "")} />
+          <TextInput name="wholesalePrice" label="Wholesale price" type="number" defaultValue={String(product.wholesalePrice ?? "")} />
+          <TextInput name="defaultDiscountPercent" label="Discount %" type="number" defaultValue={String(product.defaultDiscountPercent ?? "")} />
+          {gstEnabled ? (
+            <>
+              <TextInput name="gstRate" label="GST %" type="number" defaultValue={String(product.gstRate)} required />
+              <TextInput name="cessRate" label="CESS %" type="number" defaultValue={String(product.cessRate ?? 0)} />
+              <TextInput name="hsnCode" label="HSN / SAC code" defaultValue={product.hsnCode ?? ""} />
+            </>
+          ) : null}
+          <TextInput name="reorderLevel" label="Reorder level" type="number" defaultValue={String(product.reorderLevel ?? "")} />
+          <TextInput name="purchaseUnit" label="Purchase unit" defaultValue={product.purchaseUnit ?? ""} />
+          <TextInput name="salesUnit" label="Sales unit" defaultValue={product.salesUnit ?? ""} />
+          <TextInput name="alternateUnit" label="Alter unit" defaultValue={product.alternateUnit ?? ""} />
+          <TextInput name="conversionValue" label="Conversion value" type="number" defaultValue={String(product.conversionValue ?? "")} />
+          <TextInput name="godown" label="Godown" defaultValue={product.godown ?? ""} />
+          <TextInput name="rack" label="Rack" defaultValue={product.rack ?? ""} />
+          <TextInput name="defaultSaleQty" label="Default sale qty" type="number" defaultValue={String(product.defaultSaleQty ?? "")} />
+          <div className="flex gap-2 md:col-span-2">
+            <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white">Save changes</button>
+            <button type="button" className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => setEditing(false)}>Cancel</button>
+          </div>
+        </form>
+      </div>
     );
   }
 
@@ -769,25 +904,44 @@ function roundQuantity(value: number): number {
 
 function StockAdjustment({ onSaved }: Readonly<{ onSaved: () => void }>) {
   const [productSearch, setProductSearch] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
+  const [direction, setDirection] = useState<"ADD" | "REMOVE">("ADD");
+  const [reason, setReason] = useState("");
   const searchTerm = productSearch.trim();
   const productsQuery = useQuery({
     queryKey: ["products", "stock-adjustment", searchTerm],
     queryFn: () => listProducts({ limit: 20, ...(searchTerm ? { search: searchTerm } : {}) }),
+    enabled: searchTerm.length > 0,
   });
   const mutation = useMutation({
     mutationFn: (payload: object) => createAuthenticatedApiClient().post("/inventory/stock-adjustment", payload),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      setSelectedProduct(null);
+      setProductSearch("");
+      setDirection("ADD");
+      setReason("");
+      onSaved();
+    },
   });
   const products = productsQuery.data?.data ?? [];
 
   function handleSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!selectedProduct) {
+      return;
+    }
+
     const form = new FormData(event.currentTarget);
+    const quantity = Math.abs(Number(form.get("quantity")));
+    const notes = reason === "OTHER"
+      ? formString(form, "otherReason") || formString(form, "notes") || undefined
+      : formString(form, "notes") || undefined;
     mutation.mutate({
-      productId: formString(form, "productId"),
-      quantityChange: Number(form.get("quantityChange")),
-      reason: formString(form, "reason"),
-      notes: formString(form, "notes") || undefined,
+      productId: selectedProduct.id,
+      direction,
+      quantity,
+      reason,
+      ...(notes ? { notes } : {}),
     });
   }
 
@@ -796,18 +950,67 @@ function StockAdjustment({ onSaved }: Readonly<{ onSaved: () => void }>) {
       <div className="mb-3 text-sm font-semibold text-slate-950">Stock adjustment</div>
       {mutation.error ? <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{mutation.error.message}</div> : null}
       <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit}>
-        <label className="block text-sm font-medium text-slate-700">
+        <label className="relative block text-sm font-medium text-slate-700 md:col-span-2">
           Product
-          <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search product before selecting" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
-          <select name="productId" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" required>
-            <option value="">Select product</option>
-            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+          <input
+            value={productSearch}
+            onChange={(event) => {
+              setProductSearch(event.target.value);
+              setSelectedProduct(null);
+            }}
+            placeholder="Search product name, Product ID, or barcode"
+            className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm"
+          />
+          {selectedProduct ? (
+            <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              Selected: {selectedProduct.name} | Stock {Number(selectedProduct.currentStock)}
+            </div>
+          ) : searchTerm ? (
+            <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-white shadow-lg">
+              {productsQuery.isLoading ? <div className="px-3 py-2 text-sm text-slate-500">Searching products...</div> : null}
+              {!productsQuery.isLoading && products.length === 0 ? <div className="px-3 py-2 text-sm text-slate-500">No products found.</div> : null}
+              {products.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-emerald-50"
+                  onClick={() => {
+                    setSelectedProduct(product);
+                    setProductSearch(product.name);
+                  }}
+                >
+                  <span className="font-medium text-slate-950">{product.name}</span>
+                  <span className="ml-2 text-xs text-slate-500">Stock {Number(product.currentStock)}{product.sku ? ` | SKU ${product.sku}` : ""}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </label>
+        <label className="block text-sm font-medium text-slate-700">
+          Direction
+          <select value={direction} onChange={(event) => setDirection(event.target.value === "REMOVE" ? "REMOVE" : "ADD")} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm">
+            <option value="ADD">Stock in (+)</option>
+            <option value="REMOVE">Stock out (-)</option>
           </select>
         </label>
-        <TextInput name="quantityChange" label="Qty change" type="number" required />
-        <TextInput name="reason" label="Reason" required />
+        <TextInput name="quantity" label="Quantity" type="number" required />
+        <label className="block text-sm font-medium text-slate-700">
+          Reason
+          <select name="reason" value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" required>
+            <option value="">Select reason</option>
+            <option value="OPENING_STOCK">Opening stock</option>
+            <option value="GOODS_RECEIVED">Goods received</option>
+            <option value="DAMAGE">Damage</option>
+            <option value="THEFT">Theft</option>
+            <option value="EXPIRY_WRITE_OFF">Expiry write-off</option>
+            <option value="MANUAL_CORRECTION">Manual correction</option>
+            <option value="STOCK_COUNT">Stock count</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </label>
+        {reason === "OTHER" ? <TextInput name="otherReason" label="Other - specify" required /> : null}
         <TextInput name="notes" label="Notes" />
-        <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2" disabled={mutation.isPending}>
+        <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2" disabled={mutation.isPending || !selectedProduct}>
           <Save className="size-4" aria-hidden="true" />
           Save adjustment
         </button>

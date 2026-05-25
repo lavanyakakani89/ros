@@ -101,7 +101,7 @@ export class PaymentsService {
       throw new PaymentsError("Invoice not found", 404);
     }
 
-    if (invoice.status === InvoiceStatus.DRAFT || invoice.status === InvoiceStatus.CANCELLED) {
+    if (invoice.status === InvoiceStatus.DRAFT || invoice.status === InvoiceStatus.PENDING_WHATSAPP || invoice.status === InvoiceStatus.CANCELLED) {
       throw new PaymentsError("Payment link can be created only for confirmed invoices", 400);
     }
 

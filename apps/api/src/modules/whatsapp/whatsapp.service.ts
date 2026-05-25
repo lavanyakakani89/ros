@@ -161,6 +161,7 @@ export class WhatsappService {
         sellingPrice: item.sellingPrice,
       })),
     });
+    const pendingInvoice = await this.markInvoicePendingWhatsapp(tenant.id, invoice.id);
 
     await Promise.all([
       this.fastify.prisma.whatsappOrder.update({
@@ -168,7 +169,7 @@ export class WhatsappService {
           id: order.id,
         },
         data: {
-          invoiceId: invoice.id,
+          invoiceId: pendingInvoice.id,
           status: parsed.unmatched.length > 0 ? "NEEDS_REVIEW" : "DRAFT_CREATED",
         },
       }),
@@ -178,7 +179,7 @@ export class WhatsappService {
         },
         data: {
           status: "PARSED",
-          invoiceId: invoice.id,
+          invoiceId: pendingInvoice.id,
         },
       }),
     ]);
@@ -187,8 +188,8 @@ export class WhatsappService {
       status: "draft_created",
       orderId: order.id,
       messageId: message.id,
-      invoiceId: invoice.id,
-      invoiceNumber: invoice.invoiceNumber,
+      invoiceId: pendingInvoice.id,
+      invoiceNumber: pendingInvoice.invoiceNumber,
       unmatchedLines: parsed.unmatched,
     };
   }
@@ -316,7 +317,10 @@ export class WhatsappService {
 
     const invoice = existingInvoice
       ? await this.updateLinkedDraftInvoice(tenant, existingInvoice, invoicePayload, currentUser.userId)
-      : await this.billingService.createInvoice(tenant, invoicePayload);
+      : await this.markInvoicePendingWhatsapp(
+          tenant.id,
+          (await this.billingService.createInvoice(tenant, invoicePayload)).id,
+        );
 
     const updated = await this.fastify.prisma.whatsappOrder.update({
       where: {
@@ -643,11 +647,28 @@ export class WhatsappService {
     invoicePayload: Parameters<BillingService["createInvoice"]>[1],
     userId: string,
   ) {
-    if (existingInvoice.status !== InvoiceStatus.DRAFT) {
+    if (existingInvoice.status !== InvoiceStatus.DRAFT && existingInvoice.status !== InvoiceStatus.PENDING_WHATSAPP) {
       throw new WhatsappIntegrationError("Linked invoice is already confirmed. Edit it from the billing screen.", 409);
     }
 
     return this.billingService.updateInvoice(tenant, existingInvoice.id, invoicePayload, userId);
+  }
+
+  private async markInvoicePendingWhatsapp(tenantId: string, invoiceId: string) {
+    const result = await this.fastify.prisma.invoice.updateMany({
+      where: { id: invoiceId, tenantId },
+      data: { status: InvoiceStatus.PENDING_WHATSAPP },
+    });
+    if (result.count === 0) {
+      throw new WhatsappIntegrationError("Linked invoice was not found", 404);
+    }
+
+    return this.fastify.prisma.invoice.findFirstOrThrow({
+      where: { id: invoiceId, tenantId },
+      include: {
+        items: true,
+      },
+    });
   }
 
   private async createIgnoredMessage(tenant: Tenant, input: InboundWhatsappMessage, phone: string, reason: string) {

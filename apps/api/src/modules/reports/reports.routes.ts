@@ -68,6 +68,12 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return { gstByRate: summary.gstByRate, hsnSummary: summary.hsnSummary, totalCgst: summary.totalCgst, totalSgst: summary.totalSgst };
   });
 
+  fastify.get("/api/reports/gst-summary", async (request) => {
+    const query = scopedQuery(request.user.role, request.storeId, reportDateRangeSchema.parse(request.query));
+    const summary = await service.getSalesSummary(request.tenant, query);
+    return { gstByRate: summary.gstByRate, hsnSummary: summary.hsnSummary, totalCgst: summary.totalCgst, totalSgst: summary.totalSgst };
+  });
+
   fastify.get("/api/reports/gst/export", async (request, reply) => {
     const query = scopedQuery(request.user.role, request.storeId, reportExportQuerySchema.parse(request.query));
     const summary = await service.getSalesSummary(request.tenant, query);
@@ -94,6 +100,15 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return service.getInventorySummary(request.tenant);
   });
 
+  fastify.get("/api/reports/stock-value", async (request) => {
+    const inventory = await service.getInventorySummary(request.tenant);
+    return {
+      stockValue: inventory.stockValue,
+      lowStockCount: inventory.lowStockCount,
+      stockByCategory: inventory.stockByCategory,
+    };
+  });
+
   fastify.get("/api/reports/inventory/export", async (request, reply) => {
     const query = reportExportQuerySchema.parse(request.query);
     const inventory = await service.getInventorySummary(request.tenant);
@@ -106,6 +121,11 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   });
 
   fastify.get("/api/reports/pnl", async (request) => {
+    const query = scopedQuery(request.user.role, request.storeId, reportDateRangeSchema.parse(request.query));
+    return service.getPnlReport(request.tenant, query);
+  });
+
+  fastify.get("/api/reports/pl", async (request) => {
     const query = scopedQuery(request.user.role, request.storeId, reportDateRangeSchema.parse(request.query));
     return service.getPnlReport(request.tenant, query);
   });

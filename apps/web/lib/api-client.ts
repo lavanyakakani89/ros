@@ -64,6 +64,7 @@ export interface ProductPayload {
   hsnCode?: string;
   currentStock: number;
   reorderLevel?: number;
+  supplierId?: string;
   purchaseUnit?: string;
   salesUnit?: string;
   alternateUnit?: string;
@@ -137,6 +138,8 @@ export async function getCurrentVerticalConfig(): Promise<{
   user?: {
     id: string;
     tenantId: string;
+    name: string;
+    email: string;
     role: ShopRole;
     storeId?: string | null;
   } | null;
@@ -158,6 +161,8 @@ export async function getCurrentVerticalConfig(): Promise<{
     user?: {
       id: string;
       tenantId: string;
+      name: string;
+      email: string;
       role: ShopRole;
       storeId?: string | null;
     } | null;
@@ -186,6 +191,17 @@ export function createAuthenticatedApiClient() {
     async put<T = unknown>(path: string, payload: object) {
       const response = await fetchWithCookieAuth(path, {
         method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      return response.json() as Promise<T>;
+    },
+    async patch<T = unknown>(path: string, payload: object) {
+      const response = await fetchWithCookieAuth(path, {
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },

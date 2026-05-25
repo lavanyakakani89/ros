@@ -74,7 +74,9 @@ export const expiringQuerySchema = z.object({
 
 export const stockAdjustmentSchema = z.object({
   productId: z.string().min(1),
-  quantityChange: decimalSchema.refine((value) => value !== 0, "Quantity change cannot be zero"),
+  direction: z.enum(["ADD", "REMOVE"]).optional(),
+  quantity: decimalSchema.positive().optional(),
+  quantityChange: decimalSchema.refine((value) => value !== 0, "Quantity change cannot be zero").optional(),
   reason: z.string().trim().min(3),
   notes: z.string().trim().min(1).optional(),
 });

@@ -18,6 +18,9 @@ import {
 
 export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new InventoryService(fastify);
+  const productExportQuerySchema = z.object({
+    format: z.enum(["csv", "xls"]).optional().default("xls"),
+  });
 
   fastify.post("/api/inventory/products", async (request, reply) => {
     const input = createProductSchema.parse(request.body);
@@ -34,7 +37,8 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
   });
 
   fastify.get("/api/inventory/products/export", async (request, reply) => {
-    return sendProductExport(fastify, request.tenant, reply);
+    const query = productExportQuerySchema.parse(request.query);
+    return sendProductExport(fastify, request.tenant, reply, query.format);
   });
 
   fastify.post("/api/inventory/products/import", async (request, reply) => {
@@ -82,6 +86,12 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
   });
 
   fastify.get("/api/inventory/products/:id/movements", async (request, reply) => {
+    const params = productIdParamsSchema.parse(request.params);
+    const query = stockMovementQuerySchema.parse(request.query);
+    return handleInventory(reply, () => service.listProductMovements(request.tenant, params.id, query));
+  });
+
+  fastify.get("/api/inventory/products/:id/stock-history", async (request, reply) => {
     const params = productIdParamsSchema.parse(request.params);
     const query = stockMovementQuerySchema.parse(request.query);
     return handleInventory(reply, () => service.listProductMovements(request.tenant, params.id, query));
@@ -211,7 +221,22 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
   });
 
   fastify.post("/api/inventory/stock-adjustment", async (request, reply) => {
-    const input = stockAdjustmentSchema.parse(request.body);
+    const parsed = stockAdjustmentSchema.parse(request.body);
+    const rawQuantity = parsed.direction ? parsed.quantity ?? parsed.quantityChange : parsed.quantityChange;
+    if (rawQuantity === undefined || rawQuantity === 0) {
+      return reply.status(400).send({ error: "Quantity is required" });
+    }
+    const quantityChange = parsed.direction === "REMOVE"
+      ? -Math.abs(rawQuantity)
+      : parsed.direction === "ADD"
+        ? Math.abs(rawQuantity)
+        : rawQuantity;
+    const input = {
+      productId: parsed.productId,
+      quantityChange,
+      reason: parsed.reason,
+      ...(parsed.notes ? { notes: parsed.notes } : {}),
+    };
     return handleInventory(reply, () => service.adjustStock(request.tenant, request.user, input));
   });
 

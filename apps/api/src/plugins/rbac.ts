@@ -1,117 +1,13 @@
 import { UserRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-type Permission =
-  | "audit:view"
-  | "billing:create"
-  | "billing:view"
-  | "billing:cancel"
-  | "billing:customer-ledger"
-  | "categories:view"
-  | "categories:manage"
-  | "coupons:apply"
-  | "coupons:manage"
-  | "credit-notes:manage"
-  | "customers:basic"
-  | "customers:import-export"
-  | "delivery:manage"
-  | "delivery:mobile"
-  | "expenses:add"
-  | "expenses:delete"
-  | "inventory:view"
-  | "inventory:manage"
-  | "inventory:import-export"
-  | "inventory:stock-adjust"
-  | "loyalty:use"
-  | "payments:use"
-  | "purchase-orders:manage"
-  | "quotations:create"
-  | "quotations:manage"
-  | "reports:view"
-  | "reports:pnl"
-  | "restaurant:operate"
-  | "settings:password"
-  | "settings:view"
-  | "settings:tenant"
-  | "settings:users"
-  | "settings:templates"
-  | "settings:printer"
-  | "suppliers:manage"
-  | "whatsapp:orders"
-  | "whatsapp:setup";
-
-const ownerPermissions: Permission[] = [
-  "audit:view",
-  "billing:create",
-  "billing:view",
-  "billing:cancel",
-  "billing:customer-ledger",
-  "categories:view",
-  "categories:manage",
-  "coupons:apply",
-  "coupons:manage",
-  "credit-notes:manage",
-  "customers:basic",
-  "customers:import-export",
-  "delivery:manage",
-  "delivery:mobile",
-  "expenses:add",
-  "expenses:delete",
-  "inventory:view",
-  "inventory:manage",
-  "inventory:import-export",
-  "inventory:stock-adjust",
-  "loyalty:use",
-  "payments:use",
-  "purchase-orders:manage",
-  "quotations:create",
-  "quotations:manage",
-  "reports:view",
-  "reports:pnl",
-  "restaurant:operate",
-  "settings:password",
-  "settings:view",
-  "settings:tenant",
-  "settings:users",
-  "settings:templates",
-  "settings:printer",
-  "suppliers:manage",
-  "whatsapp:orders",
-  "whatsapp:setup",
-];
-
-const managerPermissions: Permission[] = ownerPermissions.filter((permission) => ![
-  "reports:pnl",
-  "settings:tenant",
-  "whatsapp:setup",
-].includes(permission));
-
-const staffPermissions: Permission[] = [
-  "billing:create",
-  "billing:view",
-  "categories:view",
-  "coupons:apply",
-  "customers:basic",
-  "expenses:add",
-  "inventory:view",
-  "inventory:stock-adjust",
-  "loyalty:use",
-  "payments:use",
-  "quotations:create",
-  "restaurant:operate",
-  "settings:password",
-];
-
-const deliveryPermissions: Permission[] = [
-  "delivery:mobile",
-  "settings:password",
-];
+import { ROLE_PERMISSIONS, type Permission } from "./permissions.js";
 
 const permissionsByRole: Record<UserRole, Set<Permission>> = {
-  [UserRole.OWNER]: new Set(ownerPermissions),
-  [UserRole.MANAGER]: new Set(managerPermissions),
-  [UserRole.STAFF]: new Set(staffPermissions),
-  [UserRole.DELIVERY]: new Set(deliveryPermissions),
+  [UserRole.OWNER]: new Set(ROLE_PERMISSIONS[UserRole.OWNER]),
+  [UserRole.MANAGER]: new Set(ROLE_PERMISSIONS[UserRole.MANAGER]),
+  [UserRole.STAFF]: new Set(ROLE_PERMISSIONS[UserRole.STAFF]),
+  [UserRole.DELIVERY]: new Set(ROLE_PERMISSIONS[UserRole.DELIVERY]),
 };
 
 export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
@@ -153,6 +49,7 @@ export function requiredPermission(method: string, url: string): Permission | un
   if (path.startsWith("/api/audit-logs")) return "audit:view";
 
   if (path.startsWith("/api/billing/customer-ledger")) return "billing:customer-ledger";
+  if (path.startsWith("/api/customers/") && path.endsWith("/ledger")) return "billing:customer-ledger";
   if (path.startsWith("/api/billing/invoices")) {
     if (path.endsWith("/cancel")) return "billing:cancel";
     if (verb === "POST" && path === "/api/billing/invoices") return "billing:create";
@@ -206,6 +103,11 @@ export function requiredPermission(method: string, url: string): Permission | un
   }
 
   if (path.startsWith("/api/loyalty")) return "loyalty:use";
+  if (path.startsWith("/api/payment-methods") || path.startsWith("/api/partners") || path.startsWith("/api/settlements")) {
+    return verb === "GET" ? "payments:use" : "settings:tenant";
+  }
+  if (path.startsWith("/api/invoices/") && path.endsWith("/payments")) return "payments:use";
+  if (path.startsWith("/api/invoice-payments")) return "payments:use";
   if (path.startsWith("/api/payments")) return "payments:use";
   if (path.startsWith("/api/purchase-orders") || path.startsWith("/api/purchase-returns")) return "purchase-orders:manage";
 
@@ -223,6 +125,7 @@ export function requiredPermission(method: string, url: string): Permission | un
   if (path === "/api/settings/current") return "settings:view";
   if (path === "/api/settings/tenant") return "settings:tenant";
   if (path.startsWith("/api/settings/users")) return "settings:users";
+  if (path.startsWith("/api/users")) return "settings:users";
   if (path.startsWith("/api/templates")) return "settings:templates";
   if (path.startsWith("/api/printer")) return "settings:printer";
 

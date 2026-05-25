@@ -353,18 +353,28 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
           lastModifiedById: actor.id,
         },
       });
+      const shouldReactivate = license.expiryDate.getTime() >= Date.now();
 
-      await fastify.prisma.superAdminLog.create({
-        data: {
-          superAdminId: actor.id,
-          action: "UPDATE_LICENSE",
-          targetType: "TENANT",
-          targetId: params.id,
-          notes: `${license.plan} until ${license.expiryDate.toISOString().slice(0, 10)}`,
-        },
-      });
+      await Promise.all([
+        shouldReactivate
+          ? fastify.prisma.tenant.update({
+              where: { id: params.id },
+              data: { status: TenantStatus.ACTIVE },
+            })
+          : Promise.resolve(null),
+        fastify.redis.del(`tenant:${params.id}`),
+        fastify.prisma.superAdminLog.create({
+          data: {
+            superAdminId: actor.id,
+            action: shouldReactivate ? "UPDATE_LICENSE_REACTIVATE" : "UPDATE_LICENSE",
+            targetType: "TENANT",
+            targetId: params.id,
+            notes: `${license.plan} until ${license.expiryDate.toISOString().slice(0, 10)}`,
+          },
+        }),
+      ]);
 
-      return { license: formatLicense(license) };
+      return { license: formatLicense(license), ...(shouldReactivate ? { tenantStatus: TenantStatus.ACTIVE } : {}) };
     },
   );
 

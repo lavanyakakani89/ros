@@ -116,19 +116,14 @@ export const creditNotesRoutes: FastifyPluginCallback = (fastify, _options, done
   fastify.post("/api/credit-notes/:id/confirm", async (request, reply) => {
     return handleError(reply, async () => {
       const { id } = idParams.parse(request.params);
-      const cn = await fastify.prisma.creditNote.findFirst({ where: { id, tenantId: request.tenant.id }, include: { items: true } });
-      if (!cn) throw new CreditNoteError("Credit note not found", 404);
-      if (cn.status !== "DRAFT") throw new CreditNoteError("Only draft credit notes can be confirmed", 409);
+      return confirmCreditNote(fastify, request.tenant.id, id);
+    });
+  });
 
-      // Restore stock for returned items
-      await fastify.prisma.$transaction(async (tx) => {
-        for (const item of cn.items) {
-          await tx.product.update({ where: { id: item.productId }, data: { currentStock: { increment: item.quantity } } });
-        }
-        await tx.creditNote.update({ where: { id }, data: { status: "CONFIRMED" } });
-      });
-
-      return { status: "ok" };
+  fastify.post("/api/credit-notes/:id/issue", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      return confirmCreditNote(fastify, request.tenant.id, id);
     });
   });
 
@@ -227,6 +222,21 @@ async function getCreditNoteOrThrow(fastify: FastifyInstance, tenantId: string, 
   }
 
   return creditNote;
+}
+
+async function confirmCreditNote(fastify: FastifyInstance, tenantId: string, id: string) {
+  const cn = await fastify.prisma.creditNote.findFirst({ where: { id, tenantId }, include: { items: true } });
+  if (!cn) throw new CreditNoteError("Credit note not found", 404);
+  if (cn.status !== "DRAFT") throw new CreditNoteError("Only draft credit notes can be confirmed", 409);
+
+  await fastify.prisma.$transaction(async (tx) => {
+    for (const item of cn.items) {
+      await tx.product.update({ where: { id: item.productId }, data: { currentStock: { increment: item.quantity } } });
+    }
+    await tx.creditNote.update({ where: { id }, data: { status: "CONFIRMED" } });
+  });
+
+  return { status: "ok" };
 }
 
 async function generateAndStoreCreditNotePdf(fastify: FastifyInstance, tenantId: string, id: string) {

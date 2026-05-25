@@ -16,11 +16,16 @@ import {
   whatsappTestMessageSchema,
   whatsappWebhookQuerySchema,
 } from "./whatsapp.schema.js";
+import { whatsappInboundQueue } from "../../jobs/whatsapp-inbound.job.js";
 
 export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new WhatsappService(fastify);
 
   fastify.get("/api/public/whatsapp/inbound", async (request, reply) => {
+    return verifyWebhookHandshake(request, reply);
+  });
+
+  fastify.get("/api/whatsapp/webhook", async (request, reply) => {
     return verifyWebhookHandshake(request, reply);
   });
 
@@ -63,7 +68,7 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
       await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, FALSE)`;
 
-      return processInboundPayload(service, tenant, request.body);
+      return queueInboundPayload(tenant, request.body);
     });
   });
 
@@ -83,7 +88,45 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
       await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, FALSE)`;
 
-      return processInboundPayload(service, tenant, request.body);
+      return queueInboundPayload(tenant, request.body);
+    });
+  });
+
+  fastify.post("/api/whatsapp/webhook", async (request, reply) => {
+    return handleWhatsapp(reply, async () => {
+      verifyWebhookSignature(request);
+      const phoneNumberId = extractPhoneNumberId(request.body);
+      if (!phoneNumberId) {
+        throw new WhatsappIntegrationError("WhatsApp webhook payload did not include phone_number_id", 400);
+      }
+
+      const integration = await fastify.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.public_whatsapp_webhook', 'true', TRUE)`;
+        return tx.whatsappIntegration.findFirst({
+          where: {
+            phoneNumberId,
+            status: {
+              in: [WhatsappIntegrationStatus.CONNECTED, WhatsappIntegrationStatus.ERROR],
+            },
+          },
+        });
+      });
+
+      if (!integration) {
+        throw new WhatsappIntegrationError("No RetailOS shop is connected to this WhatsApp phone number", 404);
+      }
+
+      const tenant = await fastify.prisma.tenant.findUnique({
+        where: {
+          id: integration.tenantId,
+        },
+      });
+      if (!tenant) {
+        throw new WhatsappIntegrationError("Connected WhatsApp shop was not found", 404);
+      }
+
+      await fastify.prisma.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, FALSE)`;
+      return queueInboundPayload(tenant, request.body);
     });
   });
 
@@ -216,7 +259,7 @@ function verifyWebhookHandshake(request: FastifyRequest, reply: FastifyReply) {
   return reply.status(403).send({ error: "WhatsApp webhook verification failed" });
 }
 
-async function processInboundPayload(service: WhatsappService, tenant: Parameters<WhatsappService["handleInboundMessage"]>[0], payload: unknown) {
+async function queueInboundPayload(tenant: Parameters<WhatsappService["handleInboundMessage"]>[0], payload: unknown) {
   const inboundMessages = extractInboundMessages(payload);
   if (inboundMessages.length === 0) {
     return {
@@ -225,15 +268,27 @@ async function processInboundPayload(service: WhatsappService, tenant: Parameter
     };
   }
 
-  const results = [];
+  const jobIds: string[] = [];
   for (const inboundMessage of inboundMessages) {
-    results.push(await service.handleInboundMessage(tenant, inboundMessage));
+    const job = await whatsappInboundQueue.add("inbound-message", {
+      tenantId: tenant.id,
+      message: inboundMessage,
+    }, {
+      attempts: 3,
+      backoff: {
+        type: "exponential",
+        delay: 1_000,
+      },
+    });
+    if (job.id) {
+      jobIds.push(String(job.id));
+    }
   }
 
   return {
-    status: "processed",
-    count: results.length,
-    results,
+    status: "queued",
+    count: inboundMessages.length,
+    jobIds,
   };
 }
 

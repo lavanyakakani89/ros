@@ -3,12 +3,14 @@ import { getVerticalConfig } from "@retailos/vertical-configs";
 import type { FastifyInstance } from "fastify";
 
 import {
+  buildCsv,
   buildExcelHtml,
   getBoolean,
   getDate,
   getNumber,
   getString,
   parseWorkbookRows,
+  sendCsv,
   sendExcelHtml,
   type ExcelColumn,
   type ExcelRow,
@@ -96,7 +98,12 @@ export function sendProductTemplate(tenant: Tenant, reply: Parameters<typeof sen
   }));
 }
 
-export async function sendProductExport(fastify: FastifyInstance, tenant: Tenant, reply: Parameters<typeof sendExcelHtml>[0]): Promise<unknown> {
+export async function sendProductExport(
+  fastify: FastifyInstance,
+  tenant: Tenant,
+  reply: Parameters<typeof sendExcelHtml>[0],
+  format: "csv" | "xls" = "xls",
+): Promise<unknown> {
   const products = await fastify.prisma.product.findMany({
     where: { tenantId: tenant.id, isActive: true },
     include: {
@@ -110,11 +117,20 @@ export async function sendProductExport(fastify: FastifyInstance, tenant: Tenant
     },
     orderBy: { name: "asc" },
   });
+  const columns = productColumns(tenant);
+  const rows = products.map(productToRow);
+
+  if (format === "csv") {
+    return sendCsv(reply, `retailos-${tenant.vertical.toLowerCase()}-products-export.csv`, buildCsv({
+      columns,
+      rows,
+    }));
+  }
 
   return sendExcelHtml(reply, `retailos-${tenant.vertical.toLowerCase()}-products-export.xls`, buildExcelHtml({
     title: "RetailOS Products Export",
-    columns: productColumns(tenant),
-    rows: products.map(productToRow),
+    columns,
+    rows,
   }));
 }
 

@@ -17,9 +17,9 @@ interface SplitPaymentInput {
 
 interface ExistingPaymentInput {
   id: string;
-  mode: PaymentMode;
+  mode: PaymentMode | null;
   amount: Prisma.Decimal;
-  createdBy: string;
+  cashierId: string | null;
 }
 
 interface EditedPaymentState {
@@ -108,7 +108,7 @@ export class BillingRepository {
               gt: 0,
             },
             status: {
-              notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED],
+              notIn: [InvoiceStatus.DRAFT, InvoiceStatus.PENDING_WHATSAPP, InvoiceStatus.CANCELLED],
             },
           }
         : {}),
@@ -318,7 +318,7 @@ export class BillingRepository {
         where: {
           id: invoiceId,
           tenantId,
-          status: InvoiceStatus.DRAFT,
+          status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.PENDING_WHATSAPP] },
         },
         include: {
           items: true,
@@ -381,15 +381,20 @@ export class BillingRepository {
       }
 
       if (payableSplitPayments.length > 0) {
-        await tx.payment.createMany({
-          data: payableSplitPayments.map((payment) => ({
+        const paymentRows = [];
+        for (const payment of payableSplitPayments) {
+          const paymentMethod = await findDefaultMethodForMode(tx, tenantId, invoice.storeId, payment.mode);
+          if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          paymentRows.push({
             tenantId,
             invoiceId,
             amount: payment.amount,
+            paymentMethodId: paymentMethod.id,
             mode: payment.mode,
-            createdBy: confirmedBy,
-          })),
-        });
+            cashierId: confirmedBy,
+          });
+        }
+        await tx.payment.createMany({ data: paymentRows });
       }
 
       const splitPaymentMode = payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode;
@@ -444,7 +449,7 @@ export class BillingRepository {
         return null;
       }
 
-      if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (stockAffectsInvoice(invoice.status)) {
         for (const item of invoice.items) {
           await tx.product.update({
             where: {
@@ -558,12 +563,17 @@ async function reconcileEditedInvoicePayments(
 
     if (payableSplitPayments.length > 0) {
       await tx.payment.createMany({
-        data: payableSplitPayments.map((payment) => ({
+        data: await Promise.all(payableSplitPayments.map(async (payment) => {
+          const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, payment.mode);
+          if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          return {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
           amount: payment.amount,
+          paymentMethodId: paymentMethod.id,
           mode: payment.mode,
-          createdBy: input.updatedBy ?? input.existingPayments[0]?.createdBy ?? "invoice-edit",
+          cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
+        };
         })),
       });
     }
@@ -599,14 +609,17 @@ async function reconcileEditedInvoicePayments(
 
   const amountPaid = roundMoney(input.grandTotal);
   if (input.existingPayments.length === 1 && input.existingPayments[0]) {
-    const existingPayment = input.existingPayments[0];
-    await tx.payment.update({
+      const existingPayment = input.existingPayments[0];
+      const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
+      if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
+      await tx.payment.update({
       where: {
         id: existingPayment.id,
       },
-      data: {
-        amount: amountPaid,
-        mode: input.selectedPaymentMode,
+        data: {
+          amount: amountPaid,
+          paymentMethodId: paymentMethod.id,
+          mode: input.selectedPaymentMode,
         ...(existingPayment.mode !== input.selectedPaymentMode
           ? {
               referenceNumber: null,
@@ -622,13 +635,16 @@ async function reconcileEditedInvoicePayments(
         invoiceId: input.invoiceId,
       },
     });
+    const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
+    if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
     await tx.payment.create({
       data: {
         tenantId: input.tenantId,
         invoiceId: input.invoiceId,
         amount: amountPaid,
+        paymentMethodId: paymentMethod.id,
         mode: input.selectedPaymentMode,
-        createdBy: input.updatedBy ?? input.existingPayments[0]?.createdBy ?? "invoice-edit",
+        cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
       },
     });
   }
@@ -647,6 +663,27 @@ function parsePaymentMode(value: unknown): PaymentMode | undefined {
     : undefined;
 }
 
+async function findDefaultMethodForMode(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  storeId: string | null,
+  mode: PaymentMode,
+) {
+  const store = storeId
+    ? { id: storeId }
+    : await tx.store.findFirst({ where: { tenantId, isActive: true }, orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }] });
+  if (!store?.id) return null;
+  return tx.paymentMethod.findFirst({
+    where: {
+      tenantId,
+      storeId: store.id,
+      shortCode: mode === PaymentMode.CREDIT ? "CRED" : mode,
+      isActive: true,
+      deletedAt: null,
+    },
+  });
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -661,7 +698,7 @@ const invoiceInclude = {
 } satisfies Prisma.InvoiceInclude;
 
 function stockAffectsInvoice(status: InvoiceStatus): boolean {
-  return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.CANCELLED;
+  return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.PENDING_WHATSAPP && status !== InvoiceStatus.CANCELLED;
 }
 
 function aggregateExistingInvoiceItems(items: Array<{ productId: string; quantity: Prisma.Decimal }>): Map<string, number> {

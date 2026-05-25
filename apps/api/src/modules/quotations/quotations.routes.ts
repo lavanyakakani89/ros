@@ -162,37 +162,14 @@ export const quotationsRoutes: FastifyPluginCallback = (fastify, _options, done)
     return handleError(reply, async () => {
       const { id } = idParams.parse(request.params);
       const input = z.object({ channel: z.enum(["whatsapp", "pdf"]).default("whatsapp") }).parse(request.body ?? {});
-      const quotation = await getQuotationOrThrow(fastify, request.tenant.id, id);
+      return shareQuotation(fastify, request.tenant, id, input.channel);
+    });
+  });
 
-      if (input.channel === "pdf") {
-        return generateAndStoreQuotationPdf(fastify, request.tenant, id);
-      }
-
-      if (!quotation.customer?.phone) {
-        throw new QuotationError("Quotation does not have a customer phone number to share with", 400);
-      }
-
-      const pdf = quotation.pdfUrl
-        ? { pdfUrl: quotation.pdfUrl, downloadUrl: quotationPdfViewUrl(quotation.id) }
-        : await generateAndStoreQuotationPdf(fastify, request.tenant, id);
-      const message = await renderWhatsappMessageTemplate(fastify, request.tenant.id, "quotationReady", {
-        customerName: quotation.customer.name,
-        tenantName: request.tenant.name,
-        quotationNumber: quotation.quotationNumber,
-        grandTotal: moneyForWhatsapp(quotation.grandTotal),
-        validUntil: quotation.validUntil?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) ?? "-",
-        pdfLine: `Download: ${pdf.downloadUrl}`,
-      });
-
-      await queueWhatsappNotification(fastify, {
-        tenantId: request.tenant.id,
-        phone: quotation.customer.phone,
-        customerId: quotation.customerId,
-        message,
-        jobName: "quotation-share",
-        eventKey: "quotationShared",
-      });
-      return { status: "queued", channel: input.channel };
+  fastify.post("/api/quotations/:id/send-whatsapp", async (request, reply) => {
+    return handleError(reply, async () => {
+      const { id } = idParams.parse(request.params);
+      return shareQuotation(fastify, request.tenant, id, "whatsapp");
     });
   });
 
@@ -225,6 +202,45 @@ async function getQuotationOrThrow(fastify: FastifyInstance, tenantId: string, i
   }
 
   return quotation;
+}
+
+async function shareQuotation(
+  fastify: FastifyInstance,
+  tenant: Parameters<typeof generateAndStoreQuotationPdf>[1],
+  id: string,
+  channel: "whatsapp" | "pdf",
+) {
+  const quotation = await getQuotationOrThrow(fastify, tenant.id, id);
+
+  if (channel === "pdf") {
+    return generateAndStoreQuotationPdf(fastify, tenant, id);
+  }
+
+  if (!quotation.customer?.phone) {
+    throw new QuotationError("Quotation does not have a customer phone number to share with", 400);
+  }
+
+  const pdf = quotation.pdfUrl
+    ? { pdfUrl: quotation.pdfUrl, downloadUrl: quotationPdfViewUrl(quotation.id) }
+    : await generateAndStoreQuotationPdf(fastify, tenant, id);
+  const message = await renderWhatsappMessageTemplate(fastify, tenant.id, "quotationReady", {
+    customerName: quotation.customer.name,
+    tenantName: tenant.name,
+    quotationNumber: quotation.quotationNumber,
+    grandTotal: moneyForWhatsapp(quotation.grandTotal),
+    validUntil: quotation.validUntil?.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }) ?? "-",
+    pdfLine: `Download: ${pdf.downloadUrl}`,
+  });
+
+  await queueWhatsappNotification(fastify, {
+    tenantId: tenant.id,
+    phone: quotation.customer.phone,
+    customerId: quotation.customerId,
+    message,
+    jobName: "quotation-share",
+    eventKey: "quotationShared",
+  });
+  return { status: "queued", channel };
 }
 
 async function generateAndStoreQuotationPdf(fastify: FastifyInstance, tenant: { id: string; name: string }, id: string) {

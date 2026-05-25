@@ -21,9 +21,10 @@ import {
   Users,
   Wifi,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
 import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
@@ -84,6 +85,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             user: {
               id: current.user.id,
               tenantId: current.user.tenantId,
+              name: current.user.name,
+              email: current.user.email,
               role: current.user.role,
               storeId: current.user.storeId ?? null,
             },
@@ -219,7 +222,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   const tenantName = tenant?.name ?? "RetailOS";
-  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
+  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "RetailOS User";
   const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
@@ -238,6 +241,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const accountLinks = [
     { href: "/settings#shop-details", label: "Shop settings", description: "GST, address, and shop details", icon: Settings },
     { href: "/settings#users", label: "Users & roles", description: "Owners, managers, staff, delivery", icon: Users },
+    { href: "/settings/payment-methods", label: "Payment methods", description: "Custom methods, UPI QR, and settlements", icon: CreditCard },
     { href: "/settings/whatsapp", label: "WhatsApp Business", description: "Orders and customer updates", icon: MessageCircle },
     { href: "/settings/printer", label: "Printer setup", description: "Thermal printer and local agent", icon: Printer },
     { href: "/settings/templates", label: "Invoice templates", description: "Thermal, A5, and A4 formats", icon: FileText },
@@ -403,6 +407,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                     links={visibleAccountLinks}
                     userName={userName}
                     userEmail={userEmail}
+                    role={role}
                     tenantName={tenantName}
                     online={online}
                     impersonation={impersonation}
@@ -473,7 +478,7 @@ interface AccountMenuLink {
   href: string;
   label: string;
   description: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: LucideIcon;
 }
 
 interface StoreOption {
@@ -486,6 +491,7 @@ function AccountMenu({
   links,
   userName,
   userEmail,
+  role,
   tenantName,
   online,
   impersonation,
@@ -495,6 +501,7 @@ function AccountMenu({
   links: AccountMenuLink[];
   userName: string;
   userEmail: string | null;
+  role: ShopRole;
   tenantName: string;
   online: boolean;
   impersonation: StoredImpersonation | null;
@@ -515,6 +522,7 @@ function AccountMenu({
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-950">{userName}</div>
             <div className="truncate text-xs text-slate-500">{userEmail ?? tenantName}</div>
+            {!impersonation ? <div className="mt-1 text-xs font-medium text-emerald-700">{formatRoleLabel(role)}</div> : null}
             {impersonation ? <div className="mt-1 text-xs font-medium text-amber-700">Support view is active</div> : null}
           </div>
         </div>
@@ -583,6 +591,13 @@ function formatTimeLeft(expiresAt: string, now: number): string {
   }
 
   return `${String(hours)}h ${String(restMinutes)}m`;
+}
+
+function formatRoleLabel(role: ShopRole): string {
+  return role
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getInitials(name: string): string {
@@ -694,7 +709,7 @@ function navigationIconClass(href: string): string {
   return "text-emerald-600";
 }
 
-type ShopRole = NonNullable<StoredAuthSession["user"]>["role"];
+type ShopRole = NonNullable<NonNullable<StoredAuthSession["user"]>["role"]>;
 
 function canAccessNavigation(role: ShopRole | undefined, href: string): boolean {
   if (role === "DELIVERY") {
@@ -730,6 +745,7 @@ function canAccessAccountLink(role: ShopRole | undefined, href: string): boolean
   if (role === "MANAGER") {
     return [
       "/settings#users",
+      "/settings/payment-methods",
       "/settings/printer",
       "/settings/templates",
       "/settings#password",

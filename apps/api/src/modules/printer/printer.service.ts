@@ -233,6 +233,10 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
   });
 }
 
+export function buildThermalReceipt(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate): { bytes: Buffer; text: string } {
+  return buildEscposInvoice(tenant, invoice, template);
+}
+
 function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate, config: EscposTemplateConfig): { bytes: Buffer; text: string } {
   const columns = config.columns;
   const totalQuantity = invoice.items.reduce((sum, item) => sum + item.quantity.toNumber(), 0);
@@ -429,6 +433,10 @@ async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | nul
     status: "queued",
     message: "Queued in PrintNode.",
   };
+}
+
+export function sendToNetworkPrinter(host: string, port: number, bytes: Buffer): Promise<void> {
+  return sendTcp(host, port, bytes);
 }
 
 function sendTcp(host: string, port: number, bytes: Buffer): Promise<void> {

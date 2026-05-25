@@ -13,10 +13,9 @@
   },
   "devDependencies": {
     "@retailos/eslint-config": "workspace:*",
-    "@retailos/shared": "workspace:*",
     "@retailos/vertical-configs": "workspace:*",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
     "autoprefixer": "^10.5.0",
     "babel-loader": "^10.1.1",
     "eslint-config-next": "14",
@@ -25,6 +24,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
+    "@retailos/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.8",
     "clsx": "^2.1.1",
     "dexie": "^4.4.2",

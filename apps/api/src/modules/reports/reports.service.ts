@@ -108,10 +108,19 @@ export class ReportsService {
 
     const invoices = await this.prisma.invoice.findMany({
       where: { tenantId: tenant.id, status: { in: activeInvoiceStatuses }, invoiceDate: { gte: dayStart, lte: dayEnd } },
-      include: { payments: true },
+      include: { payments: { include: { paymentMethod: true } } },
     });
 
-    const payments = invoices.flatMap((i) => i.payments);
+    const payments = invoices.flatMap((i) => i.payments).filter((payment) => !payment.voidedAt);
+    const methodTotals = new Map<string, { id: string; name: string; shortCode: string; color: string; type: string; total: number; count: number }>();
+    for (const payment of payments) {
+      const method = payment.paymentMethod;
+      const key = method.id;
+      const current = methodTotals.get(key) ?? { id: method.id, name: method.name, shortCode: method.shortCode, color: method.color, type: method.type.toLowerCase(), total: 0, count: 0 };
+      current.total += payment.amount.toNumber();
+      current.count += 1;
+      methodTotals.set(key, current);
+    }
     const byMode = (mode: PaymentMode) => payments.filter((p) => p.mode === mode).reduce((t, p) => t + p.amount.toNumber(), 0);
 
     const salesCash = byMode(PaymentMode.CASH);
@@ -133,6 +142,7 @@ export class ReportsService {
       salesCard,
       salesCredit,
       salesNetbanking,
+      paymentMethods: [...methodTotals.values()].map((method) => ({ ...method, total: roundNumber(method.total) })),
       totalCollection,
       invoiceCount: invoices.length,
       refunds,

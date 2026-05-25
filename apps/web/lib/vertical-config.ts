@@ -1,4 +1,6 @@
-import type { VerticalConfig } from "@retailos/shared";
+import type { StoredAuthSession, StoredTenant, VerticalConfig } from "@retailos/shared";
+
+export type { StoredAuthSession, StoredTenant, StoredUser, UserRole, VerticalConfig } from "@retailos/shared";
 
 import { clearStoredImpersonation } from "@/lib/impersonation";
 
@@ -8,25 +10,6 @@ const tenantStorageKey = "retailos.tenant";
 let authSessionMemory: StoredAuthSession | null = null;
 let tenantMemory: StoredTenant | null = null;
 let verticalConfigMemory: VerticalConfig | null = null;
-
-export interface StoredAuthSession {
-  user?: {
-    id?: string;
-    tenantId?: string;
-    name?: string;
-    email?: string;
-    role?: "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
-    storeId?: string | null;
-  };
-}
-
-export interface StoredTenant {
-  name: string;
-  slug: string;
-  status?: string;
-  gstEnabled?: boolean;
-  gstNumber?: string | null;
-}
 
 export function storeAuthSession(input: StoredAuthSession) {
   const safeSession = toSafeAuthSession(input);

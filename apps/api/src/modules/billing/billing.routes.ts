@@ -1,10 +1,17 @@
 import { z } from "zod";
-import type { FastifyPluginCallback, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { BillingError, BillingService } from "./billing.service.js";
 import { createInvoiceSchema, invoiceIdParamsSchema, invoiceListQuerySchema, updateInvoiceSchema } from "./billing.schema.js";
 import { whatsappNotifyQueue } from "../../jobs/whatsapp-notify.job.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
+
+const customerLedgerQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(25),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
 
 export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new BillingService(fastify);
@@ -285,98 +292,108 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   // Customer ledger — all invoices + payments for a customer
   fastify.get("/api/billing/customer-ledger/:customerId", async (request) => {
     const { customerId } = z.object({ customerId: z.string().min(1) }).parse(request.params);
-    const query = z.object({
-      page: z.coerce.number().int().positive().default(1),
-      limit: z.coerce.number().int().positive().max(100).default(25),
-      from: z.coerce.date().optional(),
-      to: z.coerce.date().optional(),
-    }).parse(request.query);
-    const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId: request.tenant.id } });
-    if (!customer) {
-      throw new BillingError("Customer not found", 404);
-    }
+    const query = customerLedgerQuerySchema.parse(request.query);
+    return buildCustomerLedger(fastify, request.tenant.id, customerId, query);
+  });
 
-    const invoices = await fastify.prisma.invoice.findMany({
-      where: { tenantId: request.tenant.id, customerId, status: { not: "CANCELLED" } },
-      include: {
-        payments: { orderBy: { paidAt: "asc" } },
-      },
-      orderBy: { invoiceDate: "asc" },
-    });
-    const totalBilled = roundLedgerMoney(invoices.reduce((s, i) => s + i.grandTotal.toNumber(), 0));
-    const totalPaid = roundLedgerMoney(invoices.reduce((s, i) => s + i.amountPaid.toNumber(), 0));
-    const rawEntries: Array<{
-      id: string;
-      invoiceNumber: string;
-      date: Date;
-      type: "invoice" | "payment";
-      amount: number;
-      sortOrder: number;
-    }> = [];
-
-    for (const invoice of invoices) {
-      rawEntries.push({
-        id: `invoice-${invoice.id}`,
-        invoiceNumber: invoice.invoiceNumber,
-        date: invoice.invoiceDate,
-        type: "invoice",
-        amount: invoice.grandTotal.toNumber(),
-        sortOrder: 0,
-      });
-
-      for (const payment of invoice.payments) {
-        rawEntries.push({
-          id: `payment-${payment.id}`,
-          invoiceNumber: invoice.invoiceNumber,
-          date: payment.paidAt,
-          type: "payment",
-          amount: payment.amount.toNumber(),
-          sortOrder: 1,
-        });
-      }
-    }
-
-    rawEntries.sort((left, right) => {
-      const byDate = left.date.getTime() - right.date.getTime();
-      if (byDate !== 0) {
-        return byDate;
-      }
-
-      const bySortOrder = left.sortOrder - right.sortOrder;
-      if (bySortOrder !== 0) {
-        return bySortOrder;
-      }
-
-      return left.id.localeCompare(right.id);
-    });
-
-    let balance = 0;
-    const entries = rawEntries.map((entry) => {
-      balance = roundLedgerMoney(entry.type === "invoice" ? balance + entry.amount : balance - entry.amount);
-      return {
-        id: entry.id,
-        invoiceNumber: entry.invoiceNumber,
-        date: entry.date.toISOString(),
-        type: entry.type,
-        amount: roundLedgerMoney(entry.amount),
-        balance,
-      };
-    }).reverse();
-    const filteredEntries = entries.filter((entry) => {
-      const time = Date.parse(entry.date);
-      if (query.from && time < query.from.getTime()) return false;
-      if (query.to && time > query.to.getTime()) return false;
-      return true;
-    });
-    const total = filteredEntries.length;
-    const pagedEntries = filteredEntries.slice((query.page - 1) * query.limit, query.page * query.limit);
-    const outstanding = roundLedgerMoney(totalBilled - totalPaid);
-
-    return { customer, totalBilled, totalPaid, outstanding, outstandingDue: outstanding, entries: pagedEntries, page: query.page, limit: query.limit, total };
+  fastify.get("/api/customers/:id/ledger", async (request) => {
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const query = customerLedgerQuerySchema.parse(request.query);
+    return buildCustomerLedger(fastify, request.tenant.id, id, query);
   });
 
   done();
 };
+
+async function buildCustomerLedger(
+  fastify: FastifyInstance,
+  tenantId: string,
+  customerId: string,
+  query: z.infer<typeof customerLedgerQuerySchema>,
+) {
+  const customer = await fastify.prisma.customer.findFirst({ where: { id: customerId, tenantId } });
+  if (!customer) {
+    throw new BillingError("Customer not found", 404);
+  }
+
+  const invoices = await fastify.prisma.invoice.findMany({
+    where: { tenantId, customerId, status: { not: "CANCELLED" } },
+    include: {
+      payments: { orderBy: { recordedAt: "asc" } },
+    },
+    orderBy: { invoiceDate: "asc" },
+  });
+  const totalBilled = roundLedgerMoney(invoices.reduce((s, i) => s + i.grandTotal.toNumber(), 0));
+  const totalPaid = roundLedgerMoney(invoices.reduce((s, i) => s + i.amountPaid.toNumber(), 0));
+  const rawEntries: Array<{
+    id: string;
+    invoiceNumber: string;
+    date: Date;
+    type: "invoice" | "payment";
+    amount: number;
+    sortOrder: number;
+  }> = [];
+
+  for (const invoice of invoices) {
+    rawEntries.push({
+      id: `invoice-${invoice.id}`,
+      invoiceNumber: invoice.invoiceNumber,
+      date: invoice.invoiceDate,
+      type: "invoice",
+      amount: invoice.grandTotal.toNumber(),
+      sortOrder: 0,
+    });
+
+    for (const payment of invoice.payments) {
+      rawEntries.push({
+        id: `payment-${payment.id}`,
+        invoiceNumber: invoice.invoiceNumber,
+        date: payment.recordedAt,
+        type: "payment",
+        amount: payment.amount.toNumber(),
+        sortOrder: 1,
+      });
+    }
+  }
+
+  rawEntries.sort((left, right) => {
+    const byDate = left.date.getTime() - right.date.getTime();
+    if (byDate !== 0) {
+      return byDate;
+    }
+
+    const bySortOrder = left.sortOrder - right.sortOrder;
+    if (bySortOrder !== 0) {
+      return bySortOrder;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+
+  let balance = 0;
+  const entries = rawEntries.map((entry) => {
+    balance = roundLedgerMoney(entry.type === "invoice" ? balance + entry.amount : balance - entry.amount);
+    return {
+      id: entry.id,
+      invoiceNumber: entry.invoiceNumber,
+      date: entry.date.toISOString(),
+      type: entry.type,
+      amount: roundLedgerMoney(entry.amount),
+      balance,
+    };
+  }).reverse();
+  const filteredEntries = entries.filter((entry) => {
+    const time = Date.parse(entry.date);
+    if (query.from && time < query.from.getTime()) return false;
+    if (query.to && time > query.to.getTime()) return false;
+    return true;
+  });
+  const total = filteredEntries.length;
+  const pagedEntries = filteredEntries.slice((query.page - 1) * query.limit, query.page * query.limit);
+  const outstanding = roundLedgerMoney(totalBilled - totalPaid);
+
+  return { customer, totalBilled, totalPaid, outstanding, outstandingDue: outstanding, entries: pagedEntries, page: query.page, limit: query.limit, total };
+}
 
 function roundLedgerMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;

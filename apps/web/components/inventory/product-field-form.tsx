@@ -1,12 +1,20 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import type { VerticalConfig, VerticalField } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
 import { ChevronDown, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { createProduct, type ProductPayload } from "@/lib/api-client";
+import { createAuthenticatedApiClient, createProduct, type ProductPayload } from "@/lib/api-client";
+import { formString } from "@/lib/form-values";
 import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
+
+interface SupplierOption {
+  id: string;
+  name: string;
+  phone?: string | null;
+}
 
 export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => void }>) {
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
@@ -14,6 +22,11 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [gstEnabled, setGstEnabled] = useState(true);
+  const suppliersQuery = useQuery({
+    queryKey: ["suppliers", "product-form"],
+    queryFn: () => createAuthenticatedApiClient().get<{ data: SupplierOption[] }>("/suppliers?limit=100"),
+    staleTime: 60_000,
+  });
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
@@ -82,6 +95,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
               </summary>
               <div className="border-t border-border bg-white px-3 py-3 text-xs font-semibold uppercase text-slate-500">{verticalConfig.displayName} optional fields</div>
               <div className="grid gap-4 bg-white p-3 lg:grid-cols-2">
+                <SupplierSelect suppliers={suppliersQuery.data?.data ?? []} loading={suppliersQuery.isLoading} />
                 {groupedFields.optional.map((field) => (
                   <DynamicField key={field.key} field={field} />
                 ))}
@@ -93,6 +107,22 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
         </div>
       </form>
     </section>
+  );
+}
+
+function SupplierSelect({ suppliers, loading }: Readonly<{ suppliers: SupplierOption[]; loading: boolean }>) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      Supplier
+      <select name="supplierId" className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600" defaultValue="">
+        <option value="">{loading ? "Loading suppliers..." : "No supplier"}</option>
+        {suppliers.map((supplier) => (
+          <option key={supplier.id} value={supplier.id}>
+            {supplier.name}{supplier.phone ? ` (${supplier.phone})` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -181,6 +211,7 @@ function toProductPayload(form: FormData, fields: readonly VerticalField[], gstE
     ...(payload.cessRate !== undefined ? { cessRate: payload.cessRate } : {}),
     ...(payload.hsnCode ? { hsnCode: payload.hsnCode } : {}),
     ...(payload.reorderLevel !== undefined ? { reorderLevel: payload.reorderLevel } : {}),
+    ...(formString(form, "supplierId") ? { supplierId: formString(form, "supplierId") } : {}),
     ...(payload.purchaseUnit ? { purchaseUnit: payload.purchaseUnit } : {}),
     salesUnit,
     ...(payload.alternateUnit ? { alternateUnit: payload.alternateUnit } : {}),
@@ -229,6 +260,7 @@ const productKeys: Record<keyof ProductPayload, true> = {
   hsnCode: true,
   currentStock: true,
   reorderLevel: true,
+  supplierId: true,
   purchaseUnit: true,
   salesUnit: true,
   alternateUnit: true,

@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "types": ["react", "node"],
+    "paths": {
+      "@/*": ["src/*"],
+      "@retailos/shared": ["../../packages/shared/src/index.ts"],
+      "@retailos/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts"]
+}
