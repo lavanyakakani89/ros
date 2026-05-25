@@ -133,7 +133,10 @@ export async function getCurrentVerticalConfig(): Promise<{
   user?: {
     id: string;
     tenantId: string;
+    name: string;
+    email: string;
     role: string;
+    storeId?: string | null;
   } | null;
   isImpersonated?: boolean;
   impersonation?: StoredImpersonation | null;
@@ -153,7 +156,10 @@ export async function getCurrentVerticalConfig(): Promise<{
     user?: {
       id: string;
       tenantId: string;
+      name: string;
+      email: string;
       role: string;
+      storeId?: string | null;
     } | null;
     isImpersonated?: boolean;
     impersonation?: StoredImpersonation | null;
