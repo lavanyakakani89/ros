@@ -128,11 +128,11 @@ JOIN "payment_methods" pm ON pm."store_id" = COALESCE(
       LIMIT 1
     )
   )
+WHERE ip."invoice_id" = i."id"
   AND pm."short_code" = CASE COALESCE(ip."mode"::TEXT, i."payment_mode"::TEXT)
     WHEN 'CREDIT' THEN 'CRED'
     ELSE COALESCE(ip."mode"::TEXT, i."payment_mode"::TEXT)
-  END
-WHERE ip."invoice_id" = i."id";
+  END;
 
 UPDATE "invoice_payments" ip
 SET "cashier_id" = ip."created_by"
