@@ -64,6 +64,7 @@ export interface ProductPayload {
   hsnCode?: string;
   currentStock: number;
   reorderLevel?: number;
+  supplierId?: string;
   purchaseUnit?: string;
   salesUnit?: string;
   alternateUnit?: string;

@@ -26,6 +26,7 @@ export interface InvoiceRecord {
   dueDate?: string | null;
   paymentMode: string;
   notes?: string | null;
+  pdfUrl?: string | null;
   paymentLinkId?: string | null;
   verticalData?: Record<string, unknown> | null;
   customer?: {
@@ -444,6 +445,8 @@ function InvoiceDetailPanel({
     );
   }
 
+  const showPdfAction = process.env.NEXT_PUBLIC_ENABLE_INVOICE_HISTORY_PDF === "true" || Boolean(invoice.pdfUrl);
+
   return (
     <aside className="min-h-0 border-l border-border bg-slate-50">
       <div className="flex h-full min-h-0 flex-col">
@@ -489,10 +492,12 @@ function InvoiceDetailPanel({
               Edit invoice
             </button>
           ) : null}
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
-            <Printer className="size-4" aria-hidden="true" />
-            Print PDF
-          </button>
+          {showPdfAction ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
+              <Printer className="size-4" aria-hidden="true" />
+              Print PDF
+            </button>
+          ) : null}
           {invoice.customer?.phone ? (
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => onShareWhatsapp(invoice)}>
               <MessageCircle className="size-4" aria-hidden="true" />

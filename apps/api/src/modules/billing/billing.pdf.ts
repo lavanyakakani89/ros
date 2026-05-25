@@ -31,8 +31,8 @@ export async function generateGstInvoicePdf(input: {
     tenantLogoDataUrl: logoDataUrl,
     customer: input.invoice.customer ?? null,
     gstEnabled,
-    invoiceTitle: gstEnabled ? "GST Invoice" : "Sales Invoice",
-    invoiceDate: input.invoice.invoiceDate.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }),
+    invoiceTitle: gstEnabled ? "Tax Invoice" : "Invoice",
+    invoiceDate: formatDateOnly(input.invoice.invoiceDate),
     items: input.invoice.items.map((item) => ({
       ...item,
       quantity: item.quantity.toString(),
@@ -265,6 +265,19 @@ function registerInvoiceTemplateHelpers() {
   Handlebars.registerHelper("formatDate", dateHelper);
   Handlebars.registerHelper("fmtDateTime", dateTimeHelper);
   Handlebars.registerHelper("formatDateTime", dateTimeHelper);
+  Handlebars.registerHelper("inWords", function inWordsHelper(this: unknown, value: unknown) {
+    if (isHandlebarsOptions(value)) {
+      const context = toTemplateRecord(this);
+      const existing = context.inWords;
+      if (typeof existing === "string" && existing.trim()) {
+        return existing;
+      }
+
+      return `${moneyHelper(context.grandTotal)} rupees only`;
+    }
+
+    return `${moneyHelper(value)} rupees only`;
+  });
   Handlebars.registerHelper("inc", (value: unknown) => toNumber(value) + 1);
   Handlebars.registerHelper("add", (left: unknown, right: unknown) => toNumber(left) + toNumber(right));
   Handlebars.registerHelper("subtract", (left: unknown, right: unknown) => toNumber(left) - toNumber(right));
@@ -305,7 +318,26 @@ function formatDate(value: unknown, includeTime: boolean): string {
 
   return includeTime
     ? date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })
-    : date.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+    : formatDateOnly(date);
+}
+
+function formatDateOnly(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).formatToParts(date);
+  const part = (type: string) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("day")}-${part("month")}-${part("year")}`;
+}
+
+function isHandlebarsOptions(value: unknown): value is Handlebars.HelperOptions {
+  return Boolean(value && typeof value === "object" && "hash" in value && "data" in value);
+}
+
+function toTemplateRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function toNumber(value: unknown): number {

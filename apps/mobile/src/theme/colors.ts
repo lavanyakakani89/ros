@@ -1,0 +1,18 @@
+export const colors = {
+  teal: "#0F6E56",
+  tealLight: "#E1F5EE",
+  tealMid: "#1D9E75",
+  amber: "#B45309",
+  amberLight: "#FEF3C7",
+  red: "#991B1B",
+  redLight: "#FEE2E2",
+  blue: "#1E40AF",
+  blueLight: "#DBEAFE",
+  slate: "#0F172A",
+  slateMid: "#334155",
+  slateLight: "#F1F5F9",
+  border: "#E2E8F0",
+  white: "#FFFFFF",
+  ink: "#1E293B",
+  background: "#F8FAFC",
+} as const;

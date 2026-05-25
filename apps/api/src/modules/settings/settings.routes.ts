@@ -22,7 +22,16 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return service.listUsers(request.tenant);
   });
 
+  fastify.get("/api/users", async (request) => {
+    return service.listUsers(request.tenant);
+  });
+
   fastify.post("/api/settings/users", async (request, reply) => {
+    const input = createUserSchema.parse(request.body);
+    return handleSettings(reply, () => service.createUser(request.tenant, request.user, input));
+  });
+
+  fastify.post("/api/users", async (request, reply) => {
     const input = createUserSchema.parse(request.body);
     return handleSettings(reply, () => service.createUser(request.tenant, request.user, input));
   });

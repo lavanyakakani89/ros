@@ -108,7 +108,7 @@ export class BillingRepository {
               gt: 0,
             },
             status: {
-              notIn: [InvoiceStatus.DRAFT, InvoiceStatus.CANCELLED],
+              notIn: [InvoiceStatus.DRAFT, InvoiceStatus.PENDING_WHATSAPP, InvoiceStatus.CANCELLED],
             },
           }
         : {}),
@@ -318,7 +318,7 @@ export class BillingRepository {
         where: {
           id: invoiceId,
           tenantId,
-          status: InvoiceStatus.DRAFT,
+          status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.PENDING_WHATSAPP] },
         },
         include: {
           items: true,
@@ -444,7 +444,7 @@ export class BillingRepository {
         return null;
       }
 
-      if (invoice.status !== InvoiceStatus.DRAFT) {
+      if (stockAffectsInvoice(invoice.status)) {
         for (const item of invoice.items) {
           await tx.product.update({
             where: {
@@ -661,7 +661,7 @@ const invoiceInclude = {
 } satisfies Prisma.InvoiceInclude;
 
 function stockAffectsInvoice(status: InvoiceStatus): boolean {
-  return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.CANCELLED;
+  return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.PENDING_WHATSAPP && status !== InvoiceStatus.CANCELLED;
 }
 
 function aggregateExistingInvoiceItems(items: Array<{ productId: string; quantity: Prisma.Decimal }>): Map<string, number> {

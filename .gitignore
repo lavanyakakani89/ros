@@ -15,6 +15,9 @@ pnpm-debug.log*
 whatsapp-session/
 *.session
 .claude/worktrees/
+.android-local/
+apps/mobile/android/
+apps/mobile/artifacts/
 apps/web/public/sw.js
 apps/web/public/workbox-*.js
 apps/web/public/fallback-*.js

@@ -1,4 +1,4 @@
-import { LoyaltyTxType, UserRole } from "@prisma/client";
+import { LoyaltyTxType, UserRole, type Prisma } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -23,8 +23,55 @@ const customerListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
   search: z.string().trim().min(1).optional(),
 });
+const loyaltyProgramDefaults = {
+  enabled: true,
+  pointsPerRupee: POINTS_PER_RUPEE,
+  pointsExpiryDays: POINTS_EXPIRY_DAYS,
+  redeemRate: 1,
+  minRedeemPoints: 1,
+};
+const loyaltyProgramSchema = z.object({
+  enabled: z.boolean().optional(),
+  pointsPerRupee: z.coerce.number().min(0).optional(),
+  pointsExpiryDays: z.coerce.number().int().positive().optional(),
+  redeemRate: z.coerce.number().min(0).optional(),
+  minRedeemPoints: z.coerce.number().int().min(0).optional(),
+});
 
 export const loyaltyRoutes: FastifyPluginCallback = (fastify, _options, done) => {
+  fastify.get("/api/loyalty/program", async (request, reply) => {
+    return handleError(reply, async () => {
+      const tenant = await fastify.prisma.tenant.findUnique({
+        where: { id: request.tenant.id },
+        select: { loyaltyProgram: true },
+      });
+
+      return normalizeLoyaltyProgram(tenant?.loyaltyProgram);
+    });
+  });
+
+  fastify.put("/api/loyalty/program", async (request, reply) => {
+    return handleError(reply, async () => {
+      ensureManager(request.user.role);
+      const input = loyaltyProgramSchema.parse(request.body ?? {});
+      const tenant = await fastify.prisma.tenant.findUnique({
+        where: { id: request.tenant.id },
+        select: { loyaltyProgram: true },
+      });
+      const nextProgram = {
+        ...normalizeLoyaltyProgram(tenant?.loyaltyProgram),
+        ...input,
+      };
+
+      await fastify.prisma.tenant.update({
+        where: { id: request.tenant.id },
+        data: { loyaltyProgram: nextProgram },
+      });
+      await fastify.redis.del(`tenant:${request.tenant.id}`);
+      return nextProgram;
+    });
+  });
+
   fastify.get("/api/loyalty/tiers", async (request, reply) => {
     return handleError(reply, async () => fastify.prisma.loyaltyTier.findMany({
       where: { tenantId: request.tenant.id },
@@ -272,6 +319,29 @@ function ensureManager(role: UserRole): void {
 
 function loyaltyExpiryDate(): Date {
   return new Date(Date.now() + POINTS_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function normalizeLoyaltyProgram(value: Prisma.JsonValue | null | undefined): typeof loyaltyProgramDefaults {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return loyaltyProgramDefaults;
+  }
+
+  const record = Object.fromEntries(Object.entries(value));
+  return {
+    enabled: typeof record.enabled === "boolean" ? record.enabled : loyaltyProgramDefaults.enabled,
+    pointsPerRupee: numberOrDefault(record.pointsPerRupee, loyaltyProgramDefaults.pointsPerRupee),
+    pointsExpiryDays: integerOrDefault(record.pointsExpiryDays, loyaltyProgramDefaults.pointsExpiryDays),
+    redeemRate: numberOrDefault(record.redeemRate, loyaltyProgramDefaults.redeemRate),
+    minRedeemPoints: integerOrDefault(record.minRedeemPoints, loyaltyProgramDefaults.minRedeemPoints),
+  };
+}
+
+function numberOrDefault(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function integerOrDefault(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isInteger(value) ? value : fallback;
 }
 
 async function recalculateCustomerTier(fastify: FastifyInstance, tenantId: string, customerId: string): Promise<void> {

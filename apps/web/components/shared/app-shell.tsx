@@ -21,9 +21,10 @@ import {
   Users,
   Wifi,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
 import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
@@ -473,7 +474,7 @@ interface AccountMenuLink {
   href: string;
   label: string;
   description: string;
-  icon: ComponentType<{ className?: string }>;
+  icon: LucideIcon;
 }
 
 interface StoreOption {

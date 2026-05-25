@@ -108,7 +108,7 @@ export class BillingService {
     try {
       const invoice = await this.repository.confirmInvoice(tenant.id, invoiceId, confirmedBy);
       if (!invoice) {
-        throw new BillingError("Draft invoice not found", 404);
+        throw new BillingError("Draft invoice not found or already confirmed", 404);
       }
 
       await this.notifyWhatsappInvoiceConfirmed(tenant, invoice).catch((error: unknown) => {

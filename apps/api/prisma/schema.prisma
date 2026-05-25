@@ -18,6 +18,7 @@ model Tenant {
   address            String?
   logoUrl            String?             @map("logo_url") @db.Text
   whatsappNotificationSettings Json       @default("{}") @map("whatsapp_notification_settings")
+  loyaltyProgram     Json                @default("{}") @map("loyalty_program")
   requirePoApproval  Boolean             @default(false) @map("require_po_approval")
   timezone           String              @default("Asia/Kolkata")
   currency           String              @default("INR")
@@ -112,13 +113,30 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
+  pushTokens    ExpoPushToken[]
   storeAssignments StoreUserAssignment[]
+
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
   @@index([tenantId])
   @@index([tenantId, primaryStoreId])
   @@map("users")
+}
+
+model ExpoPushToken {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId  String   @map("tenant_id")
+  token     String   @unique
+  platform  String   @default("android")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([tenantId])
+  @@map("expo_push_tokens")
 }
 
 enum UserRole {
@@ -482,6 +500,7 @@ model InvoiceItem {
 
 enum InvoiceStatus {
   DRAFT
+  PENDING_WHATSAPP
   CONFIRMED
   PAID
   PARTIAL

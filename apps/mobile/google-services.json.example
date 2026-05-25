@@ -1,0 +1,27 @@
+{
+  "_comment": "PLACEHOLDER - replace with real google-services.json from Firebase Console",
+  "_instructions": [
+    "1. Go to console.firebase.google.com",
+    "2. Create project named RetailOS",
+    "3. Add Android app with package: in.sivsanoils.retailos",
+    "4. Download google-services.json",
+    "5. Place it at apps/mobile/google-services.json",
+    "6. Never commit the real google-services.json to git"
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "retailos-placeholder",
+    "storage_bucket": "retailos-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+        "android_client_info": { "package_name": "in.sivsanoils.retailos" }
+      },
+      "api_key": [{ "current_key": "placeholder-replace-with-real-key" }],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    }
+  ],
+  "configuration_version": "1"
+}

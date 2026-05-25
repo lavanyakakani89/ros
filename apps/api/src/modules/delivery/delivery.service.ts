@@ -9,6 +9,7 @@ import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, Deliv
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
+import { sendPushToUser } from "../../lib/push-notifications.js";
 
 export interface DeliveryActor {
   userId: string;
@@ -92,6 +93,13 @@ export class DeliveryService {
     await this.notifyWhatsappDeliveryStatus(tenant, delivery, input.status).catch((error: unknown) => {
       this.fastify.log.error({ error, tenantId: tenant.id, deliveryId }, "Failed to queue WhatsApp delivery update");
     });
+    if (input.status === DeliveryStatus.DELIVERED && delivery?.assignedTo) {
+      await sendPushToUser(this.fastify.prisma, delivery.assignedTo, {
+        title: "Delivery completed",
+        body: `${delivery.invoice.invoiceNumber} marked delivered`,
+        data: { type: "DELIVERY_DELIVERED", deliveryId },
+      });
+    }
 
     return actor?.role === UserRole.DELIVERY ? stripDeliveryFinancials(delivery) : delivery;
   }

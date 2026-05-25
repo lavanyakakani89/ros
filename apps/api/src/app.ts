@@ -15,6 +15,7 @@ import { expireLoyaltyPoints } from "./jobs/loyalty-expiry.job.js";
 import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
 import { expireOverdueQuotations } from "./jobs/quotation-expiry.job.js";
 import { createWhatsappCampaignWorker } from "./jobs/whatsapp-campaign.job.js";
+import { createWhatsappInboundWorker } from "./jobs/whatsapp-inbound.job.js";
 import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
@@ -28,6 +29,7 @@ import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { stockCountRoutes } from "./modules/inventory/stock-count.routes.js";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
+import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { printerRoutes } from "./modules/printer/printer.routes.js";
 import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes.js";
@@ -122,6 +124,7 @@ export async function buildServer(): Promise<FastifyInstance> {
         database: "ok",
         redis: "ok",
       },
+      build: getBuildInfo(),
     };
   }
 
@@ -147,6 +150,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(printerRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(deliveryRoutes);
+  await fastify.register(notificationsRoutes);
   await fastify.register(reportsRoutes);
   await fastify.register(settingsRoutes);
   await fastify.register(storesRoutes);
@@ -161,7 +165,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(whatsappCampaignsRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
-    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker(), createWhatsappCampaignWorker()];
+    const workers = [
+      createExpiryAlertsWorker(),
+      createPdfGenerateWorker(),
+      createWhatsappNotifyWorker(),
+      createWhatsappCampaignWorker(),
+      createWhatsappInboundWorker(fastify),
+    ];
 
     for (const worker of workers) {
       worker.on("failed", (job, error) => {
@@ -195,6 +205,18 @@ export async function buildServer(): Promise<FastifyInstance> {
   }
 
   return fastify;
+}
+
+function getBuildInfo() {
+  return {
+    commit: nonEmpty(process.env.RETAILOS_BUILD_SHA),
+    branch: nonEmpty(process.env.RETAILOS_BUILD_BRANCH),
+    builtAt: nonEmpty(process.env.RETAILOS_BUILD_TIME),
+  };
+}
+
+function nonEmpty(value: string | undefined): string | null {
+  return value && value.trim().length > 0 ? value : null;
 }
 
 function validationIssueSummary(issues: Array<{ field: string; message: string }>): string {

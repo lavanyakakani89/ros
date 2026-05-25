@@ -27,7 +27,12 @@ export class PaymentsRepository {
         },
       });
 
-      if (!invoice || invoice.status === InvoiceStatus.CANCELLED || invoice.status === InvoiceStatus.DRAFT) {
+      if (
+        !invoice ||
+        invoice.status === InvoiceStatus.CANCELLED ||
+        invoice.status === InvoiceStatus.DRAFT ||
+        invoice.status === InvoiceStatus.PENDING_WHATSAPP
+      ) {
         return null;
       }
 

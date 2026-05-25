@@ -181,6 +181,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [knownProducts, setKnownProducts] = useState<ProductRecord[]>([]);
 
+  function focusBarcodeSoon() {
+    window.setTimeout(() => barcodeRef.current?.focus(), 0);
+  }
+
   const productSearch = buildProductSearchTerm(barcodeInput);
   const productExactQuery = useQuery({
     queryKey: ["products", "billing-lookup", productSearch.value],
@@ -887,6 +891,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       notify(error instanceof Error ? error.message : isEditMode ? "Unable to update invoice." : "Unable to create invoice.", "red");
     } finally {
       setIsSubmitting(false);
+      focusBarcodeSoon();
     }
   }
 
@@ -1028,18 +1033,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setSelectedPaymentMode("CASH");
     setLastBill(null);
     onEditComplete?.();
-    barcodeRef.current?.focus();
+    focusBarcodeSoon();
   }
 
   function holdCurrentBill(customerId: string) {
     holdBill(customerId);
     setQuantityDrafts({});
+    focusBarcodeSoon();
   }
 
   function restoreHeldBill(billId: string) {
     restoreHeld(billId);
     setQuantityDrafts({});
     setShowHeld(false);
+    focusBarcodeSoon();
   }
 
   function removeBillingLine(lineId: string) {
@@ -1142,7 +1149,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 Held ({heldBills.length})
               </button>
             ) : null}
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
+            <button
+              className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50 ${
+                heldBills.length > 0 ? "border-amber-300 bg-amber-50 text-amber-800" : "border-border text-amber-700"
+              }`}
+              onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")}
+              disabled={lines.length === 0 || isEditMode}
+            >
               <Pause className="size-4" aria-hidden="true" />
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
             </button>
@@ -1474,15 +1487,26 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           {PAYMENT_SHORTCUTS.map((shortcut) => (
             <button key={shortcut.mode} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 disabled:opacity-50" onClick={() => void confirmInvoice(shortcut.mode)} disabled={isSubmitting || lines.length === 0}>
               <span className="block">{useSplit ? "Confirm split" : isEditMode ? `Save ${shortcut.label}` : shortcut.label}</span>
-              <span className="text-xs font-medium text-emerald-700">{useSplit ? "Uses split rows" : shortcut.displayKey}</span>
+              {useSplit ? (
+                <span className="text-xs font-medium text-emerald-700">Uses split rows</span>
+              ) : (
+                <kbd className="mt-1 inline-flex rounded border border-emerald-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-800">
+                  {shortcut.displayKey}
+                </kbd>
+              )}
             </button>
           ))}
         </div>
 
         <div className="mt-4 rounded-md border border-border bg-slate-50 p-2 text-xs text-slate-600">
-          Network: {online ? "online" : "offline"} | Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
+          Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
           <div className="mt-1">Offline bills sync after sign-in and internet restore. PDF/print is available after sync.</div>
-          <div className="mt-1">Shortcuts: Ctrl+H hold | Ctrl+N new bill | Ctrl+P print preview</div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            Shortcuts:
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+H</kbd> hold
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+N</kbd> new bill
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+P</kbd> print preview
+          </div>
         </div>
 
         {status ? (
