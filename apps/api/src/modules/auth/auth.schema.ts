@@ -4,14 +4,6 @@ import { z } from "zod";
 
 import { loginIdentifierPattern, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
 
-const loginIdentifierSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(254)
-  .regex(loginIdentifierPattern, "Use a username or email without spaces")
-  .transform(normalizeLoginIdentifier);
-
 const optionalUsernameSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z

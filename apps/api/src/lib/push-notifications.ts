@@ -15,12 +15,11 @@ export async function sendPushToUser(
   notification: NotificationPayload,
 ): Promise<void> {
   try {
-    const expoPushToken = (prisma as any).expoPushToken;
-    const tokens = await expoPushToken.findMany({
+    const tokens = await prisma.expoPushToken.findMany({
       where: { userId },
       select: { token: true },
     });
-    await sendMessages(tokens.map((record: { token: string }) => record.token), notification);
+    await sendMessages(tokens.map((record) => record.token), notification);
   } catch (error) {
     console.error("Failed to send Expo push notification to user", { error, userId });
   }
@@ -41,14 +40,13 @@ export async function sendPushToTenant(
       },
       select: { id: true },
     });
-    const expoPushToken = (prisma as any).expoPushToken;
-    const tokens = await expoPushToken.findMany({
+    const tokens = await prisma.expoPushToken.findMany({
       where: {
         userId: { in: users.map((user) => user.id) },
       },
       select: { token: true },
     });
-    await sendMessages(tokens.map((record: { token: string }) => record.token), notification);
+    await sendMessages(tokens.map((record) => record.token), notification);
   } catch (error) {
     console.error("Failed to send Expo push notification to tenant", { error, tenantId });
   }

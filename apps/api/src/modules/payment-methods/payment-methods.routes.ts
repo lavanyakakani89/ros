@@ -3,8 +3,8 @@ import type { FastifyPluginCallback } from "fastify";
 import QRCode from "qrcode";
 import { z } from "zod";
 
-const paymentMethodTypeSchema = z.preprocess((value) => String(value ?? "CUSTOM").toUpperCase(), z.nativeEnum(PaymentMethodType));
-const settlementStatusSchema = z.preprocess((value) => String(value ?? "").toUpperCase(), z.nativeEnum(SettlementStatus));
+const paymentMethodTypeSchema = z.preprocess((value) => toUpperString(value, "CUSTOM"), z.nativeEnum(PaymentMethodType));
+const settlementStatusSchema = z.preprocess((value) => toUpperString(value, ""), z.nativeEnum(SettlementStatus));
 const roleListSchema = z.array(z.string().trim().transform((role) => role.toUpperCase())).default([]);
 
 const queryBooleanSchema = z.preprocess((value) => {
@@ -33,7 +33,7 @@ const methodPayloadSchema = z.object({
   upi_id: z.string().trim().max(128).nullable().optional(),
   partner_id: z.string().trim().min(1).nullable().optional(),
   opening_balance: z.coerce.number().finite().optional(),
-  settlement_frequency: z.preprocess((value) => value === null || value === "" || value === undefined ? null : String(value).toUpperCase(), z.enum(["DAILY", "WEEKLY", "MONTHLY"]).nullable()).optional(),
+  settlement_frequency: z.preprocess((value) => value === null || value === "" || value === undefined ? null : toUpperString(value, ""), z.enum(["DAILY", "WEEKLY", "MONTHLY"]).nullable()).optional(),
   allowed_roles: roleListSchema.optional(),
   storeId: z.string().min(1).optional(),
 });
@@ -168,7 +168,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         where: { id: item.id },
         data: {
           displayOrder: item.display_order,
-          keyboardShortcut: index < 9 ? `Ctrl+${index + 1}` : null,
+          keyboardShortcut: index < 9 ? `Ctrl+${String(index + 1)}` : null,
         },
       });
     }));
@@ -267,6 +267,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       if (method.requiresReference && !leg.reference_number) throw statusError(`Reference required for ${method.name}`, 400);
       if (method.allowedRoles.length > 0 && !method.allowedRoles.includes(request.user.role)) throw statusError(`Payment method "${method.name}" is not available for your role`, 403);
     }
+    const firstPayment = input.payments[0];
+    if (!firstPayment) throw statusError("At least one payment is required", 400);
     const result = await fastify.prisma.$transaction(async (tx) => {
       await tx.payment.createMany({
         data: input.payments.map((leg) => {
@@ -294,8 +296,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
           amountPaid: total,
           amountDue: 0,
           status: InvoiceStatus.PAID,
-          paymentMethodId: input.payments[0]!.payment_method_id,
-          paymentMode: legacyMode(methodById.get(input.payments[0]?.payment_method_id ?? "")?.type) ?? PaymentMode.CASH,
+          paymentMethodId: firstPayment.payment_method_id,
+          paymentMode: legacyMode(methodById.get(firstPayment.payment_method_id)?.type) ?? PaymentMode.CASH,
         },
         include: { payments: { include: { paymentMethod: true } } },
       });
@@ -734,4 +736,8 @@ function endOfDay(date: Date) {
 
 function roundMoney(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function toUpperString(value: unknown, fallback: string) {
+  return typeof value === "string" ? value.toUpperCase() : fallback;
 }

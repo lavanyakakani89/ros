@@ -13,9 +13,7 @@ const unregisterPushTokenSchema = z.object({
 export const notificationsRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.post("/api/notifications/register", async (request) => {
     const input = registerPushTokenSchema.parse(request.body);
-    const expoPushToken = (fastify.prisma as any).expoPushToken;
-
-    await expoPushToken.upsert({
+    await fastify.prisma.expoPushToken.upsert({
       where: { token: input.token },
       create: {
         token: input.token,
@@ -35,9 +33,7 @@ export const notificationsRoutes: FastifyPluginCallback = (fastify, _options, do
 
   fastify.delete("/api/notifications/register", async (request) => {
     const input = unregisterPushTokenSchema.parse(request.body);
-    const expoPushToken = (fastify.prisma as any).expoPushToken;
-
-    await expoPushToken.deleteMany({
+    await fastify.prisma.expoPushToken.deleteMany({
       where: {
         token: input.token,
         userId: request.user.userId,

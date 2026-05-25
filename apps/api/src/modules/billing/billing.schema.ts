@@ -1,7 +1,6 @@
 import { createInvoiceItemSchema, createInvoiceSchema, confirmInvoiceSchema } from "@retailos/shared";
 import { z } from "zod";
 
-const decimalSchema = z.coerce.number().finite();
 const queryBooleanSchema = z.preprocess((value) => {
   if (value === undefined) return false;
   if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());

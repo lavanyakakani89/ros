@@ -281,7 +281,7 @@ async function queueInboundPayload(tenant: Parameters<WhatsappService["handleInb
       },
     });
     if (job.id) {
-      jobIds.push(String(job.id));
+      jobIds.push(job.id);
     }
   }
 
