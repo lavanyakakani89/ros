@@ -144,7 +144,7 @@ export function PaymentMethodsSettings() {
       color: "#1a6e4a",
       icon: "ti-cash",
       display_order: nextOrder,
-      keyboard_shortcut: nextOrder <= 9 ? `Ctrl+${nextOrder}` : "",
+      keyboard_shortcut: nextOrder <= 9 ? `Ctrl+${String(nextOrder)}` : "",
       requires_reference: false,
       reference_label: "",
       allows_split: true,
@@ -169,8 +169,10 @@ export function PaymentMethodsSettings() {
     const storeName = getStoredTenant()?.name ?? "RetailOS";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
-    printWindow.document.write(`<!doctype html><html><head><title>${escapeHtml(method.name)} QR</title><style>@page{size:100mm 120mm;margin:5mm}body{font-family:sans-serif;text-align:center}.store-name{font-size:16pt;font-weight:bold;margin-bottom:8px}.qr{width:80mm;height:80mm}.upi-id{font-size:11pt;margin-top:8px;color:#333}.tagline{font-size:9pt;color:#666;margin-top:4px}</style></head><body onload="window.print()"><div class="store-name">${escapeHtml(storeName)}</div><img class="qr" src="${method.upi_qr_data}" alt="UPI QR" /><div class="upi-id">${escapeHtml(method.upi_id ?? "")}</div><div class="tagline">Scan to pay via any UPI app</div></body></html>`);
-    printWindow.document.close();
+    printWindow.document.title = `${method.name} QR`;
+    printWindow.document.head.innerHTML = "<style>@page{size:100mm 120mm;margin:5mm}body{font-family:sans-serif;text-align:center}.store-name{font-size:16pt;font-weight:bold;margin-bottom:8px}.qr{width:80mm;height:80mm}.upi-id{font-size:11pt;margin-top:8px;color:#333}.tagline{font-size:9pt;color:#666;margin-top:4px}</style>";
+    printWindow.document.body.innerHTML = `<div class="store-name">${escapeHtml(storeName)}</div><img class="qr" src="${method.upi_qr_data}" alt="UPI QR" /><div class="upi-id">${escapeHtml(method.upi_id ?? "")}</div><div class="tagline">Scan to pay via any UPI app</div>`;
+    printWindow.setTimeout(() => printWindow.print(), 0);
   }
 
   return (
@@ -224,7 +226,7 @@ export function PaymentMethodsSettings() {
               <button className="rounded p-2 text-slate-500 hover:bg-slate-100" onClick={() => setEditing(fromMethod(method))}><Edit3 className="size-4" /></button>
               <button className="rounded p-2 text-red-600 hover:bg-red-50" onClick={() => {
                 const action = method.transaction_count > 0 || method.is_default ? "archive" : "delete";
-                if (window.confirm(`${method.name} will be ${action}d.${method.transaction_count > 0 ? ` It has ${method.transaction_count} transactions and history will stay locked.` : ""}`)) {
+                if (window.confirm(`${method.name} will be ${action}d.${method.transaction_count > 0 ? ` It has ${method.transaction_count.toString()} transactions and history will stay locked.` : ""}`)) {
                   deleteMutation.mutate(method.id);
                 }
               }} disabled={method.is_default && method.type === "cash"}><Trash2 className="size-4" /></button>
@@ -400,8 +402,8 @@ function fromMethod(method: PaymentMethodRecord): MethodFormState {
     upi_id: method.upi_id ?? "",
     partner_id: method.partner_id ?? "",
     settlement_frequency: method.settlement_frequency ?? "",
-    opening_balance: String(method.opening_balance ?? 0),
-    allowed_roles: method.allowed_roles ?? [],
+    opening_balance: String(method.opening_balance),
+    allowed_roles: method.allowed_roles,
     is_default: method.is_default,
     transaction_count: method.transaction_count,
   };

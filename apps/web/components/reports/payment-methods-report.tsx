@@ -84,9 +84,9 @@ export function PaymentMethodsReport() {
     if (!statement) return;
     const rows = [
       ["Date", "Time", "Invoice", "Customer", "Cashier", "Type", "Reference", "Amount", "Balance"],
-      ...filteredTransactions.map((row) => [row.date, row.time, row.invoice_number, row.customer_name, row.cashier_name, row.type, row.reference_number ?? "", String(row.amount), String(row.running_balance)]),
+      ...filteredTransactions.map((row) => [row.date, row.time, row.invoice_number, row.customer_name, row.cashier_name, row.type, row.reference_number ?? "", row.amount.toFixed(2), row.running_balance.toFixed(2)]),
     ];
-    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+    const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -154,7 +154,7 @@ export function PaymentMethodsReport() {
                 </thead>
                 <tbody>
                   {filteredTransactions.map((row) => (
-                    <tr key={`${row.invoice_number}-${row.time}-${row.amount}`} className={`border-t border-border ${row.type === "void" ? "text-slate-400 line-through" : "text-slate-700"}`}>
+                    <tr key={`${row.invoice_number}-${row.time}-${row.amount.toString()}`} className={`border-t border-border ${row.type === "void" ? "text-slate-400 line-through" : "text-slate-700"}`}>
                       <td className="px-3 py-2">{row.date} {row.time}</td>
                       <td className="px-3 py-2 font-medium">{row.invoice_number}</td>
                       <td className="px-3 py-2">{row.customer_name}</td>
@@ -192,5 +192,5 @@ function Metric({ label, value, tone = "neutral", format = "money" }: Readonly<{
 }
 
 function money(value: number) {
-  return `Rs ${Number(value || 0).toFixed(2)}`;
+  return `Rs ${(value || 0).toFixed(2)}`;
 }

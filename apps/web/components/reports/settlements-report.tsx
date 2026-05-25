@@ -180,5 +180,5 @@ function SettlementMetric({ label, value }: Readonly<{ label: string; value: num
 }
 
 function money(value: number) {
-  return `Rs ${Number(value || 0).toFixed(2)}`;
+  return `Rs ${(value || 0).toFixed(2)}`;
 }
