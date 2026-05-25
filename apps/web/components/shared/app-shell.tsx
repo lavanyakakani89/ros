@@ -85,6 +85,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             user: {
               id: current.user.id,
               tenantId: current.user.tenantId,
+              name: current.user.name,
+              email: current.user.email,
               role: current.user.role,
               storeId: current.user.storeId ?? null,
             },
@@ -220,7 +222,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   const tenantName = tenant?.name ?? "RetailOS";
-  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "Owner";
+  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "RetailOS User";
   const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
@@ -404,6 +406,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                     links={visibleAccountLinks}
                     userName={userName}
                     userEmail={userEmail}
+                    role={role}
                     tenantName={tenantName}
                     online={online}
                     impersonation={impersonation}
@@ -487,6 +490,7 @@ function AccountMenu({
   links,
   userName,
   userEmail,
+  role,
   tenantName,
   online,
   impersonation,
@@ -496,6 +500,7 @@ function AccountMenu({
   links: AccountMenuLink[];
   userName: string;
   userEmail: string | null;
+  role: ShopRole;
   tenantName: string;
   online: boolean;
   impersonation: StoredImpersonation | null;
@@ -516,6 +521,7 @@ function AccountMenu({
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-950">{userName}</div>
             <div className="truncate text-xs text-slate-500">{userEmail ?? tenantName}</div>
+            {!impersonation ? <div className="mt-1 text-xs font-medium text-emerald-700">{formatRoleLabel(role)}</div> : null}
             {impersonation ? <div className="mt-1 text-xs font-medium text-amber-700">Support view is active</div> : null}
           </div>
         </div>
@@ -584,6 +590,13 @@ function formatTimeLeft(expiresAt: string, now: number): string {
   }
 
   return `${String(hours)}h ${String(restMinutes)}m`;
+}
+
+function formatRoleLabel(role: ShopRole): string {
+  return role
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function getInitials(name: string): string {
@@ -695,7 +708,7 @@ function navigationIconClass(href: string): string {
   return "text-emerald-600";
 }
 
-type ShopRole = NonNullable<StoredAuthSession["user"]>["role"];
+type ShopRole = NonNullable<NonNullable<StoredAuthSession["user"]>["role"]>;
 
 function canAccessNavigation(role: ShopRole | undefined, href: string): boolean {
   if (role === "DELIVERY") {

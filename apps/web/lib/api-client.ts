@@ -138,6 +138,8 @@ export async function getCurrentVerticalConfig(): Promise<{
   user?: {
     id: string;
     tenantId: string;
+    name: string;
+    email: string;
     role: ShopRole;
     storeId?: string | null;
   } | null;
@@ -159,6 +161,8 @@ export async function getCurrentVerticalConfig(): Promise<{
     user?: {
       id: string;
       tenantId: string;
+      name: string;
+      email: string;
       role: ShopRole;
       storeId?: string | null;
     } | null;
