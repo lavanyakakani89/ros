@@ -23,7 +23,6 @@ export const verticalConfigRoutes: FastifyPluginCallback = (fastify, _options, d
             name: true,
             email: true,
             role: true,
-            primaryStoreId: true,
           },
         });
 
@@ -36,7 +35,7 @@ export const verticalConfigRoutes: FastifyPluginCallback = (fastify, _options, d
             name: user.name,
             email: user.email,
             role: user.role,
-            storeId: user.primaryStoreId ?? null,
+            storeId: null,
           }
         : null,
       isImpersonated: Boolean(request.isImpersonated),
