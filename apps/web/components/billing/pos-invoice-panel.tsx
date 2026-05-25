@@ -13,12 +13,6 @@ import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/li
 import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatInvoiceWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
-const PAYMENT_SHORTCUTS = [
-  { mode: "CASH", key: "1", displayKey: "Ctrl+1", label: "Cash" },
-  { mode: "UPI", key: "2", displayKey: "Ctrl+2", label: "UPI" },
-  { mode: "CARD", key: "3", displayKey: "Ctrl+3", label: "Card" },
-  { mode: "CREDIT", key: "4", displayKey: "Ctrl+4", label: "Credit" },
-] as const;
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
 const PRODUCT_SEARCH_MODES = [
   { value: "AUTO", label: "Auto" },
@@ -35,7 +29,9 @@ type StatusTone = "green" | "amber" | "red";
 
 interface SplitEntry {
   mode: PaymentMode;
+  paymentMethodId?: string | undefined;
   amount: number;
+  referenceNumber?: string | undefined;
 }
 
 type DecimalValue = string | number | null | undefined;
@@ -99,6 +95,7 @@ interface LastBill {
   subtotal: number;
   lineDiscount: number;
   billLevelDiscount: number;
+  deliveryCharge: number;
   cgst: number;
   sgst: number;
   paymentMode: PaymentMode;
@@ -112,6 +109,23 @@ interface LastBill {
     total: number;
   }>;
   pdfViewUrl: string;
+}
+
+interface PaymentMethodRecord {
+  id: string;
+  name: string;
+  short_code: string;
+  type: "cash" | "upi" | "card" | "credit" | "custom";
+  color: string;
+  icon: string;
+  keyboard_shortcut: string | null;
+  display_order: number;
+  requires_reference: boolean;
+  reference_label: string | null;
+  allows_split: boolean;
+  upi_id: string | null;
+  upi_qr_data: string | null;
+  allowed_roles: string[];
 }
 
 interface PosInvoicePanelProps {
@@ -134,7 +148,7 @@ interface PasteWhatsappOrderResponse {
 
 export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraftReady }: PosInvoicePanelProps) {
   const queryClient = useQueryClient();
-  const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills, autoPrint, setAutoPrint } = useBillingStore();
+  const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
   const addingProductRef = useRef(false);
   const isEditMode = Boolean(editingInvoice);
@@ -157,6 +171,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [splitEntries, setSplitEntries] = useState<SplitEntry[]>([{ mode: "CASH", amount: 0 }]);
   const [useSplit, setUseSplit] = useState(false);
   const [selectedPaymentMode, setSelectedPaymentMode] = useState<PaymentMode>("CASH");
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | null>(null);
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [amountReceived, setAmountReceived] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -174,10 +190,16 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [deliveryRequired, setDeliveryRequired] = useState(false);
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [scheduledDeliveryTime, setScheduledDeliveryTime] = useState("");
   const [lastBill, setLastBill] = useState<LastBill | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [knownProducts, setKnownProducts] = useState<ProductRecord[]>([]);
+
+  function focusBarcodeSoon() {
+    window.setTimeout(() => barcodeRef.current?.focus(), 0);
+  }
 
   const productSearch = buildProductSearchTerm(barcodeInput);
   const productExactQuery = useQuery({
@@ -208,7 +230,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     queryFn: fetchWhatsappMessageTemplates,
     staleTime: 60_000,
   });
+  const paymentMethodsQuery = useQuery({
+    queryKey: ["payment-methods", "pos"],
+    queryFn: () => createAuthenticatedApiClient().get<PaymentMethodRecord[]>("/payment-methods"),
+    staleTime: 0,
+  });
   const products = knownProducts;
+  const paymentMethods = useMemo(() => paymentMethodsQuery.data ?? [], [paymentMethodsQuery.data]);
+  const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedPaymentMethodId) ?? paymentMethods[0] ?? null;
   const customerResults = useMemo(
     () => (customersQuery.data?.data ?? []).map(normalizeCustomer),
     [customersQuery.data?.data],
@@ -255,7 +284,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     );
     const cgst = taxTotals.cgst;
     const sgst = taxTotals.sgst;
-    const grandTotal = taxTotals.grandTotal;
+    const activeDeliveryCharge = selectedCustomer && deliveryRequired ? roundMoney(Math.max(deliveryCharge, 0)) : 0;
+    const grandTotal = roundMoney(taxTotals.grandTotal + activeDeliveryCharge);
     const totalItems = lines.filter((line) => line.productId).length;
     const totalQuantity = lines.reduce((sum, line) => sum + line.quantity, 0);
     return {
@@ -265,12 +295,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       discount: roundMoney(lineDiscount + billLevelDiscount),
       cgst,
       sgst,
+      deliveryCharge: activeDeliveryCharge,
       grandTotal,
       totalItems,
       totalQuantity: roundQuantity(totalQuantity),
     };
-  }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled]);
-  const changeDue = selectedPaymentMode === "CASH" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
+  }, [lines, billDiscount, couponDiscount, loyaltyRedeem, gstEnabled, selectedCustomer, deliveryRequired, deliveryCharge]);
+  const changeDue = selectedPaymentMethod?.type === "cash" && amountReceived > 0 ? amountReceived - totals.grandTotal : 0;
 
   useEffect(() => {
     setGstEnabled(getStoredTenant()?.gstEnabled ?? true);
@@ -278,10 +309,22 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }, []);
 
   useEffect(() => {
+    if (paymentMethods.length === 0) return;
+    const current = selectedPaymentMethodId ? paymentMethods.find((method) => method.id === selectedPaymentMethodId) : null;
+    const next = current ?? paymentMethods[0];
+    if (!next) return;
+    setSelectedPaymentMethodId(next.id);
+    setSelectedPaymentMode(paymentMethodToMode(next));
+    setSplitEntries((current) => current.map((entry) => entry.paymentMethodId ? entry : { ...entry, paymentMethodId: next.id, mode: paymentMethodToMode(next) }));
+  }, [paymentMethods, selectedPaymentMethodId]);
+
+  useEffect(() => {
     if (!selectedCustomer) {
       setLoyaltyBalance(null);
       setDeliveryRequired(false);
       setDeliveryAddress("");
+      setDeliveryCharge(0);
+      setScheduledDeliveryTime("");
       return;
     }
 
@@ -299,7 +342,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const billDiscountAmount = getVerticalNumber(editingInvoice.verticalData, "billDiscountAmount") ?? 0;
     const couponAmount = getVerticalNumber(editingInvoice.verticalData, "couponDiscount") ?? 0;
     const redeemedPoints = getVerticalNumber(editingInvoice.verticalData, "loyaltyRedeem") ?? 0;
+    const savedDeliveryCharge = decimalToNumberOrNull(editingInvoice.deliveryCharge) ?? getVerticalNumber(editingInvoice.verticalData, "deliveryCharge") ?? 0;
     const couponCode = getVerticalString(editingInvoice.verticalData, "couponCode");
+    const scheduledAt = editingInvoice.delivery?.scheduledAt ?? getVerticalString(editingInvoice.verticalData, "scheduledDeliveryTime");
     setQuantityDrafts({});
     setLines(lineItems.map((item) => ({
       id: item.id ?? crypto.randomUUID(),
@@ -333,6 +378,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setDeliveryRequired(Boolean(editingInvoice.delivery));
     setDeliveryAddress(editingInvoice.delivery?.deliveryAddress ?? editingInvoice.customer?.address ?? "");
     setDeliveryNotes(editingInvoice.delivery?.notes ?? "");
+    setDeliveryCharge(savedDeliveryCharge);
+    setScheduledDeliveryTime(toDateTimeLocalInputValue(scheduledAt));
     setSplitEntries([{ mode: coercePaymentMode(editingInvoice.paymentMode), amount: decimalToNumber(editingInvoice.amountPaid ?? 0) }]);
     setUseSplit(false);
     setAmountReceived(0);
@@ -387,14 +434,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
       if (!event.ctrlKey || event.altKey || event.metaKey) return;
-      const key = event.key.toLowerCase();
-      const shortcut = PAYMENT_SHORTCUTS.find((item) => item.key === key);
+      const key = event.key;
+      const shortcut = paymentMethods.find((method) => method.keyboard_shortcut?.toLowerCase() === `ctrl+${key}`.toLowerCase());
       if (shortcut) {
         event.preventDefault();
-        void confirmInvoice(shortcut.mode);
+        selectPaymentMethod(shortcut);
+        void confirmInvoice(paymentMethodToMode(shortcut), shortcut.id);
         return;
       }
-      if (key === "h") {
+      if (key.toLowerCase() === "h") {
         event.preventDefault();
         if (isEditMode) {
           notify("Finish or cancel invoice editing before holding a bill.", "red");
@@ -402,11 +450,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         }
         holdCurrentBill(selectedCustomer?.id ?? "");
       }
-      if (key === "n") {
+      if (key.toLowerCase() === "n") {
         event.preventDefault();
         clearBill();
       }
-      if (key === "p" && lastBill) {
+      if (key.toLowerCase() === "p" && lastBill) {
         event.preventDefault();
         openInvoicePdfPreview(lastBill);
       }
@@ -447,6 +495,44 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
   }
 
+  function selectPaymentMethod(method: PaymentMethodRecord) {
+    setSelectedPaymentMethodId(method.id);
+    setSelectedPaymentMode(paymentMethodToMode(method));
+    setReferenceNumber("");
+    if (method.type !== "cash") {
+      setAmountReceived(0);
+    }
+  }
+
+  function printUpiQr(method: PaymentMethodRecord) {
+    if (!method.upi_qr_data) return;
+    const tenant = getStoredTenant();
+    const storeName = tenant?.name ?? "BizBil";
+    const printWindow = window.open("", "_blank", "width=420,height=520");
+    if (!printWindow) return;
+    printWindow.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>${escapeHtml(method.name)} QR</title>
+          <style>
+            @page { size: 100mm 120mm; margin: 5mm; }
+            body { font-family: sans-serif; text-align: center; }
+            .store-name { font-size: 16pt; font-weight: bold; margin-bottom: 8px; }
+            .qr { width: 80mm; height: 80mm; }
+            .upi-id { font-size: 11pt; margin-top: 8px; color: #333; }
+            .tagline { font-size: 9pt; color: #666; margin-top: 4px; }
+          </style>
+        </head>
+        <body onload="window.print()">
+          <div class="store-name">${escapeHtml(storeName)}</div>
+          <img class="qr" src="${method.upi_qr_data}" alt="UPI QR" />
+          <div class="upi-id">${escapeHtml(method.upi_id ?? "")}</div>
+          <div class="tagline">Scan to pay via any UPI app</div>
+        </body>
+      </html>`);
+    printWindow.document.close();
+  }
+
   function notify(message: string, tone: StatusTone = "green") {
     setStatus(message);
     setStatusTone(tone);
@@ -485,10 +571,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setKnownProducts((current) => mergeProducts(current, [product]));
     const existing = lines.find((line) => line.productId === product.id);
     if (existing) {
-      setLines([
-        { ...existing, quantity: existing.quantity + 1 },
-        ...lines.filter((line) => line.id !== existing.id),
-      ]);
+      setLine(existing.id, { quantity: existing.quantity + 1 });
     } else {
       const lineId = addLine();
       setLine(lineId, {
@@ -690,7 +773,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
   }
 
-  async function confirmInvoice(paymentModeOverride?: PaymentMode) {
+  async function confirmInvoice(paymentModeOverride?: PaymentMode, paymentMethodIdOverride?: string) {
     const activeLines = lines.filter((line) => line.productId);
     if (activeLines.length === 0) {
       notify("Add at least one product.", "red");
@@ -698,15 +781,27 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
 
     const splitPaymentEntries = normalizedSplitEntries();
+    const paymentMethodId = useSplit ? splitPaymentEntries[0]?.paymentMethodId ?? selectedPaymentMethod?.id ?? null : paymentMethodIdOverride ?? selectedPaymentMethodId;
+    const activePaymentMethod = paymentMethodId ? paymentMethods.find((method) => method.id === paymentMethodId) ?? selectedPaymentMethod : selectedPaymentMethod;
     const paymentMode = useSplit ? splitPaymentEntries[0]?.mode ?? "CASH" : paymentModeOverride ?? selectedPaymentMode;
+    if (!useSplit && !paymentMethodId) {
+      notify("Select a payment method.", "red");
+      return;
+    }
     if (!useSplit) {
       setSelectedPaymentMode(paymentMode);
     }
+    if (!useSplit && activePaymentMethod?.requires_reference && !referenceNumber.trim()) {
+      notify(`${activePaymentMethod.reference_label || "Reference number"} is required.`, "red");
+      return;
+    }
     const customerId = selectedCustomer?.id;
+    const scheduledDeliveryAt = deliveryRequired ? toIsoDateTime(scheduledDeliveryTime) : undefined;
     const deliveryPayload = deliveryRequired && selectedCustomer
       ? {
           customerId: selectedCustomer.id,
           deliveryAddress: deliveryAddress.trim() || selectedCustomer.address || "",
+          ...(scheduledDeliveryAt ? { scheduledAt: scheduledDeliveryAt } : {}),
           ...(deliveryNotes.trim() ? { notes: deliveryNotes.trim() } : {}),
         }
       : undefined;
@@ -736,6 +831,19 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         notify("Add at least one split payment row.", "red");
         return;
       }
+      if (splitPaymentEntries.some((entry) => !entry.paymentMethodId)) {
+        notify("Select a method for every split payment row.", "red");
+        return;
+      }
+      const missingReference = splitPaymentEntries.find((entry) => {
+        const method = paymentMethods.find((item) => item.id === entry.paymentMethodId);
+        return method?.requires_reference && !entry.referenceNumber?.trim();
+      });
+      if (missingReference) {
+        const method = paymentMethods.find((item) => item.id === missingReference.paymentMethodId);
+        notify(`${method?.reference_label || "Reference number"} is required for ${method?.name || "this payment"}.`, "red");
+        return;
+      }
       if (Math.abs(splitAmount - totals.grandTotal) > 0.01) {
         notify(`Split payment total must match grand total. Remaining ₹${(totals.grandTotal - splitAmount).toFixed(2)}`, "red");
         return;
@@ -754,7 +862,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       couponDiscount,
       loyaltyRedeem,
       ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
-      ...(useSplit ? { splitPayments: splitPaymentEntries } : {}),
+      deliveryCharge: deliveryPayload ? totals.deliveryCharge : 0,
+      scheduledDeliveryTime: deliveryPayload && scheduledDeliveryAt ? scheduledDeliveryAt : null,
     };
     const invoicePayload = {
       paymentMode,
@@ -804,6 +913,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           subtotal: billSnapshot.subtotal,
           lineDiscount: billSnapshot.lineDiscount,
           billLevelDiscount: billSnapshot.billLevelDiscount,
+          deliveryCharge: billSnapshot.deliveryCharge,
           cgst: billSnapshot.cgst,
           sgst: billSnapshot.sgst,
           paymentMode,
@@ -812,14 +922,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           pdfViewUrl,
         };
         setLastBill(nextBill);
-        if (autoPrint) {
-		const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
-			if (outputOk) {
-				showStockWarnings(updated.stockWarnings ?? localStockWarnings);
-		}
-	} else {
-		showStockWarnings(updated.stockWarnings ?? localStockWarnings);
-	}
+        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+        if (outputOk) {
+          showStockWarnings(updated.stockWarnings ?? localStockWarnings);
+        }
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["invoices"] }),
           queryClient.invalidateQueries({ queryKey: ["products"] }),
@@ -831,13 +937,19 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices", invoicePayload);
       const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
 
-      if (!useSplit && paymentMode !== "CREDIT") {
-        await createAuthenticatedApiClient().post("/payments", {
-          invoiceId: created.id,
-          amount: Number(confirmed.grandTotal),
-          mode: paymentMode,
-        });
-      }
+      await createAuthenticatedApiClient().post(`/invoices/${created.id}/payments`, {
+        payments: useSplit
+          ? splitPaymentEntries.map((entry) => ({
+              payment_method_id: entry.paymentMethodId,
+              amount: entry.amount,
+              ...(entry.referenceNumber ? { reference_number: entry.referenceNumber } : {}),
+            }))
+          : [{
+              payment_method_id: paymentMethodId,
+              amount: Number(confirmed.grandTotal),
+              ...(referenceNumber.trim() ? { reference_number: referenceNumber.trim() } : {}),
+            }],
+      });
 
       if (loyaltyRedeem > 0 && customerId) {
         await createAuthenticatedApiClient().post("/loyalty/redeem", {
@@ -862,6 +974,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         subtotal: billSnapshot.subtotal,
         lineDiscount: billSnapshot.lineDiscount,
         billLevelDiscount: billSnapshot.billLevelDiscount,
+        deliveryCharge: billSnapshot.deliveryCharge,
         cgst: billSnapshot.cgst,
         sgst: billSnapshot.sgst,
         paymentMode,
@@ -870,12 +983,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         pdfViewUrl,
       };
       setLastBill(nextBill);
-      if (autoPrint) {
-        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
-        if (outputOk) {
-          showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
-        }
-      } else {
+      const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
+      if (outputOk) {
         showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
       }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -889,12 +998,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       notify(error instanceof Error ? error.message : isEditMode ? "Unable to update invoice." : "Unable to create invoice.", "red");
     } finally {
       setIsSubmitting(false);
+      focusBarcodeSoon();
     }
   }
 
   async function queueOfflineInvoice(
     invoicePayload: object,
-    deliveryPayload: { customerId: string; deliveryAddress: string; notes?: string } | undefined,
+    deliveryPayload: { customerId: string; deliveryAddress: string; scheduledAt?: string; notes?: string } | undefined,
     paymentMode: PaymentMode,
     splitPayments: SplitEntry[] = [],
   ) {
@@ -1022,24 +1132,36 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     setDeliveryRequired(false);
     setDeliveryAddress("");
     setDeliveryNotes("");
-    setSplitEntries([{ mode: "CASH", amount: 0 }]);
+    setDeliveryCharge(0);
+    setScheduledDeliveryTime("");
+    const defaultMethod = paymentMethods[0] ?? null;
+    setSplitEntries([{ mode: defaultMethod ? paymentMethodToMode(defaultMethod) : "CASH", paymentMethodId: defaultMethod?.id, amount: 0 }]);
     setUseSplit(false);
     setAmountReceived(0);
-    setSelectedPaymentMode("CASH");
+    if (defaultMethod) {
+      setSelectedPaymentMethodId(defaultMethod.id);
+      setSelectedPaymentMode(paymentMethodToMode(defaultMethod));
+    } else {
+      setSelectedPaymentMethodId(null);
+      setSelectedPaymentMode("CASH");
+    }
+    setReferenceNumber("");
     setLastBill(null);
     onEditComplete?.();
-    barcodeRef.current?.focus();
+    focusBarcodeSoon();
   }
 
   function holdCurrentBill(customerId: string) {
     holdBill(customerId);
     setQuantityDrafts({});
+    focusBarcodeSoon();
   }
 
   function restoreHeldBill(billId: string) {
     restoreHeld(billId);
     setQuantityDrafts({});
     setShowHeld(false);
+    focusBarcodeSoon();
   }
 
   function removeBillingLine(lineId: string) {
@@ -1078,7 +1200,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     return splitEntries
       .map((entry) => ({
         mode: entry.mode,
+        paymentMethodId: entry.paymentMethodId,
         amount: roundMoney(entry.amount || 0),
+        referenceNumber: entry.referenceNumber,
       }))
       .filter((entry) => entry.amount > 0);
   }
@@ -1093,6 +1217,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       subtotal: billTotals.subtotal,
       lineDiscount: billTotals.lineDiscount,
       billLevelDiscount: billTotals.billLevelDiscount,
+      deliveryCharge: billTotals.deliveryCharge,
       cgst: billTotals.cgst,
       sgst: billTotals.sgst,
       paymentMode,
@@ -1141,23 +1266,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 Held ({heldBills.length})
               </button>
             ) : null}
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
+            <button
+              className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50 ${
+                heldBills.length > 0 ? "border-amber-300 bg-amber-50 text-amber-800" : "border-border text-amber-700"
+              }`}
+              onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")}
+              disabled={lines.length === 0 || isEditMode}
+            >
               <Pause className="size-4" aria-hidden="true" />
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
-            </button>
-            <button
-              className={`inline-flex h-9 items-center gap-3 rounded-md border px-3 text-sm font-medium transition ${
-                autoPrint ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700"
-              }`}
-              type="button"
-              onClick={() => setAutoPrint(!autoPrint)}
-              aria-pressed={autoPrint}
-              title={autoPrint ? "Auto print is on" : "Auto print is off"}
-            >
-              <span>Auto Print</span>
-              <span className={`relative inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${autoPrint ? "bg-emerald-500" : "bg-slate-300"}`}>
-                <span className={`h-5 w-5 rounded-full bg-white shadow transition ${autoPrint ? "translate-x-5" : "translate-x-0"}`} />
-              </span>
             </button>
             {isEditMode ? (
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700" onClick={clearBill}>
@@ -1271,25 +1388,35 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             </div>
             {barcodeInput.trim() ? (
               <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto pr-1">
-                {productResults.length > 0 ? productResults.map((product, index) => (
-                  <button
-                    key={product.id}
-                    className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                    onClick={() => {
-                      insertProduct(product);
-                      setBarcodeInput("");
-                    }}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate">
-                        {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
+                {productResults.length > 0 ? productResults.map((product, index) => {
+                  const imageSrc = productSearchImageSrc(product);
+                  return (
+                    <button
+                      key={product.id}
+                      className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                      onClick={() => {
+                        insertProduct(product);
+                        setBarcodeInput("");
+                      }}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {imageSrc ? (
+                            <img src={imageSrc} alt="" className="size-8 shrink-0 rounded border border-slate-200 object-cover" />
+                          ) : (
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-[9px] font-bold uppercase text-slate-400">Img</span>
+                          )}
+                          <span className="min-w-0 truncate">
+                            {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
+                          </span>
+                        </span>
+                        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
+                          {productMatchLabel(product, barcodeInput, productSearchMode)}
+                        </span>
                       </span>
-                      <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
-                        {productMatchLabel(product, barcodeInput, productSearchMode)}
-                      </span>
-                    </span>
-                  </button>
-                )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
+                    </button>
+                  );
+                }) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
               </div>
             ) : (
               <div className="mt-2 text-xs text-slate-500">Scan or search to add products.</div>
@@ -1308,13 +1435,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           <table className="w-full min-w-[860px] text-sm">
             <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-medium">Product</th>
-                <th className="px-2 py-2 font-medium">Qty</th>
-                <th className="px-2 py-2 font-medium">Rate</th>
-                <th className="px-2 py-2 font-medium">Discount %</th>
-                {gstEnabled ? <th className="px-2 py-2 font-medium">GST%</th> : null}
-                <th className="px-2 py-2 text-right font-medium">Total</th>
-                <th className="px-2 py-2" />
+                <th className="px-3 py-3 font-medium">Product</th>
+                <th className="px-3 py-3 font-medium">Qty</th>
+                <th className="px-3 py-3 font-medium">Rate</th>
+                <th className="px-3 py-3 font-medium">Discount %</th>
+                {gstEnabled ? <th className="px-3 py-3 font-medium">GST%</th> : null}
+                <th className="px-3 py-3 text-right font-medium">Total</th>
+                <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody>
@@ -1329,22 +1456,18 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 const mrp = product ? decimalToNumber(product.mrp) : null;
                 const reorderLevel = product?.reorderLevel ? decimalToNumber(product.reorderLevel) : null;
                 const stockTone = stock !== null && stock <= 0 ? "bg-red-50 text-red-700" : stock !== null && reorderLevel !== null && stock <= reorderLevel ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600";
-                const barcode = product?.barcode?.trim();
                 const total = lineTotal(line, gstEnabled);
                 const aboveMrp = mrp !== null && line.sellingPrice > mrp;
                 return (
                   <tr key={line.id} className="border-t border-border">
-                    <td className="px-3 py-1.5">
-                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="min-w-0 truncate font-medium text-slate-900">{line.productName}</span>
-                        {barcode ? <span className="inline-flex rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">Barcode {barcode}</span> : null}
-                        {stock !== null ? <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
-                      </div>
-                      {aboveMrp ? <div className="mt-0.5 text-[11px] font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-slate-900">{line.productName}</div>
+                      {stock !== null ? <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[11px] ${stockTone}`}>Stock {stock.toFixed(3)}</span> : null}
+                      {aboveMrp ? <div className="mt-1 text-xs font-semibold text-red-700">Selling price above MRP ₹{mrp.toFixed(2)}</div> : null}
                     </td>
-                    <td className="px-2 py-1.5">
+                    <td className="px-3 py-2">
                       <input
-                        className="h-8 w-16 rounded-md border border-border px-2"
+                        className="h-9 w-20 rounded-md border border-border px-2"
                         type="number"
                         inputMode="decimal"
                         min="0.5"
@@ -1354,12 +1477,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                         onBlur={() => handleQuantityBlur(line.id, line.quantity)}
                       />
                     </td>
-                    <td className="px-2 py-1.5"><input className="h-8 w-20 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
-                    <td className="px-2 py-1.5"><input className="h-8 w-20 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
-                    {gstEnabled ? <td className="px-2 py-1.5 text-slate-500">{line.gstRate}%</td> : null}
-                    <td className="px-2 py-1.5 text-right font-semibold">₹{total.toFixed(2)}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      <button className="inline-flex size-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)}>
+                    <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} /></td>
+                    <td className="px-3 py-2"><input className="h-9 w-24 rounded-md border border-border px-2" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} /></td>
+                    {gstEnabled ? <td className="px-3 py-2 text-slate-500">{line.gstRate}%</td> : null}
+                    <td className="px-3 py-2 text-right font-semibold">₹{total.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button className="inline-flex size-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)}>
                         <Trash2 className="size-4" aria-hidden="true" />
                       </button>
                     </td>
@@ -1390,6 +1513,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               Delivery notes
               <input value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
             </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Delivery charge (₹)
+              <input type="number" min="0" value={deliveryCharge} onChange={(event) => setDeliveryCharge(Number(event.target.value) || 0)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Scheduled for
+              <input type="datetime-local" value={scheduledDeliveryTime} onChange={(event) => setScheduledDeliveryTime(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+            </label>
           </div>
         ) : null}
       </div>
@@ -1402,6 +1533,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           <SummaryRow label="Subtotal" value={totals.subtotal} />
           <SummaryRow label="Line discount" value={-totals.lineDiscount} />
           <SummaryRow label="Bill discount" value={-totals.billLevelDiscount} />
+          {totals.deliveryCharge > 0 ? <SummaryRow label="Delivery charge" value={totals.deliveryCharge} /> : null}
           {gstEnabled ? <SummaryRow label="CGST" value={totals.cgst} /> : null}
           {gstEnabled ? <SummaryRow label="SGST" value={totals.sgst} /> : null}
           <div className="flex justify-between border-t border-border pt-3 text-base font-bold"><span>Grand total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
@@ -1435,15 +1567,45 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         {useSplit ? (
           <div className="mt-2 grid gap-2">
             {splitEntries.map((entry, index) => (
-              <div key={`${entry.mode}-${String(index)}`} className="flex items-center gap-2">
-                <select value={entry.mode} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, mode: event.target.value as PaymentMode } : item))} className="h-9 flex-1 rounded-md border border-border px-2 text-sm">
-                  {PAYMENT_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-                </select>
-                <input type="number" min="0" value={entry.amount} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} className="h-9 w-28 rounded-md border border-border px-2 text-sm" />
-                {index > 0 ? <button className="text-sm text-red-600" onClick={() => setSplitEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button> : null}
+              <div key={`${entry.paymentMethodId ?? entry.mode}-${String(index)}`} className="grid gap-2 rounded-md border border-border bg-white p-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={entry.paymentMethodId ?? selectedPaymentMethodId ?? ""}
+                    onChange={(event) => {
+                      const method = paymentMethods.find((item) => item.id === event.target.value);
+                      setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                        ...item,
+                        paymentMethodId: method?.id,
+                        mode: method ? paymentMethodToMode(method) : item.mode,
+                        referenceNumber: "",
+                      } : item));
+                    }}
+                    className="h-9 flex-1 rounded-md border border-border px-2 text-sm"
+                  >
+                    {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+                  </select>
+                  <input type="number" min="0" value={entry.amount} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} className="h-9 w-28 rounded-md border border-border px-2 text-sm" />
+                  {index > 0 ? <button className="text-sm text-red-600" onClick={() => setSplitEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button> : null}
+                </div>
+                {paymentMethods.find((method) => method.id === entry.paymentMethodId)?.requires_reference ? (
+                  <input
+                    value={entry.referenceNumber ?? ""}
+                    onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, referenceNumber: event.target.value } : item))}
+                    placeholder={paymentMethods.find((method) => method.id === entry.paymentMethodId)?.reference_label ?? "Reference number"}
+                    className="h-9 rounded-md border border-border px-2 text-sm"
+                  />
+                ) : null}
               </div>
             ))}
-            <button className="text-left text-sm font-medium text-emerald-700" onClick={() => setSplitEntries((current) => [...current, { mode: "CASH", amount: 0 }])}>Add payment mode</button>
+            <button
+              className="text-left text-sm font-medium text-emerald-700"
+              onClick={() => {
+                const method = paymentMethods[0];
+                setSplitEntries((current) => [...current, { mode: method ? paymentMethodToMode(method) : "CASH", paymentMethodId: method?.id, amount: 0 }]);
+              }}
+            >
+              Add payment method
+            </button>
             {Math.abs(splitTotal() - totals.grandTotal) > 0.01 ? (
               <div className="text-xs text-amber-600">Split total ₹{splitTotal().toFixed(2)} | Remaining ₹{(totals.grandTotal - splitTotal()).toFixed(2)}</div>
             ) : <div className="text-xs text-emerald-700">Split total matches the bill. Any payment button will record these split rows.</div>}
@@ -1452,14 +1614,31 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
         {!useSplit ? (
           <div className="mt-4 grid gap-2 rounded-md border border-border bg-slate-50 p-3">
-            <div className="text-xs font-semibold text-slate-600">Selected payment: {selectedPaymentMode}</div>
-            <label className="block text-sm font-medium text-slate-700">
-              Cash received
-              <input type="number" min="0" value={amountReceived} onChange={(event) => {
-                setSelectedPaymentMode("CASH");
-                setAmountReceived(Number(event.target.value));
-              }} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" />
-            </label>
+            <div className="text-xs font-semibold text-slate-600">Selected payment: {selectedPaymentMethod?.name ?? selectedPaymentMode}</div>
+            {selectedPaymentMethod?.requires_reference ? (
+              <label className="block text-sm font-medium text-slate-700">
+                {selectedPaymentMethod.reference_label || "Reference number"}
+                <input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder={`Enter ${(selectedPaymentMethod.reference_label || "reference").toLowerCase()}`} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" autoFocus />
+              </label>
+            ) : null}
+            {selectedPaymentMethod?.type === "upi" && selectedPaymentMethod.upi_qr_data ? (
+              <div className="flex items-center gap-3 rounded-md border border-border bg-white p-2">
+                <img src={selectedPaymentMethod.upi_qr_data} width={96} height={96} alt="UPI QR" className="size-24 rounded-sm border border-slate-200" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold text-slate-800">{selectedPaymentMethod.upi_id}</div>
+                  <button className="mt-2 h-8 rounded-md border border-border px-3 text-xs font-medium text-slate-700" onClick={() => printUpiQr(selectedPaymentMethod)}>Print QR</button>
+                </div>
+              </div>
+            ) : null}
+            {selectedPaymentMethod?.type === "cash" ? (
+              <label className="block text-sm font-medium text-slate-700">
+                Cash received
+                <input type="number" min="0" value={amountReceived} onChange={(event) => {
+                  if (selectedPaymentMethod) selectPaymentMethod(selectedPaymentMethod);
+                  setAmountReceived(Number(event.target.value));
+                }} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" />
+              </label>
+            ) : null}
             {amountReceived > 0 ? (
               <div className={`text-xs font-semibold ${changeDue >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                 {changeDue >= 0 ? "Change" : "Short"} ₹{Math.abs(changeDue).toFixed(2)}
@@ -1469,18 +1648,50 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         ) : null}
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          {PAYMENT_SHORTCUTS.map((shortcut) => (
-            <button key={shortcut.mode} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-left text-sm font-semibold text-emerald-900 disabled:opacity-50" onClick={() => void confirmInvoice(shortcut.mode)} disabled={isSubmitting || lines.length === 0}>
-              <span className="block">{useSplit ? "Confirm split" : isEditMode ? `Save ${shortcut.label}` : shortcut.label}</span>
-              <span className="text-xs font-medium text-emerald-700">{useSplit ? "Uses split rows" : shortcut.displayKey}</span>
+          {paymentMethods.map((method) => (
+            <button
+              key={method.id}
+              className="rounded-md border px-3 py-2 text-left text-sm font-semibold disabled:opacity-50"
+              style={{
+                borderColor: selectedPaymentMethodId === method.id ? method.color : `${method.color}55`,
+                backgroundColor: selectedPaymentMethodId === method.id ? `${method.color}22` : "#ffffff",
+                color: method.color,
+              }}
+              onClick={() => {
+                selectPaymentMethod(method);
+                void confirmInvoice(paymentMethodToMode(method), method.id);
+              }}
+              disabled={isSubmitting || lines.length === 0 || paymentMethodsQuery.isLoading}
+            >
+              <span className="block">{useSplit ? "Confirm split" : isEditMode ? `Save ${method.name}` : method.name}</span>
+              {useSplit ? (
+                <span className="text-xs font-medium text-slate-600">Uses split rows</span>
+              ) : (
+                <span className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-slate-500">{method.short_code}</span>
+                  {method.keyboard_shortcut ? (
+                    <kbd className="inline-flex rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700">
+                      {method.keyboard_shortcut.replace("Ctrl+", "^")}
+                    </kbd>
+                  ) : null}
+                </span>
+              )}
             </button>
           ))}
+          {paymentMethods.length === 0 ? (
+            <div className="col-span-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">No active payment methods found.</div>
+          ) : null}
         </div>
 
         <div className="mt-4 rounded-md border border-border bg-slate-50 p-2 text-xs text-slate-600">
-          Network: {online ? "online" : "offline"} | Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
+          Offline queue: pending {queueCounts.pending} | syncing {queueCounts.syncing} | failed {queueCounts.failed}
           <div className="mt-1">Offline bills sync after sign-in and internet restore. PDF/print is available after sync.</div>
-          <div className="mt-1">Shortcuts: Ctrl+H hold | Ctrl+N new bill | Ctrl+P print preview</div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            Shortcuts:
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+H</kbd> hold
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+N</kbd> new bill
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px]">Ctrl+P</kbd> print preview
+          </div>
         </div>
 
         {status ? (
@@ -1618,6 +1829,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 <SummaryRow label="Subtotal" value={lastBill.subtotal} />
                 <SummaryRow label="Line discount" value={-lastBill.lineDiscount} />
                 <SummaryRow label="Bill discount" value={-lastBill.billLevelDiscount} />
+                {lastBill.deliveryCharge > 0 ? <SummaryRow label="Delivery charge" value={lastBill.deliveryCharge} /> : null}
                 {gstEnabled ? <SummaryRow label="CGST" value={lastBill.cgst} /> : null}
                 {gstEnabled ? <SummaryRow label="SGST" value={lastBill.sgst} /> : null}
                 <div className="flex justify-between border-t border-border pt-2 text-base font-bold"><span>Total</span><span>₹{lastBill.grandTotal.toFixed(2)}</span></div>
@@ -1789,6 +2001,14 @@ function productSearchIdentifier(product: ProductRecord): string {
   return "No barcode";
 }
 
+function productSearchImageSrc(product: ProductRecord): string | null {
+  if (!product.imageUrl) {
+    return null;
+  }
+
+  return `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}`;
+}
+
 function productSearchPlaceholder(mode: ProductSearchMode): string {
   if (mode === "BARCODE") return "Scan or type barcode + Enter";
   if (mode === "SKU") return "Scan or type SKU + Enter";
@@ -1885,8 +2105,40 @@ function decimalToNumberOrNull(value: string | number | null | undefined): numbe
   return decimalToNumber(value);
 }
 
+function toDateTimeLocalInputValue(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function toIsoDateTime(value: string): string | undefined {
+  if (!value.trim()) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 function coercePaymentMode(value: string): PaymentMode {
   return PAYMENT_MODES.includes(value as PaymentMode) ? value as PaymentMode : "CASH";
+}
+
+function paymentMethodToMode(method: PaymentMethodRecord): PaymentMode {
+  const code = method.short_code === "CRED" ? "CREDIT" : method.short_code;
+  if (PAYMENT_MODES.includes(code as PaymentMode)) return code as PaymentMode;
+  if (method.type === "upi") return "UPI";
+  if (method.type === "card") return "CARD";
+  if (method.type === "credit") return "CREDIT";
+  return "CASH";
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function normalizeCustomer(customer: CustomerApiRecord | CustomerRecord): CustomerRecord {

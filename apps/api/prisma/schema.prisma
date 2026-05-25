@@ -32,6 +32,9 @@ model Tenant {
   invoiceItems       InvoiceItem[]
   deliveries         Delivery[]
   payments           Payment[]
+  paymentMethods     PaymentMethod[]
+  partners           Partner[]
+  settlements        Settlement[]
   suppliers          Supplier[]
   purchaseOrders     PurchaseOrder[]
   purchaseOrderItems PurchaseOrderItem[]
@@ -97,6 +100,11 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
+  pushTokens    ExpoPushToken[]
+  cashierPayments Payment[] @relation("PaymentCashier")
+  voidedPayments Payment[] @relation("PaymentVoidAuthoriser")
+  settledSettlements Settlement[] @relation("SettlementSettledBy")
+  storeAssignments StoreUserAssignment[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -111,6 +119,43 @@ enum UserRole {
   DELIVERY
 }
 
+model Store {
+  id               String                @id @default(cuid())
+  tenantId         String                @map("tenant_id")
+  tenant           Tenant                @relation(fields: [tenantId], references: [id])
+  name             String
+  address          String?
+  phone            String?
+  isDefault        Boolean               @default(false) @map("is_default")
+  isActive         Boolean               @default(true) @map("is_active")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  primaryUsers     User[]                @relation("UserPrimaryStore")
+  userAssignments  StoreUserAssignment[]
+  invoices         Invoice[]
+  paymentMethods   PaymentMethod[]
+  partners         Partner[]
+  purchaseOrders   PurchaseOrder[]
+  expenses         Expense[]
+  stockAdjustments StockAdjustment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("stores")
+}
+
+model StoreUserAssignment {
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  storeId   String   @map("store_id")
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([storeId, userId])
+  @@index([tenantId, userId])
+  @@map("store_user_assignments")
+}
 model RefreshToken {
   id        String    @id @default(cuid())
   tenantId  String    @map("tenant_id")
@@ -311,6 +356,8 @@ model Invoice {
   dueDate                DateTime?     @map("due_date")
   status                 InvoiceStatus @default(DRAFT)
   paymentMode            PaymentMode   @default(CASH) @map("payment_mode")
+  paymentMethodId        String?       @map("payment_method_id")
+  paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
   subtotal               Decimal       @db.Decimal(10, 2)
   totalDiscount          Decimal       @default(0) @map("total_discount") @db.Decimal(10, 2)
   totalCgst              Decimal       @default(0) @map("total_cgst") @db.Decimal(10, 2)
@@ -389,6 +436,84 @@ enum PaymentMode {
   CARD
   CREDIT
   NETBANKING
+}
+
+enum PaymentMethodType {
+  CASH
+  UPI
+  CARD
+  CREDIT
+  CUSTOM
+}
+
+enum SettlementFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum SettlementStatus {
+  DRAFT
+  REVIEWED
+  SETTLED
+}
+
+model Partner {
+  id              String          @id @default(cuid())
+  tenantId        String          @map("tenant_id")
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  storeId         String          @map("store_id")
+  store           Store           @relation(fields: [storeId], references: [id])
+  name            String
+  contactName     String?         @map("contact_name")
+  contactPhone    String?         @map("contact_phone")
+  contactEmail    String?         @map("contact_email")
+  settlementTerms String?         @map("settlement_terms")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  paymentMethods  PaymentMethod[]
+  settlements     Settlement[]
+
+  @@index([tenantId, storeId])
+  @@map("partners")
+}
+
+model PaymentMethod {
+  id                  String               @id @default(cuid())
+  tenantId            String               @map("tenant_id")
+  tenant              Tenant               @relation(fields: [tenantId], references: [id])
+  storeId             String               @map("store_id")
+  store               Store                @relation(fields: [storeId], references: [id])
+  name                String               @db.VarChar(64)
+  shortCode           String               @map("short_code") @db.VarChar(12)
+  type                PaymentMethodType    @default(CUSTOM)
+  color               String               @default("#1a6e4a") @db.VarChar(16)
+  icon                String               @default("ti-cash") @db.VarChar(64)
+  keyboardShortcut    String?              @map("keyboard_shortcut") @db.VarChar(8)
+  displayOrder        Int                  @default(100) @map("display_order")
+  isDefault           Boolean              @default(false) @map("is_default")
+  isActive            Boolean              @default(true) @map("is_active")
+  requiresReference   Boolean              @default(false) @map("requires_reference")
+  referenceLabel      String?              @map("reference_label") @db.VarChar(64)
+  allowsSplit         Boolean              @default(true) @map("allows_split")
+  upiId               String?              @map("upi_id") @db.VarChar(128)
+  upiQrData           String?              @map("upi_qr_data") @db.Text
+  partnerId           String?              @map("partner_id")
+  partner             Partner?             @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  openingBalance      Decimal              @default(0) @map("opening_balance") @db.Decimal(12, 2)
+  settlementFrequency SettlementFrequency? @map("settlement_frequency")
+  allowedRoles        String[]             @default([]) @map("allowed_roles")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  deletedAt           DateTime?            @map("deleted_at")
+  invoices            Invoice[]
+  payments            Payment[]
+  settlements         Settlement[]
+
+  @@unique([storeId, shortCode])
+  @@unique([storeId, keyboardShortcut])
+  @@index([tenantId, storeId, isActive, displayOrder])
+  @@index([partnerId])
+  @@map("payment_methods")
 }
 
 enum WhatsappDirection {
@@ -576,20 +701,55 @@ model PrinterConfig {
 }
 
 model Payment {
-  id              String      @id @default(cuid())
-  tenantId        String      @map("tenant_id")
-  tenant          Tenant      @relation(fields: [tenantId], references: [id])
-  invoiceId       String      @map("invoice_id")
-  invoice         Invoice     @relation(fields: [invoiceId], references: [id])
-  amount          Decimal     @db.Decimal(10, 2)
-  mode            PaymentMode
-  referenceNumber String?     @map("reference_number")
-  razorpayId      String?     @map("razorpay_id")
-  paidAt          DateTime    @default(now()) @map("paid_at")
-  createdBy       String      @map("created_by")
+  id                 String        @id @default(cuid())
+  tenantId           String        @map("tenant_id")
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceId          String        @map("invoice_id")
+  invoice            Invoice       @relation(fields: [invoiceId], references: [id])
+  paymentMethodId    String        @map("payment_method_id")
+  paymentMethod      PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  amount             Decimal       @db.Decimal(12, 2)
+  mode               PaymentMode?
+  referenceNumber    String?       @map("reference_number") @db.VarChar(128)
+  razorpayId         String?       @map("razorpay_id")
+  cashierId          String?       @map("cashier_id")
+  cashier            User?         @relation("PaymentCashier", fields: [cashierId], references: [id], onDelete: SetNull)
+  recordedAt         DateTime      @default(now()) @map("recorded_at")
+  voidedAt           DateTime?     @map("voided_at")
+  voidReason         String?       @map("void_reason")
+  voidAuthorisedById String?       @map("void_authorised_by")
+  voidAuthorisedBy   User?         @relation("PaymentVoidAuthoriser", fields: [voidAuthorisedById], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, paidAt])
-  @@map("payments")
+  @@index([tenantId, recordedAt])
+  @@index([paymentMethodId, recordedAt])
+  @@index([invoiceId])
+  @@map("invoice_payments")
+}
+
+model Settlement {
+  id              String           @id @default(cuid())
+  tenantId        String           @map("tenant_id")
+  tenant          Tenant           @relation(fields: [tenantId], references: [id])
+  paymentMethodId String           @map("payment_method_id")
+  paymentMethod   PaymentMethod    @relation(fields: [paymentMethodId], references: [id])
+  partnerId       String?          @map("partner_id")
+  partner         Partner?         @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  periodStart     DateTime         @map("period_start") @db.Date
+  periodEnd       DateTime         @map("period_end") @db.Date
+  openingBalance  Decimal          @default(0) @map("opening_balance") @db.Decimal(12, 2)
+  totalSales      Decimal          @default(0) @map("total_sales") @db.Decimal(12, 2)
+  totalRefunds    Decimal          @default(0) @map("total_refunds") @db.Decimal(12, 2)
+  netAmount       Decimal          @default(0) @map("net_amount") @db.Decimal(12, 2)
+  status          SettlementStatus @default(DRAFT)
+  settledAt       DateTime?        @map("settled_at")
+  settledById     String?          @map("settled_by")
+  settledBy       User?            @relation("SettlementSettledBy", fields: [settledById], references: [id], onDelete: SetNull)
+  notes           String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([tenantId, paymentMethodId, periodStart, periodEnd])
+  @@index([partnerId])
+  @@map("settlements")
 }
 
 model Delivery {
@@ -1270,4 +1430,121 @@ enum BillingCycle {
   YEARLY
   TWO_YEARLY
   THREE_YEARLY
+}
+model Employee {
+  id           String         @id @default(cuid())
+  name         String
+  phone        String
+  role         String
+  department   String
+  baseSalary   Decimal        @map("base_salary") @db.Decimal(10, 2)
+  salaryType   SalaryType     @map("salary_type")
+  status       EmployeeStatus @default(ACTIVE)
+  joinedAt     DateTime       @map("joined_at") @db.Date
+  createdAt    DateTime       @default(now()) @map("created_at")
+  attendance   Attendance[]
+  payAdvances  PayAdvance[]
+  payslipLines PayslipLine[]
+
+  @@map("employees")
+}
+
+enum SalaryType {
+  MONTHLY
+  DAILY
+  HOURLY
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  TERMINATED
+}
+
+model Attendance {
+  id              String           @id @default(cuid())
+  employeeId      String           @map("employee_id")
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime         @db.Date
+  status          AttendanceStatus
+  shiftStart      DateTime?        @map("shift_start") @db.Time
+  shiftEnd        DateTime?        @map("shift_end") @db.Time
+  overtimeMinutes Int              @default(0) @map("overtime_minutes")
+  note            String?
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("attendance")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  LEAVE
+  ON_DUTY
+}
+
+model PayAdvance {
+  id             String           @id @default(cuid())
+  employeeId     String           @map("employee_id")
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount         Decimal          @db.Decimal(10, 2)
+  reason         String?
+  status         PayAdvanceStatus @default(PENDING)
+  requestedAt    DateTime         @default(now()) @map("requested_at")
+  approvedAt     DateTime?        @map("approved_at")
+  approvedBy     String?          @map("approved_by")
+  recoveredIn    String?          @map("recovered_in")
+  recoveredInRun PayrollRun?      @relation("RecoveredPayAdvances", fields: [recoveredIn], references: [id])
+
+  @@index([employeeId])
+  @@index([recoveredIn])
+  @@map("pay_advances")
+}
+
+enum PayAdvanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RECOVERED
+}
+
+model PayrollRun {
+  id                String        @id @default(cuid())
+  period            String        @unique
+  runAt             DateTime      @default(now()) @map("run_at")
+  status            PayrollStatus @default(DRAFT)
+  runBy             String?       @map("run_by")
+  notes             String?
+  payslipLines      PayslipLine[]
+  recoveredAdvances PayAdvance[]  @relation("RecoveredPayAdvances")
+
+  @@map("payroll_runs")
+}
+
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+}
+
+model PayslipLine {
+  id               String     @id @default(cuid())
+  payrollRunId     String     @map("payroll_run_id")
+  payrollRun       PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId       String     @map("employee_id")
+  employee         Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  daysWorked       Decimal    @map("days_worked") @db.Decimal(6, 2)
+  overtimeHours    Decimal    @map("overtime_hours") @db.Decimal(8, 2)
+  grossPay         Decimal    @map("gross_pay") @db.Decimal(10, 2)
+  overtimePay      Decimal    @map("overtime_pay") @db.Decimal(10, 2)
+  advancesDeducted Decimal    @map("advances_deducted") @db.Decimal(10, 2)
+  otherDeductions  Decimal    @map("other_deductions") @db.Decimal(10, 2)
+  netPay           Decimal    @map("net_pay") @db.Decimal(10, 2)
+  breakdown        Json
+
+  @@unique([payrollRunId, employeeId])
+  @@index([employeeId])
+  @@map("payslip_lines")
 }

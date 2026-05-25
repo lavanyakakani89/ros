@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -172,6 +173,60 @@ export function ReportsDashboard() {
           ))}
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Link href="/reports/payment-methods" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Payment statements</Link>
+        <Link href="/reports/settlements" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settlements</Link>
+        {tab === "sales" ? (
+          <>
+            <ExportButton label="Summary CSV" onClick={() => void downloadReportExport("summary", `summary-${from}-${to}`, "csv")} />
+            <ExportButton label="Daily Excel" onClick={() => void downloadReportExport("daily-sales", `daily-sales-${from}-${to}`, "xlsx")} />
+            <ExportButton label="Moving items CSV" onClick={() => void downloadReportExport("moving-items", `moving-items-${from}-${to}`, "csv")} />
+          </>
+        ) : null}
+        {tab === "inventory" ? (
+          <>
+            <ExportButton label="Inventory CSV" onClick={() => void downloadReportExport("inventory", "inventory", "csv")} />
+            <ExportButton label="Inventory Excel" onClick={() => void downloadReportExport("inventory", "inventory", "xlsx")} />
+          </>
+        ) : null}
+        {tab === "pnl" && canViewPnl ? (
+          <>
+            <ExportButton label="P&L CSV" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "csv")} />
+            <ExportButton label="P&L Excel" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "gstr" ? (
+          <>
+            <ExportButton label="GST CSV" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "csv")} />
+            <ExportButton label="GST Excel" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "customers" ? (
+          <>
+            <ExportButton label="Customer sales CSV" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "csv")} />
+            <ExportButton label="Customer sales Excel" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "suppliers" ? (
+          <>
+            <ExportButton label="Supplier purchases CSV" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "csv")} />
+            <ExportButton label="Supplier purchases Excel" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "aging" ? (
+          <>
+            <ExportButton label="Aging CSV" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "csv")} />
+            <ExportButton label="Aging Excel" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "xlsx")} />
+          </>
+        ) : null}
+        {tab === "stock" ? (
+          <ExportButton label="Stock movement CSV" onClick={() => void downloadStockMovementExport("csv")} />
+        ) : null}
+        {tab === "tally" ? (
+          <ExportButton label="Download Tally XML" onClick={() => void downloadTallyExport()} />
+        ) : null}
+      </div>
 
       {/* --- SALES TAB --- */}
       {tab === "sales" && (
