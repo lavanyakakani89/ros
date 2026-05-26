@@ -22,7 +22,7 @@ interface StatementTransaction {
   cashier_name: string;
   amount: number;
   reference_number: string | null;
-  type: "sale" | "refund" | "void";
+  type: "sale" | "refund" | "salary" | "void";
   void_reason?: string | null;
   running_balance: number;
 }
@@ -34,6 +34,7 @@ interface StatementResponse {
     opening_balance: number;
     total_sales: number;
     total_refunds: number;
+    salary_disbursements?: number;
     net_amount: number;
     transaction_count: number;
     void_count: number;
@@ -83,7 +84,7 @@ export function PaymentMethodsReport() {
   function exportCsv() {
     if (!statement) return;
     const rows = [
-      ["Date", "Time", "Invoice", "Customer", "Cashier", "Type", "Reference", "Amount", "Balance"],
+      ["Date", "Time", "Source", "Party", "Recorded by", "Type", "Reference", "Amount", "Balance"],
       ...filteredTransactions.map((row) => [row.date, row.time, row.invoice_number, row.customer_name, row.cashier_name, row.type, row.reference_number ?? "", row.amount.toFixed(2), row.running_balance.toFixed(2)]),
     ];
     const csv = rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\n");
@@ -133,7 +134,7 @@ export function PaymentMethodsReport() {
           <>
             <div className="grid gap-3 sm:grid-cols-4">
               <Metric label="Total sales" value={statement.summary.total_sales} tone="green" />
-              <Metric label="Total refunds" value={statement.summary.total_refunds} tone="red" />
+              <Metric label="Salary payouts" value={statement.summary.salary_disbursements ?? 0} tone="red" />
               <Metric label="Net amount" value={statement.summary.net_amount} tone="blue" />
               <Metric label="Transactions" value={statement.summary.transaction_count} format="count" />
             </div>
@@ -143,9 +144,9 @@ export function PaymentMethodsReport() {
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-3 py-2">Date & time</th>
-                    <th className="px-3 py-2">Invoice #</th>
-                    <th className="px-3 py-2">Customer</th>
-                    <th className="px-3 py-2">Cashier</th>
+                    <th className="px-3 py-2">Source</th>
+                    <th className="px-3 py-2">Party</th>
+                    <th className="px-3 py-2">Recorded by</th>
                     <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Reference</th>
                     <th className="px-3 py-2 text-right">Amount</th>
@@ -154,12 +155,12 @@ export function PaymentMethodsReport() {
                 </thead>
                 <tbody>
                   {filteredTransactions.map((row) => (
-                    <tr key={`${row.invoice_number}-${row.time}-${row.amount.toString()}`} className={`border-t border-border ${row.type === "void" ? "text-slate-400 line-through" : "text-slate-700"}`}>
+                    <tr key={`${row.invoice_number}-${row.time}-${row.amount.toString()}-${row.type}`} className={`border-t border-border ${row.type === "void" ? "text-slate-400 line-through" : "text-slate-700"}`}>
                       <td className="px-3 py-2">{row.date} {row.time}</td>
                       <td className="px-3 py-2 font-medium">{row.invoice_number}</td>
                       <td className="px-3 py-2">{row.customer_name}</td>
                       <td className="px-3 py-2">{row.cashier_name || "-"}</td>
-                      <td className="px-3 py-2"><span className={row.type === "sale" ? "text-emerald-700" : row.type === "refund" ? "text-red-700" : "text-slate-500"}>{row.type}</span></td>
+                      <td className="px-3 py-2"><span className={row.type === "sale" ? "text-emerald-700" : row.type === "salary" || row.type === "refund" ? "text-red-700" : "text-slate-500"}>{row.type}</span></td>
                       <td className="px-3 py-2">{row.reference_number || "-"}</td>
                       <td className="px-3 py-2 text-right">{money(row.amount)}</td>
                       <td className="px-3 py-2 text-right">{money(row.running_balance)}</td>

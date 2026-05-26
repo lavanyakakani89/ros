@@ -78,12 +78,32 @@ const runStatusSchema = z.object({
   status: z.nativeEnum(PayrollStatus).refine((status) => status !== PayrollStatus.DRAFT, "Status must be APPROVED or PAID"),
 });
 
+const disburseRunSchema = z.object({
+  paymentMethodId: z.string().min(1),
+  paidAt: dateOnlySchema.optional(),
+  referencePrefix: z.string().trim().max(80).optional(),
+  payslipLineIds: z.array(z.string().min(1)).optional(),
+});
+
+const disbursementVoidSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+});
+
 const payslipUpdateSchema = z.object({
   otherDeductions: z.coerce.number().finite().nonnegative().optional(),
   breakdown: z.record(z.unknown()).optional(),
 });
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
+
+const disbursementInclude = {
+  employee: { select: { id: true, name: true, department: true } },
+  payrollRun: true,
+  payslipLine: true,
+  paymentMethod: true,
+  paidBy: { select: { name: true } },
+  voidAuthorisedBy: { select: { name: true } },
+} satisfies Prisma.PayrollDisbursementInclude;
 
 export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   fastify.get("/api/payroll/employees", async (request) => {
@@ -485,6 +505,126 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     });
   });
 
+  fastify.post("/api/payroll/runs/:id/disburse", async (request, reply) => {
+    return handlePayroll(reply, async () => {
+      ensurePayrollManager(request.user.role);
+      const { id } = idParamsSchema.parse(request.params);
+      const input = disburseRunSchema.parse(request.body);
+      const paymentMethod = await fastify.prisma.paymentMethod.findFirst({
+        where: { id: input.paymentMethodId, tenantId: request.tenant.id, isActive: true, deletedAt: null },
+      });
+      if (!paymentMethod) throw new PayrollError("Payment method not found or inactive", 400);
+      if (paymentMethod.allowedRoles.length > 0 && !paymentMethod.allowedRoles.includes(request.user.role)) {
+        throw new PayrollError(`Payment method "${paymentMethod.name}" is not available for your role`, 403);
+      }
+      if (paymentMethod.requiresReference && !input.referencePrefix) {
+        throw new PayrollError(`Reference required for ${paymentMethod.name}`, 400);
+      }
+
+      const run = await fastify.prisma.payrollRun.findFirst({
+        where: { id, tenantId: request.tenant.id },
+        include: {
+          payslipLines: {
+            include: { employee: true, disbursement: true },
+            orderBy: { employee: { name: "asc" } },
+          },
+        },
+      });
+      if (!run) throw new PayrollError("Payroll run not found", 404);
+      if (run.status === PayrollStatus.DRAFT) throw new PayrollError("Approve payroll before disbursement", 409);
+
+      const allowedLineIds = input.payslipLineIds ? new Set(input.payslipLineIds) : null;
+      const lines = run.payslipLines.filter((line) => !line.disbursement && decimalToNumber(line.netPay) > 0 && (!allowedLineIds || allowedLineIds.has(line.id)));
+      if (lines.length === 0) throw new PayrollError("No unpaid payslips found for this run", 409);
+      const paidAt = input.paidAt ?? new Date();
+
+      const disbursements = await fastify.prisma.$transaction(async (tx) => {
+        await tx.payrollDisbursement.createMany({
+          data: lines.map((line) => ({
+            tenantId: request.tenant.id,
+            payrollRunId: run.id,
+            payslipLineId: line.id,
+            employeeId: line.employeeId,
+            paymentMethodId: paymentMethod.id,
+            amount: line.netPay,
+            paidAt,
+            paidById: request.user.userId,
+            referenceNumber: input.referencePrefix ? `${input.referencePrefix}-${run.period}-${line.employee.name.replace(/\s+/g, "-").toUpperCase()}`.slice(0, 128) : null,
+          })),
+        });
+        await tx.payrollRun.update({ where: { id: run.id }, data: { status: PayrollStatus.PAID, runBy: request.user.userId, runAt: new Date() } });
+        const { endExclusive } = periodBounds(run.period);
+        await tx.payAdvance.updateMany({
+          where: {
+            employeeId: { in: lines.map((line) => line.employeeId) },
+            status: PayAdvanceStatus.APPROVED,
+            recoveredIn: null,
+            requestedAt: { lt: endExclusive },
+          },
+          data: { status: PayAdvanceStatus.RECOVERED, recoveredIn: run.id },
+        });
+        return tx.payrollDisbursement.findMany({
+          where: { payrollRunId: run.id, payslipLineId: { in: lines.map((line) => line.id) } },
+          include: disbursementInclude,
+          orderBy: [{ paidAt: "desc" }, { employee: { name: "asc" } }],
+        });
+      });
+
+      await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_DISBURSED", "PAYROLL_RUN", run.id, {
+        paymentMethodId: paymentMethod.id,
+        count: disbursements.length,
+        total: roundMoney(disbursements.reduce((sum, item) => sum + decimalToNumber(item.amount), 0)),
+      }, request.ip);
+      return reply.status(201).send({ data: disbursements.map(formatPayrollDisbursement) });
+    });
+  });
+
+  fastify.get("/api/payroll/disbursements", async (request) => {
+    const query = z.object({
+      payrollRunId: z.string().min(1).optional(),
+      employeeId: z.string().min(1).optional(),
+      paymentMethodId: z.string().min(1).optional(),
+      page: z.coerce.number().int().positive().default(1),
+      limit: z.coerce.number().int().positive().max(100).default(50),
+    }).parse(request.query);
+    const where = {
+      tenantId: request.tenant.id,
+      ...(query.payrollRunId ? { payrollRunId: query.payrollRunId } : {}),
+      ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+      ...(query.paymentMethodId ? { paymentMethodId: query.paymentMethodId } : {}),
+    };
+    const [total, disbursements] = await Promise.all([
+      fastify.prisma.payrollDisbursement.count({ where }),
+      fastify.prisma.payrollDisbursement.findMany({
+        where,
+        include: disbursementInclude,
+        orderBy: [{ paidAt: "desc" }, { employee: { name: "asc" } }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+    ]);
+
+    return { data: disbursements.map(formatPayrollDisbursement), page: query.page, limit: query.limit, total };
+  });
+
+  fastify.post("/api/payroll/disbursements/:id/void", async (request, reply) => {
+    return handlePayroll(reply, async () => {
+      ensurePayrollManager(request.user.role);
+      const { id } = idParamsSchema.parse(request.params);
+      const input = disbursementVoidSchema.parse(request.body);
+      const existing = await fastify.prisma.payrollDisbursement.findFirst({ where: { id, tenantId: request.tenant.id } });
+      if (!existing) throw new PayrollError("Payroll disbursement not found", 404);
+      if (existing.voidedAt) throw new PayrollError("Payroll disbursement already voided", 409);
+      const disbursement = await fastify.prisma.payrollDisbursement.update({
+        where: { id },
+        data: { voidedAt: new Date(), voidReason: input.reason, voidAuthorisedById: request.user.userId },
+        include: disbursementInclude,
+      });
+      await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_DISBURSEMENT_VOIDED", "PAYROLL_DISBURSEMENT", id, input, request.ip);
+      return formatPayrollDisbursement(disbursement);
+    });
+  });
+
   fastify.get("/api/payroll/payslips", async (request) => {
     const query = z.object({
       payrollRunId: z.string().min(1).optional(),
@@ -576,6 +716,7 @@ async function getPayrollRunOrThrow(fastify: FastifyInstance, tenantId: string, 
     include: {
       payslipLines: { include: { employee: true }, orderBy: { employee: { name: "asc" } } },
       recoveredAdvances: { include: { employee: { select: { id: true, name: true, department: true } } } },
+      disbursements: { include: disbursementInclude, orderBy: [{ paidAt: "desc" }, { employee: { name: "asc" } }] },
     },
   });
   if (!run) throw new PayrollError("Payroll run not found", 404);
@@ -749,9 +890,29 @@ type PayslipLineForResponse = {
   payrollRun?: { id: string; period: string; status: PayrollStatus };
 };
 
+type PayrollDisbursementForResponse = {
+  id: string;
+  payrollRunId: string;
+  payslipLineId: string;
+  employeeId: string;
+  paymentMethodId: string;
+  amount: { toNumber(): number };
+  referenceNumber: string | null;
+  paidAt: Date;
+  paidById: string | null;
+  voidedAt: Date | null;
+  voidReason: string | null;
+  employee?: { id: string; name: string; department: string };
+  payrollRun?: { id: string; period: string; status: PayrollStatus };
+  paymentMethod?: { id: string; name: string; shortCode: string; color: string };
+  paidBy?: { name: string } | null;
+  voidAuthorisedBy?: { name: string } | null;
+};
+
 type PayrollRunDetailForResponse = PayrollRunForResponse & {
   payslipLines: PayslipLineForResponse[];
   recoveredAdvances: PayAdvanceForResponse[];
+  disbursements?: PayrollDisbursementForResponse[];
 };
 
 function formatEmployee(employee: EmployeeForResponse) {
@@ -817,6 +978,7 @@ function formatPayrollRunDetail(run: PayrollRunDetailForResponse) {
     ...formatPayrollRun(run),
     payslips: run.payslipLines.map(formatPayslipLine),
     recoveredAdvances: run.recoveredAdvances.map(formatPayAdvance),
+    disbursements: run.disbursements?.map(formatPayrollDisbursement) ?? [],
   };
 }
 
@@ -835,6 +997,31 @@ function formatPayslipLine(line: PayslipLineForResponse) {
     otherDeductions: decimalToNumber(line.otherDeductions),
     netPay: decimalToNumber(line.netPay),
     breakdown: line.breakdown,
+  };
+}
+
+function formatPayrollDisbursement(disbursement: PayrollDisbursementForResponse) {
+  return {
+    id: disbursement.id,
+    payrollRunId: disbursement.payrollRunId,
+    payslipLineId: disbursement.payslipLineId,
+    employeeId: disbursement.employeeId,
+    employee: disbursement.employee,
+    payrollRun: disbursement.payrollRun ? { id: disbursement.payrollRun.id, period: disbursement.payrollRun.period, status: disbursement.payrollRun.status } : undefined,
+    paymentMethodId: disbursement.paymentMethodId,
+    paymentMethod: disbursement.paymentMethod ? {
+      id: disbursement.paymentMethod.id,
+      name: disbursement.paymentMethod.name,
+      short_code: disbursement.paymentMethod.shortCode,
+      color: disbursement.paymentMethod.color,
+    } : undefined,
+    amount: decimalToNumber(disbursement.amount),
+    referenceNumber: disbursement.referenceNumber,
+    paidAt: disbursement.paidAt.toISOString(),
+    paidBy: disbursement.paidBy?.name ?? null,
+    voidedAt: disbursement.voidedAt?.toISOString() ?? null,
+    voidReason: disbursement.voidReason,
+    voidAuthorisedBy: disbursement.voidAuthorisedBy?.name ?? null,
   };
 }
 

@@ -99,7 +99,7 @@ interface StatementRow {
   cashier_name: string;
   amount: unknown;
   reference_number: string | null;
-  type: "sale" | "void";
+  type: "sale" | "salary" | "void";
   void_reason: string | null;
   running_balance: unknown;
 }
@@ -340,12 +340,17 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     const storeId = await resolveStoreId(request.tenant.id, query.storeId ?? request.storeId ?? undefined);
     const methods = await fastify.prisma.paymentMethod.findMany({
       where: { tenantId: request.tenant.id, storeId, isActive: true, deletedAt: null },
-      include: { payments: { where: { recordedAt: { gte: startOfDay(query.date_from), lte: endOfDay(query.date_to) } } } },
+      include: {
+        payments: { where: { recordedAt: { gte: startOfDay(query.date_from), lte: endOfDay(query.date_to) } } },
+        payrollDisbursements: { where: { paidAt: { gte: startOfDay(query.date_from), lte: endOfDay(query.date_to) } } },
+      },
       orderBy: { displayOrder: "asc" },
     });
     return methods.map((method) => {
       const activePayments = method.payments.filter((payment) => !payment.voidedAt);
       const voidPayments = method.payments.filter((payment) => payment.voidedAt);
+      const activePayrollDisbursements = method.payrollDisbursements.filter((disbursement) => !disbursement.voidedAt);
+      const voidPayrollDisbursements = method.payrollDisbursements.filter((disbursement) => disbursement.voidedAt);
       return {
         id: method.id,
         name: method.name,
@@ -353,8 +358,9 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         color: method.color,
         type: method.type.toLowerCase(),
         total_sales: roundMoney(activePayments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0)),
-        transaction_count: activePayments.length,
-        void_count: voidPayments.length,
+        salary_disbursements: roundMoney(activePayrollDisbursements.reduce((sum, disbursement) => sum + disbursement.amount.toNumber(), 0)),
+        transaction_count: activePayments.length + activePayrollDisbursements.length,
+        void_count: voidPayments.length + voidPayrollDisbursements.length,
       };
     });
   });
@@ -367,13 +373,21 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       paymentMethodId: method.id,
       recordedAt: { gte: startOfDay(query.date_from), lte: endOfDay(query.date_to) },
     };
+    const disbursementWhere = {
+      tenantId: request.tenant.id,
+      paymentMethodId: method.id,
+      paidAt: { gte: startOfDay(query.date_from), lte: endOfDay(query.date_to) },
+    };
     const offset = (query.page - 1) * query.per_page;
-    const [total, activeCount, totalSales, rows] = await Promise.all([
+    const [paymentTotal, disbursementTotal, activePaymentCount, activeDisbursementCount, totalSales, totalDisbursements, rows] = await Promise.all([
       fastify.prisma.payment.count({ where }),
+      fastify.prisma.payrollDisbursement.count({ where: disbursementWhere }),
       fastify.prisma.payment.count({ where: { ...where, voidedAt: null } }),
+      fastify.prisma.payrollDisbursement.count({ where: { ...disbursementWhere, voidedAt: null } }),
       fastify.prisma.payment.aggregate({ where: { ...where, voidedAt: null }, _sum: { amount: true } }),
+      fastify.prisma.payrollDisbursement.aggregate({ where: { ...disbursementWhere, voidedAt: null }, _sum: { amount: true } }),
       fastify.prisma.$queryRaw<StatementRow[]>`
-        WITH ordered AS (
+        WITH movements AS (
           SELECT
             ip.id,
             ip.recorded_at,
@@ -384,16 +398,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
             ip.reference_number,
             CASE WHEN ip.voided_at IS NOT NULL THEN 'void' ELSE 'sale' END AS type,
             ip.void_reason,
-            (
-              ${method.openingBalance.toNumber()}::numeric +
-              SUM(
-                CASE WHEN ip.voided_at IS NULL THEN ip.amount ELSE 0 END
-              ) OVER (
-                PARTITION BY ip.payment_method_id
-                ORDER BY ip.recorded_at, ip.id
-                ROWS UNBOUNDED PRECEDING
-              )
-            ) AS running_balance
+            CASE WHEN ip.voided_at IS NULL THEN ip.amount ELSE 0 END AS balance_delta
           FROM invoice_payments ip
           JOIN invoices i ON i.id = ip.invoice_id
           LEFT JOIN customers c ON c.id = i.customer_id
@@ -402,6 +407,50 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
             AND ip.payment_method_id = ${method.id}
             AND ip.recorded_at >= ${startOfDay(query.date_from)}
             AND ip.recorded_at <= ${endOfDay(query.date_to)}
+
+          UNION ALL
+
+          SELECT
+            pd.id,
+            pd.paid_at AS recorded_at,
+            CONCAT('Payroll ', pr.period) AS invoice_number,
+            e.name AS customer_name,
+            COALESCE(u.name, '') AS cashier_name,
+            pd.amount,
+            pd.reference_number,
+            CASE WHEN pd.voided_at IS NOT NULL THEN 'void' ELSE 'salary' END AS type,
+            pd.void_reason,
+            CASE WHEN pd.voided_at IS NULL THEN -pd.amount ELSE 0 END AS balance_delta
+          FROM payroll_disbursements pd
+          JOIN payroll_runs pr ON pr.id = pd.payroll_run_id
+          JOIN employees e ON e.id = pd.employee_id
+          LEFT JOIN users u ON u.id = pd.paid_by
+          WHERE pd.tenant_id = ${request.tenant.id}
+            AND pd.payment_method_id = ${method.id}
+            AND pd.paid_at >= ${startOfDay(query.date_from)}
+            AND pd.paid_at <= ${endOfDay(query.date_to)}
+        ),
+        ordered AS (
+          SELECT
+            id,
+            recorded_at,
+            invoice_number,
+            customer_name,
+            cashier_name,
+            amount,
+            reference_number,
+            type,
+            void_reason,
+            (
+              ${method.openingBalance.toNumber()}::numeric +
+              SUM(
+                balance_delta
+              ) OVER (
+                ORDER BY recorded_at, id
+                ROWS UNBOUNDED PRECEDING
+              )
+            ) AS running_balance
+          FROM movements
         )
         SELECT *
         FROM ordered
@@ -426,6 +475,9 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       };
     });
     const sales = totalSales._sum.amount?.toNumber() ?? 0;
+    const payrollOut = totalDisbursements._sum.amount?.toNumber() ?? 0;
+    const total = paymentTotal + disbursementTotal;
+    const activeCount = activePaymentCount + activeDisbursementCount;
     return {
       method: formatMethod({ ...method, partner: null, _count: { payments: total } }),
       period: { from: query.date_from, to: query.date_to },
@@ -433,7 +485,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         opening_balance: method.openingBalance.toNumber(),
         total_sales: roundMoney(sales),
         total_refunds: 0,
-        net_amount: roundMoney(sales),
+        salary_disbursements: roundMoney(payrollOut),
+        net_amount: roundMoney(sales - payrollOut),
         transaction_count: activeCount,
         void_count: Math.max(total - activeCount, 0),
       },
