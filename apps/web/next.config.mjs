@@ -23,13 +23,15 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  webpack: (config) => {
-    const aliases = config.resolve.alias ?? {};
-    config.resolve.alias = {
-      ...aliases,
-      ...packageAlias(aliases, "react"),
-      ...packageAlias(aliases, "react-dom"),
-    };
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      const aliases = config.resolve.alias ?? {};
+      config.resolve.alias = {
+        ...aliases,
+        ...packageAlias(aliases, "react"),
+        ...packageAlias(aliases, "react-dom"),
+      };
+    }
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
       ".js": [".ts", ".tsx", ".js"],
