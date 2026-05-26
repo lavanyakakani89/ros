@@ -5,6 +5,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const packageRoot = (packageName) =>
   path.dirname(require.resolve(`${packageName}/package.json`));
+const nextDependencyRoot = (packageName) =>
+  path.join(packageRoot("next"), "node_modules", packageName);
 const packageAlias = (aliases, packageName) =>
   Object.prototype.hasOwnProperty.call(aliases, packageName)
     ? {}
@@ -30,6 +32,11 @@ const nextConfig = {
         ...aliases,
         ...packageAlias(aliases, "react"),
         ...packageAlias(aliases, "react-dom"),
+      };
+    } else {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "react-dom": nextDependencyRoot("react-dom"),
       };
     }
     config.resolve.extensionAlias = {
