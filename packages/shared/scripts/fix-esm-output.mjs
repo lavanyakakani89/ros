@@ -1,5 +1,5 @@
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const distRoot = fileURLToPath(new URL("../dist/", import.meta.url));
@@ -25,6 +25,7 @@ async function collectJavaScriptFiles(directory) {
 }
 
 const files = await collectJavaScriptFiles(distRoot);
+const fileSet = new Set(files.map((filePath) => normalize(filePath)));
 
 await Promise.all(
   files.map(async (filePath) => {
@@ -34,13 +35,25 @@ await Promise.all(
         return match;
       }
 
-      return `${prefix}${specifier}.mjs${suffix}`;
+      const resolvedSpecifier = resolve(dirname(filePath), specifier);
+      const directFile = normalize(`${resolvedSpecifier}.js`);
+      const indexFile = normalize(join(resolvedSpecifier, "index.js"));
+
+      if (fileSet.has(directFile)) {
+        return `${prefix}${specifier}.mjs${suffix}`;
+      }
+
+      if (fileSet.has(indexFile)) {
+        return `${prefix}${specifier}/index.mjs${suffix}`;
+      }
+
+      return match;
     });
 
     if (fixed !== source) {
       await writeFile(filePath, fixed);
     }
-
-    await rename(filePath, filePath.replace(/\.js$/, ".mjs"));
   }),
 );
+
+await Promise.all(files.map((filePath) => rename(filePath, filePath.replace(/\.js$/, ".mjs"))));
