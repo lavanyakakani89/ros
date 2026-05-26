@@ -26,8 +26,12 @@ echo "==> Starting testing dependencies"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
 
 echo "==> Running testing database migrations"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
-  pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
+  pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma; then
+  echo "==> Testing migration failed; resetting the testing database and retrying migrations"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
+    pnpm --filter @retailos/api exec -- prisma migrate reset --force --skip-seed --schema prisma/schema.prisma
+fi
 
 echo "==> Restarting testing application services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api web caddy

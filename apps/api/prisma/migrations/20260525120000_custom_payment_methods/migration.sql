@@ -77,6 +77,28 @@ SELECT 'pm_credit_' || "id", "tenant_id", "id", 'Credit', 'CRED', 'CREDIT', '#85
 FROM "stores"
 ON CONFLICT DO NOTHING;
 
+-- Preserve any legacy netbanking history as a regular custom method.
+INSERT INTO "payment_methods"
+  ("id", "tenant_id", "store_id", "name", "short_code", "type", "color", "icon", "display_order", "is_default", "is_active")
+SELECT 'pm_netbanking_' || s."id", s."tenant_id", s."id", 'Net Banking', 'NETBANKING', 'CUSTOM', '#334155', 'ti-building-bank', 5, false, true
+FROM "stores" s
+WHERE EXISTS (
+    SELECT 1
+    FROM "invoices" i
+    WHERE i."tenant_id" = s."tenant_id"
+      AND COALESCE(i."store_id", s."id") = s."id"
+      AND i."payment_mode"::TEXT = 'NETBANKING'
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM "payments" p
+    JOIN "invoices" i ON i."id" = p."invoice_id"
+    WHERE i."tenant_id" = s."tenant_id"
+      AND COALESCE(i."store_id", s."id") = s."id"
+      AND p."mode"::TEXT = 'NETBANKING'
+  )
+ON CONFLICT DO NOTHING;
+
 -- Migrate invoice display method to a payment method reference.
 ALTER TABLE "invoices" ADD COLUMN "payment_method_id" TEXT;
 
@@ -97,6 +119,22 @@ WHERE pm."store_id" = COALESCE(
     WHEN 'CREDIT' THEN 'CRED'
     ELSE i."payment_mode"::TEXT
   END;
+
+UPDATE "invoices" i
+SET "payment_method_id" = pm."id"
+FROM "payment_methods" pm
+WHERE i."payment_method_id" IS NULL
+  AND pm."store_id" = COALESCE(
+    i."store_id",
+    (
+      SELECT s."id"
+      FROM "stores" s
+      WHERE s."tenant_id" = i."tenant_id"
+      ORDER BY s."is_default" DESC, s."created_at" ASC
+      LIMIT 1
+    )
+  )
+  AND pm."short_code" = 'CASH';
 
 ALTER TABLE "invoices"
   ADD CONSTRAINT "invoices_payment_method_id_fkey"
@@ -133,6 +171,23 @@ WHERE ip."invoice_id" = i."id"
     WHEN 'CREDIT' THEN 'CRED'
     ELSE COALESCE(ip."mode"::TEXT, i."payment_mode"::TEXT)
   END;
+
+UPDATE "invoice_payments" ip
+SET "payment_method_id" = pm."id"
+FROM "invoices" i
+JOIN "payment_methods" pm ON pm."store_id" = COALESCE(
+    i."store_id",
+    (
+      SELECT s."id"
+      FROM "stores" s
+      WHERE s."tenant_id" = i."tenant_id"
+      ORDER BY s."is_default" DESC, s."created_at" ASC
+      LIMIT 1
+    )
+  )
+WHERE ip."invoice_id" = i."id"
+  AND ip."payment_method_id" IS NULL
+  AND pm."short_code" = 'CASH';
 
 UPDATE "invoice_payments" ip
 SET "cashier_id" = ip."created_by"
