@@ -5,6 +5,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const packageRoot = (packageName) =>
   path.dirname(require.resolve(`${packageName}/package.json`));
+const packageAlias = (aliases, packageName) =>
+  Object.prototype.hasOwnProperty.call(aliases, packageName)
+    ? {}
+    : { [packageName]: packageRoot(packageName) };
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -20,10 +24,11 @@ const withPWA = withPWAInit({
 const nextConfig = {
   reactStrictMode: true,
   webpack: (config) => {
+    const aliases = config.resolve.alias ?? {};
     config.resolve.alias = {
-      ...config.resolve.alias,
-      react: packageRoot("react"),
-      "react-dom": packageRoot("react-dom"),
+      ...aliases,
+      ...packageAlias(aliases, "react"),
+      ...packageAlias(aliases, "react-dom"),
     };
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
