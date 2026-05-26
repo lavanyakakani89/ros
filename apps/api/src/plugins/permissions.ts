@@ -1,4 +1,9 @@
-import { hasPermission, Permission as SharedPermissionValue, ROLE_PERMISSIONS, type Permission as SharedPermission } from "@retailos/shared";
+import {
+  hasPermission,
+  Permission as SharedPermissionValue,
+  ROLE_PERMISSIONS,
+  type Permission as SharedPermission,
+} from "@retailos/shared/rbac/permissions";
 import { UserRole } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
