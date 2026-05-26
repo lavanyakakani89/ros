@@ -43,7 +43,9 @@ import {
 } from "@/lib/vertical-config";
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
-  const pathname = usePathname();
+  // Next widens this to nullable during production builds when pages/ exists.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
   const [tenant, setTenant] = useState<StoredTenant | null>(null);
