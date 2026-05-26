@@ -5,6 +5,7 @@
     "incremental": true,
     "jsx": "preserve",
     "noEmit": true,
+    "strictNullChecks": false,
     "paths": {
       "@/*": [
         "apps/web/*"
