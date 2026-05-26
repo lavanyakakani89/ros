@@ -159,6 +159,11 @@ jobs:
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "
             set +e
             cd '$DEPLOY_TEST_PATH'
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml ps
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=200 api web caddy
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml ps -a
+            echo '--- api logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=400 api
+            echo '--- web logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=120 web
+            echo '--- caddy logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=40 caddy
           "
