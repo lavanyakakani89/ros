@@ -23,8 +23,11 @@ export default function ImpersonatePage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    const token = searchParams!.get("token");
-    const sessionId = searchParams!.get("sessionId");
+    // Next widens this to nullable during production builds when pages/ exists.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const token = searchParams?.get("token");
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const sessionId = searchParams?.get("sessionId");
 
     if (!token || !sessionId) {
       router.replace("/login");
