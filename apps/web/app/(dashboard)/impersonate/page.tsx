@@ -23,8 +23,8 @@ export default function ImpersonatePage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    const token = searchParams?.get("token");
-    const sessionId = searchParams?.get("sessionId");
+    const token = searchParams!.get("token");
+    const sessionId = searchParams!.get("sessionId");
 
     if (!token || !sessionId) {
       router.replace("/login");
