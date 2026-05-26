@@ -1,14 +1,4 @@
 import withPWAInit from "next-pwa";
-import path from "node:path";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const packageRoot = (packageName) =>
-  path.dirname(require.resolve(`${packageName}/package.json`));
-const packageAlias = (aliases, packageName) =>
-  Object.prototype.hasOwnProperty.call(aliases, packageName)
-    ? {}
-    : { [packageName]: packageRoot(packageName) };
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -23,15 +13,7 @@ const withPWA = withPWAInit({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      const aliases = config.resolve.alias ?? {};
-      config.resolve.alias = {
-        ...aliases,
-        ...packageAlias(aliases, "react"),
-        ...packageAlias(aliases, "react-dom"),
-      };
-    }
+  webpack: (config) => {
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
       ".js": [".ts", ".tsx", ".js"],
