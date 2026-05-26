@@ -3,10 +3,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const nextRequire = createRequire(require.resolve("next/package.json"));
 const packageRoot = (packageName) =>
   path.dirname(require.resolve(`${packageName}/package.json`));
 const nextDependencyRoot = (packageName) =>
-  path.join(packageRoot("next"), "node_modules", packageName);
+  path.dirname(nextRequire.resolve(`${packageName}/package.json`));
 const packageAlias = (aliases, packageName) =>
   Object.prototype.hasOwnProperty.call(aliases, packageName)
     ? {}
