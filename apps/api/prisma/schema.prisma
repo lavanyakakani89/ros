@@ -81,6 +81,8 @@ model Tenant {
   whatsappMessageTemplates WhatsappMessageTemplate[]
   whatsappCampaigns WhatsappCampaign[]
   whatsappCampaignRecipients WhatsappCampaignRecipient[]
+  employees          Employee[]
+  payrollRuns        PayrollRun[]
 
   @@map("tenants")
 }
@@ -1690,6 +1692,8 @@ enum BillingCycle {
 }
 model Employee {
   id           String         @id @default(cuid())
+  tenantId     String         @map("tenant_id")
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   phone        String
   role         String
@@ -1703,6 +1707,8 @@ model Employee {
   payAdvances  PayAdvance[]
   payslipLines PayslipLine[]
 
+  @@index([tenantId, status])
+  @@index([tenantId, department])
   @@map("employees")
 }
 
@@ -1769,7 +1775,9 @@ enum PayAdvanceStatus {
 
 model PayrollRun {
   id                String        @id @default(cuid())
-  period            String        @unique
+  tenantId          String        @map("tenant_id")
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  period            String
   runAt             DateTime      @default(now()) @map("run_at")
   status            PayrollStatus @default(DRAFT)
   runBy             String?       @map("run_by")
@@ -1777,6 +1785,8 @@ model PayrollRun {
   payslipLines      PayslipLine[]
   recoveredAdvances PayAdvance[]  @relation("RecoveredPayAdvances")
 
+  @@unique([tenantId, period])
+  @@index([tenantId, status])
   @@map("payroll_runs")
 }
 

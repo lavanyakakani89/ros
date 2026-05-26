@@ -32,6 +32,7 @@ import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { paymentMethodsRoutes } from "./modules/payment-methods/payment-methods.routes.js";
+import { payrollRoutes } from "./modules/payroll/payroll.routes.js";
 import { printerRoutes } from "./modules/printer/printer.routes.js";
 import { purchaseOrdersRoutes } from "./modules/purchase-orders/purchase-orders.routes.js";
 import { purchaseReturnsRoutes } from "./modules/purchase-returns/purchase-returns.routes.js";
@@ -151,6 +152,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(printerRoutes);
   await fastify.register(paymentsRoutes);
   await fastify.register(paymentMethodsRoutes);
+  await fastify.register(payrollRoutes);
   await fastify.register(deliveryRoutes);
   await fastify.register(notificationsRoutes);
   await fastify.register(reportsRoutes);

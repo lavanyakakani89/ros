@@ -109,6 +109,7 @@ export function requiredPermission(method: string, url: string): Permission | un
   if (path.startsWith("/api/invoices/") && path.endsWith("/payments")) return "payments:use";
   if (path.startsWith("/api/invoice-payments")) return "payments:use";
   if (path.startsWith("/api/payments")) return "payments:use";
+  if (path.startsWith("/api/payroll")) return "settings:users";
   if (path.startsWith("/api/purchase-orders") || path.startsWith("/api/purchase-returns")) return "purchase-orders:manage";
 
   if (path.startsWith("/api/quotations")) {
