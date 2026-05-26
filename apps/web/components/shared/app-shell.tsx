@@ -236,6 +236,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       : []),
     ...(verticalConfig.navigation.some((item) => item.href === "/whatsapp") ? [] : [{ href: "/whatsapp", label: "WhatsApp Orders", icon: "message-circle" }]),
     ...(verticalConfig.navigation.some((item) => item.href === "/customers/campaigns") ? [] : [{ href: "/customers/campaigns", label: "Campaigns", icon: "message-circle" }]),
+    ...(verticalConfig.navigation.some((item) => item.href === "/settings/payment-methods") ? [] : [{ href: "/settings/payment-methods", label: "Payment Methods", icon: "card" }]),
   ];
   const dashboard = dashboardItem(tenantNavigation);
   const navGroups = groupedNavigation(tenantNavigation);
@@ -696,7 +697,7 @@ function navigationIconClass(href: string): string {
     return "text-violet-600";
   }
 
-  if (["/payments", "/expenses"].includes(href)) {
+  if (["/payments", "/settings/payment-methods", "/expenses"].includes(href)) {
     return "text-amber-600";
   }
 
