@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./rbac/permissions": {
-      "types": "./dist/rbac/permissions.d.ts",
+      "types": "./src/rbac/permissions.ts",
       "import": "./dist/rbac/permissions.js",
       "default": "./dist/rbac/permissions.js"
     }
