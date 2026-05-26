@@ -15,7 +15,9 @@ export function BillingWorkspace() {
   const [editingInvoice, setEditingInvoice] = useState<InvoiceRecord | null>(null);
 
   useEffect(() => {
-    const invoiceId = searchParams.get("invoiceId");
+    // Next widens this to nullable during production builds when pages/ exists.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const invoiceId = searchParams?.get("invoiceId");
     if (!invoiceId) {
       return;
     }

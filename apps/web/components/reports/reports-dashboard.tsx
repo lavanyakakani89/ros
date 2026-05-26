@@ -127,7 +127,9 @@ function weekAgoStr() { return new Date(Date.now() - 6 * 86400000).toISOString()
 
 export function ReportsDashboard() {
   const searchParams = useSearchParams();
-  const initialTab = (searchParams.get("tab") as Tab | null) ?? "sales";
+  // Next widens this to nullable during production builds when pages/ exists.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const initialTab = (searchParams?.get("tab") as Tab | null) ?? "sales";
   const [tab, setTab] = useState<Tab>(initialTab);
   const [from, setFrom] = useState(weekAgoStr());
   const [to, setTo] = useState(todayStr());
