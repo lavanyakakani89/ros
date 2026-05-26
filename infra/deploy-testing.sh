@@ -20,7 +20,7 @@ git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
 git reset --hard "$DEPLOY_REF"
 
 echo "==> Building testing application images"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build api web
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --quiet api web
 
 echo "==> Starting testing dependencies"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
@@ -39,6 +39,25 @@ fi
 
 echo "==> Restarting testing application services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate --remove-orphans api web caddy
+
+echo "==> Waiting for testing API readiness"
+api_ready=false
+for attempt in {1..30}; do
+  if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps --status running --services api | grep -qx api; then
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3001') + '/health').then(async (response) => { if (!response.ok) { console.error(await response.text()); process.exit(1); } }).catch((error) => { console.error(error); process.exit(1); })"; then
+      api_ready=true
+      break
+    fi
+  fi
+  sleep 2
+done
+
+if [[ "$api_ready" != "true" ]]; then
+  echo "Testing API did not become ready; dumping focused API diagnostics" >&2
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -a
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=200 api
+  exit 1
+fi
 
 echo "==> Testing service status"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps api web caddy postgres redis minio
