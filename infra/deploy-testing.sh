@@ -38,7 +38,7 @@ if [[ "$migration_status" -ne 0 ]]; then
 fi
 
 echo "==> Restarting testing application services"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api web caddy
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate --remove-orphans api web caddy
 
 echo "==> Testing service status"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps api web caddy postgres redis minio
