@@ -20,7 +20,14 @@ git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
 git reset --hard "$DEPLOY_REF"
 
 echo "==> Building testing application images"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --quiet api web
+build_log="$(mktemp)"
+if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build api web >"$build_log" 2>&1; then
+  cat "$build_log"
+  rm -f "$build_log"
+  exit 1
+fi
+tail -n 40 "$build_log"
+rm -f "$build_log"
 
 echo "==> Starting testing dependencies"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
@@ -56,6 +63,34 @@ if [[ "$api_ready" != "true" ]]; then
   echo "Testing API did not become ready; dumping focused API diagnostics" >&2
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -a
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=200 api
+  exit 1
+fi
+
+echo "==> Waiting for testing proxy to reach API"
+proxy_ready=false
+for attempt in {1..30}; do
+  if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T caddy wget -qO- http://api:3001/health; then
+    proxy_ready=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$proxy_ready" != "true" ]]; then
+  echo "Testing proxy could not reach API; dumping focused network diagnostics" >&2
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -a
+  echo "--- container networks ---"
+  docker inspect \
+    "$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q api)" \
+    "$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q caddy)" \
+    --format '{{.Name}} {{json .NetworkSettings.Networks}}'
+  echo "--- caddy resolver ---"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T caddy cat /etc/resolv.conf || true
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T caddy nslookup api || true
+  echo "--- api logs ---"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=120 api
+  echo "--- caddy logs ---"
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=80 caddy
   exit 1
 fi
 
