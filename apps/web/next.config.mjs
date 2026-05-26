@@ -1,7 +1,10 @@
 import withPWAInit from "next-pwa";
+import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const packageRoot = (packageName) =>
+  path.dirname(require.resolve(`${packageName}/package.json`));
 
 const withPWA = withPWAInit({
   dest: "public",
@@ -19,8 +22,8 @@ const nextConfig = {
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,
-      react: require.resolve("react"),
-      "react-dom": require.resolve("react-dom"),
+      react: packageRoot("react"),
+      "react-dom": packageRoot("react-dom"),
     };
     config.resolve.extensionAlias = {
       ...config.resolve.extensionAlias,
