@@ -35,9 +35,11 @@ const nextConfig = {
         ...packageAlias(aliases, "react-dom"),
       };
     } else {
+      const nextReactDomRoot = nextDependencyRoot("react-dom");
       config.resolve.alias = {
         ...config.resolve.alias,
-        "react-dom": nextDependencyRoot("react-dom"),
+        "react-dom/server$": path.join(nextReactDomRoot, "server.js"),
+        "react-dom/server.browser$": path.join(nextReactDomRoot, "server.browser.js"),
       };
     }
     config.resolve.extensionAlias = {
