@@ -8,7 +8,7 @@
     "lint": "corepack pnpm -r --if-present lint",
     "typecheck": "corepack pnpm -r --if-present typecheck",
     "test": "corepack pnpm -r --if-present test",
-    "check": "corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test"
+    "check": "corepack pnpm --filter @retailos/shared build && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test"
   },
   "devDependencies": {
     "@retailos/eslint-config": "workspace:*",
