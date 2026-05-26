@@ -683,7 +683,7 @@ function roundQuantity(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function formatEmployee<T extends {
+type EmployeeForResponse = {
   id: string;
   name: string;
   phone: string;
@@ -695,7 +695,66 @@ function formatEmployee<T extends {
   joinedAt: Date;
   createdAt: Date;
   _count?: { attendance: number; payAdvances: number; payslipLines: number };
-}>(employee: T) {
+};
+
+type AttendanceForResponse = {
+  id: string;
+  employeeId: string;
+  date: Date;
+  status: AttendanceStatus;
+  shiftStart: Date | null;
+  shiftEnd: Date | null;
+  overtimeMinutes: number;
+  note: string | null;
+  employee?: { id: string; name: string; department: string };
+};
+
+type PayAdvanceForResponse = {
+  id: string;
+  employeeId: string;
+  amount: { toNumber(): number };
+  reason: string | null;
+  status: PayAdvanceStatus;
+  requestedAt: Date;
+  approvedAt: Date | null;
+  approvedBy: string | null;
+  recoveredIn: string | null;
+  employee?: { id: string; name: string; department: string };
+  recoveredInRun?: { id: string; period: string } | null;
+};
+
+type PayrollRunForResponse = {
+  id: string;
+  period: string;
+  runAt: Date;
+  status: PayrollStatus;
+  runBy: string | null;
+  notes: string | null;
+  _count?: { payslipLines: number; recoveredAdvances: number };
+};
+
+type PayslipLineForResponse = {
+  id: string;
+  payrollRunId: string;
+  employeeId: string;
+  daysWorked: { toNumber(): number };
+  overtimeHours: { toNumber(): number };
+  grossPay: { toNumber(): number };
+  overtimePay: { toNumber(): number };
+  advancesDeducted: { toNumber(): number };
+  otherDeductions: { toNumber(): number };
+  netPay: { toNumber(): number };
+  breakdown: Prisma.JsonValue;
+  employee?: { id: string; name: string; department: string; role?: string };
+  payrollRun?: { id: string; period: string; status: PayrollStatus };
+};
+
+type PayrollRunDetailForResponse = PayrollRunForResponse & {
+  payslipLines: PayslipLineForResponse[];
+  recoveredAdvances: PayAdvanceForResponse[];
+};
+
+function formatEmployee(employee: EmployeeForResponse) {
   return {
     id: employee.id,
     name: employee.name,
@@ -711,17 +770,7 @@ function formatEmployee<T extends {
   };
 }
 
-function formatAttendance<T extends {
-  id: string;
-  employeeId: string;
-  date: Date;
-  status: AttendanceStatus;
-  shiftStart: Date | null;
-  shiftEnd: Date | null;
-  overtimeMinutes: number;
-  note: string | null;
-  employee?: { id: string; name: string; department: string };
-}>(attendance: T) {
+function formatAttendance(attendance: AttendanceForResponse) {
   return {
     id: attendance.id,
     employeeId: attendance.employeeId,
@@ -735,19 +784,7 @@ function formatAttendance<T extends {
   };
 }
 
-function formatPayAdvance<T extends {
-  id: string;
-  employeeId: string;
-  amount: { toNumber(): number };
-  reason: string | null;
-  status: PayAdvanceStatus;
-  requestedAt: Date;
-  approvedAt: Date | null;
-  approvedBy: string | null;
-  recoveredIn: string | null;
-  employee?: { id: string; name: string; department: string };
-  recoveredInRun?: { id: string; period: string } | null;
-}>(advance: T) {
+function formatPayAdvance(advance: PayAdvanceForResponse) {
   return {
     id: advance.id,
     employeeId: advance.employeeId,
@@ -763,15 +800,7 @@ function formatPayAdvance<T extends {
   };
 }
 
-function formatPayrollRun<T extends {
-  id: string;
-  period: string;
-  runAt: Date;
-  status: PayrollStatus;
-  runBy: string | null;
-  notes: string | null;
-  _count?: { payslipLines: number; recoveredAdvances: number };
-}>(run: T) {
+function formatPayrollRun(run: PayrollRunForResponse) {
   return {
     id: run.id,
     period: run.period,
@@ -783,16 +812,7 @@ function formatPayrollRun<T extends {
   };
 }
 
-function formatPayrollRunDetail<T extends {
-  id: string;
-  period: string;
-  runAt: Date;
-  status: PayrollStatus;
-  runBy: string | null;
-  notes: string | null;
-  payslipLines: Array<Parameters<typeof formatPayslipLine>[0]>;
-  recoveredAdvances: Array<Parameters<typeof formatPayAdvance>[0]>;
-}>(run: T) {
+function formatPayrollRunDetail(run: PayrollRunDetailForResponse) {
   return {
     ...formatPayrollRun(run),
     payslips: run.payslipLines.map(formatPayslipLine),
@@ -800,21 +820,7 @@ function formatPayrollRunDetail<T extends {
   };
 }
 
-function formatPayslipLine<T extends {
-  id: string;
-  payrollRunId: string;
-  employeeId: string;
-  daysWorked: { toNumber(): number };
-  overtimeHours: { toNumber(): number };
-  grossPay: { toNumber(): number };
-  overtimePay: { toNumber(): number };
-  advancesDeducted: { toNumber(): number };
-  otherDeductions: { toNumber(): number };
-  netPay: { toNumber(): number };
-  breakdown: Prisma.JsonValue;
-  employee?: { id: string; name: string; department: string; role?: string };
-  payrollRun?: { id: string; period: string; status: PayrollStatus };
-}>(line: T) {
+function formatPayslipLine(line: PayslipLineForResponse) {
   return {
     id: line.id,
     payrollRunId: line.payrollRunId,
