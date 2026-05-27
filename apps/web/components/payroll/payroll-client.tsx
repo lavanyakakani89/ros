@@ -19,6 +19,7 @@ interface Employee {
   role: string;
   department: string;
   baseSalary: number;
+  paidLeavesPerMonth: number;
   salaryType: SalaryType;
   status: EmployeeStatus;
   joinedAt: string;
@@ -125,6 +126,7 @@ export function PayrollClient() {
     role: "Cashier",
     department: "Store",
     baseSalary: "",
+    paidLeavesPerMonth: "0",
     salaryType: "MONTHLY" as SalaryType,
     joinedAt: today(),
   });
@@ -195,11 +197,12 @@ export function PayrollClient() {
     mutationFn: () => api.post<Employee>("/payroll/employees", {
       ...employeeForm,
       baseSalary: Number(employeeForm.baseSalary),
+      paidLeavesPerMonth: Number(employeeForm.paidLeavesPerMonth || 0),
       status: "ACTIVE",
     }),
     onSuccess: async () => {
       await invalidatePayroll(queryClient);
-      setEmployeeForm({ name: "", phone: "", role: "Cashier", department: "Store", baseSalary: "", salaryType: "MONTHLY", joinedAt: today() });
+      setEmployeeForm({ name: "", phone: "", role: "Cashier", department: "Store", baseSalary: "", paidLeavesPerMonth: "0", salaryType: "MONTHLY", joinedAt: today() });
       setMessage("Employee added.");
     },
   });
@@ -296,7 +299,7 @@ export function PayrollClient() {
       {activeTab === "employees" ? (
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <form onSubmit={(event) => { event.preventDefault(); createEmployee.mutate(); }} className="rounded-md border border-border bg-white p-4">
-            <SectionTitle title="Add employee" subtitle="Base salary and salary type drive payroll generation." />
+            <SectionTitle title="Add employee" subtitle="Base salary, paid leave allowance, and salary type drive payroll generation." />
             <div className="grid gap-3">
               <input value={employeeForm.name} onChange={(event) => setEmployeeForm((form) => ({ ...form, name: event.target.value }))} placeholder="Employee name" required className={inputClass} />
               <input value={employeeForm.phone} onChange={(event) => setEmployeeForm((form) => ({ ...form, phone: event.target.value }))} placeholder="Phone" required className={inputClass} />
@@ -312,21 +315,26 @@ export function PayrollClient() {
                   <option value="HOURLY">Hourly</option>
                 </select>
               </div>
-              <input type="date" value={employeeForm.joinedAt} onChange={(event) => setEmployeeForm((form) => ({ ...form, joinedAt: event.target.value }))} required className={inputClass} />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input type="number" min="0" max="31" value={employeeForm.paidLeavesPerMonth} onChange={(event) => setEmployeeForm((form) => ({ ...form, paidLeavesPerMonth: event.target.value }))} placeholder="Paid leaves / month" className={inputClass} />
+                <input type="date" value={employeeForm.joinedAt} onChange={(event) => setEmployeeForm((form) => ({ ...form, joinedAt: event.target.value }))} required className={inputClass} />
+              </div>
               <button disabled={createEmployee.isPending} className={primaryButtonClass}><Plus className="size-4" />Add employee</button>
             </div>
           </form>
           <DataPanel title="Employees" empty={employees.length === 0 ? "No employees yet." : null}>
             <div className="divide-y divide-border">
               {employees.map((employee) => (
-                <div key={employee.id} className="grid gap-2 px-4 py-3 md:grid-cols-[1fr_140px_140px_120px] md:items-center">
+                <div key={employee.id} className="grid gap-2 px-4 py-3 md:grid-cols-[1fr_140px_140px_120px_140px] md:items-center">
                   <div>
                     <div className="font-medium text-slate-950">{employee.name}</div>
                     <div className="text-xs text-slate-500">{employee.phone} | {employee.role} | {employee.department}</div>
+                    <div className="text-xs text-slate-500">Joined {formatDate(employee.joinedAt)} | Paid leaves {employee.paidLeavesPerMonth}/month</div>
                   </div>
                   <StatusPill value={employee.status} />
                   <div className="text-sm text-slate-700">{money(employee.baseSalary)}</div>
                   <div className="text-xs font-semibold text-slate-500">{employee.salaryType}</div>
+                  <div className="text-xs text-slate-500">{formatDate(employee.joinedAt)}</div>
                 </div>
               ))}
             </div>
@@ -337,7 +345,7 @@ export function PayrollClient() {
       {activeTab === "attendance" ? (
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <form onSubmit={(event) => { event.preventDefault(); markAttendance.mutate(); }} className="rounded-md border border-border bg-white p-4">
-            <SectionTitle title="Mark attendance" subtitle="One row per employee per date; saving again updates it." />
+            <SectionTitle title="Mark attendance" subtitle="Save exceptions only if you want; days without rows are treated as present unless you explicitly record present rows for that period." />
             <EmployeeSelect value={attendanceForm.employeeId} employees={activeEmployees} onChange={(employeeId) => setAttendanceForm((form) => ({ ...form, employeeId }))} />
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input type="date" value={attendanceForm.date} onChange={(event) => setAttendanceForm((form) => ({ ...form, date: event.target.value }))} className={inputClass} />
@@ -558,6 +566,15 @@ function label(value: string) {
 
 function money(value: number) {
   return `Rs ${(value || 0).toFixed(2)}`;
+}
+
+function formatDate(value: string) {
+  return new Date(`${value}T00:00:00.000Z`).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 const inputClass = "h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-500";

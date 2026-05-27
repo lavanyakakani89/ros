@@ -1703,6 +1703,7 @@ model Employee {
   role         String
   department   String
   baseSalary   Decimal        @map("base_salary") @db.Decimal(10, 2)
+  paidLeavesPerMonth Int      @default(0) @map("paid_leaves_per_month")
   salaryType   SalaryType     @map("salary_type")
   status       EmployeeStatus @default(ACTIVE)
   joinedAt     DateTime       @map("joined_at") @db.Date

@@ -29,6 +29,7 @@ const employeePayloadSchema = z.object({
   role: z.string().trim().min(2).max(64),
   department: z.string().trim().min(2).max(64),
   baseSalary: z.coerce.number().finite().nonnegative(),
+  paidLeavesPerMonth: z.coerce.number().int().min(0).max(31).default(0),
   salaryType: z.nativeEnum(SalaryType),
   status: z.nativeEnum(EmployeeStatus).default(EmployeeStatus.ACTIVE),
   joinedAt: dateOnlySchema,
@@ -156,6 +157,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         role: input.role,
         department: input.department,
         baseSalary: input.baseSalary,
+        paidLeavesPerMonth: input.paidLeavesPerMonth,
         salaryType: input.salaryType,
         status: input.status,
         joinedAt: input.joinedAt,
@@ -199,6 +201,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           ...(input.role !== undefined ? { role: input.role } : {}),
           ...(input.department !== undefined ? { department: input.department } : {}),
           ...(input.baseSalary !== undefined ? { baseSalary: input.baseSalary } : {}),
+          ...(input.paidLeavesPerMonth !== undefined ? { paidLeavesPerMonth: input.paidLeavesPerMonth } : {}),
           ...(input.salaryType !== undefined ? { salaryType: input.salaryType } : {}),
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.joinedAt !== undefined ? { joinedAt: input.joinedAt } : {}),
@@ -410,7 +413,11 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       const deductionByEmployee = new Map(input.otherDeductions.map((item) => [item.employeeId, item]));
       const generated = await fastify.prisma.$transaction(async (tx) => {
         const employees = await tx.employee.findMany({
-          where: { tenantId: request.tenant.id, status: EmployeeStatus.ACTIVE },
+          where: {
+            tenantId: request.tenant.id,
+            status: EmployeeStatus.ACTIVE,
+            joinedAt: { lt: endExclusive },
+          },
           include: {
             attendance: { where: { date: { gte: start, lt: endExclusive } } },
             payAdvances: {
@@ -429,7 +436,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
         await tx.payslipLine.createMany({
           data: employees.map((employee) => {
-            const payroll = calculatePayslip(employee, daysInMonth);
+            const payroll = calculatePayslip(employee, { start, endExclusive, daysInMonth });
             const otherDeduction = deductionByEmployee.get(employee.id);
             const otherDeductions = otherDeduction?.amount ?? 0;
             const netPay = roundMoney(Math.max(payroll.grossPay + payroll.overtimePay - payroll.advancesDeducted - otherDeductions, 0));
@@ -448,6 +455,11 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
                 salaryType: employee.salaryType,
                 baseSalary: decimalToNumber(employee.baseSalary),
                 daysInMonth,
+                eligibleDays: payroll.eligibleDays,
+                paidLeavesPerMonth: employee.paidLeavesPerMonth,
+                payableLeaveDays: payroll.payableLeaveDays,
+                unpaidLeaveDays: payroll.unpaidLeaveDays,
+                attendanceMode: payroll.attendanceMode,
                 attendance: payroll.attendanceCounts,
                 approvedAdvanceIds: employee.payAdvances.map((advance) => advance.id),
                 otherDeductionNote: otherDeduction?.note ?? null,
@@ -725,10 +737,12 @@ async function getPayrollRunOrThrow(fastify: FastifyInstance, tenantId: string, 
 
 function calculatePayslip(employee: {
   baseSalary: { toNumber(): number };
+  paidLeavesPerMonth: number;
   salaryType: SalaryType;
-  attendance: Array<{ status: AttendanceStatus; overtimeMinutes: number }>;
+  joinedAt: Date;
+  attendance: Array<{ status: AttendanceStatus; overtimeMinutes: number; date: Date }>;
   payAdvances: Array<{ amount: { toNumber(): number } }>;
-}, daysInMonth: number) {
+}, period: { start: Date; endExclusive: Date; daysInMonth: number }) {
   const attendanceCounts = {
     present: 0,
     absent: 0,
@@ -736,20 +750,22 @@ function calculatePayslip(employee: {
     leave: 0,
     onDuty: 0,
   };
-  let daysWorked = 0;
   let overtimeMinutes = 0;
+  const eligibleStart = startOfUtcDay(employee.joinedAt > period.start ? employee.joinedAt : period.start);
+  const eligibleDays = eligibleStart >= period.endExclusive
+    ? 0
+    : differenceInDays(period.endExclusive, eligibleStart);
+  const explicitPresentMode = employee.attendance.some((row) => row.status === AttendanceStatus.PRESENT);
 
   for (const row of employee.attendance) {
+    if (startOfUtcDay(row.date) < eligibleStart) continue;
     overtimeMinutes += row.overtimeMinutes;
     if (row.status === AttendanceStatus.PRESENT) {
       attendanceCounts.present += 1;
-      daysWorked += 1;
     } else if (row.status === AttendanceStatus.ON_DUTY) {
       attendanceCounts.onDuty += 1;
-      daysWorked += 1;
     } else if (row.status === AttendanceStatus.HALF_DAY) {
       attendanceCounts.halfDay += 1;
-      daysWorked += 0.5;
     } else if (row.status === AttendanceStatus.LEAVE) {
       attendanceCounts.leave += 1;
     } else {
@@ -757,15 +773,28 @@ function calculatePayslip(employee: {
     }
   }
 
+  const leaveAllowance = Math.min(employee.paidLeavesPerMonth, eligibleDays);
+  const payableLeaveDays = Math.min(attendanceCounts.leave, leaveAllowance);
+  const unpaidLeaveDays = Math.max(attendanceCounts.leave - leaveAllowance, 0);
+  const baseWorkedDays = explicitPresentMode
+    ? attendanceCounts.present + attendanceCounts.onDuty + (attendanceCounts.halfDay * 0.5)
+    : Math.max(eligibleDays - attendanceCounts.absent - (attendanceCounts.halfDay * 0.5), 0);
+  const daysWorked = roundQuantity(Math.min(Math.max(
+    explicitPresentMode
+      ? baseWorkedDays + payableLeaveDays
+      : baseWorkedDays - unpaidLeaveDays,
+    0,
+  ), eligibleDays));
+
   const baseSalary = decimalToNumber(employee.baseSalary);
   const overtimeHours = roundQuantity(overtimeMinutes / 60);
   const hourlyRate = employee.salaryType === SalaryType.MONTHLY
-    ? baseSalary / (daysInMonth * 8)
+    ? baseSalary / (Math.max(eligibleDays, 1) * 8)
     : employee.salaryType === SalaryType.DAILY
       ? baseSalary / 8
       : baseSalary;
   const grossPay = employee.salaryType === SalaryType.MONTHLY
-    ? roundMoney(baseSalary * (daysWorked / daysInMonth))
+    ? roundMoney(baseSalary * (daysWorked / Math.max(eligibleDays, 1)))
     : employee.salaryType === SalaryType.DAILY
       ? roundMoney(baseSalary * daysWorked)
       : roundMoney(baseSalary * daysWorked * 8);
@@ -774,7 +803,11 @@ function calculatePayslip(employee: {
 
   return {
     attendanceCounts,
-    daysWorked: roundQuantity(daysWorked),
+    attendanceMode: explicitPresentMode ? "explicit" : "exceptions",
+    eligibleDays,
+    payableLeaveDays,
+    unpaidLeaveDays,
+    daysWorked,
     overtimeHours,
     grossPay,
     overtimePay,
@@ -824,6 +857,14 @@ function roundQuantity(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+function startOfUtcDay(value: Date): Date {
+  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+}
+
+function differenceInDays(later: Date, earlier: Date): number {
+  return Math.max(Math.round((later.getTime() - earlier.getTime()) / 86400000), 0);
+}
+
 type EmployeeForResponse = {
   id: string;
   name: string;
@@ -831,6 +872,7 @@ type EmployeeForResponse = {
   role: string;
   department: string;
   baseSalary: { toNumber(): number };
+  paidLeavesPerMonth: number;
   salaryType: SalaryType;
   status: EmployeeStatus;
   joinedAt: Date;
@@ -923,6 +965,7 @@ function formatEmployee(employee: EmployeeForResponse) {
     role: employee.role,
     department: employee.department,
     baseSalary: decimalToNumber(employee.baseSalary),
+    paidLeavesPerMonth: employee.paidLeavesPerMonth,
     salaryType: employee.salaryType,
     status: employee.status,
     joinedAt: employee.joinedAt.toISOString().slice(0, 10),
