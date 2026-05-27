@@ -83,6 +83,7 @@ model Tenant {
   whatsappCampaigns WhatsappCampaign[]
   whatsappCampaignRecipients WhatsappCampaignRecipient[]
   employees          Employee[]
+  employeeSalaryRevisions EmployeeSalaryRevision[]
   payrollRuns        PayrollRun[]
 
   @@map("tenants")
@@ -125,6 +126,7 @@ model User {
   settledSettlements Settlement[] @relation("SettlementSettledBy")
   payrollDisbursements PayrollDisbursement[] @relation("PayrollDisbursementPaidBy")
   voidedPayrollDisbursements PayrollDisbursement[] @relation("PayrollDisbursementVoidAuthoriser")
+  employeeSalaryRevisions EmployeeSalaryRevision[] @relation("EmployeeSalaryRevisionChangedBy")
   storeAssignments StoreUserAssignment[]
 
 
@@ -1698,6 +1700,7 @@ model Employee {
   id           String         @id @default(cuid())
   tenantId     String         @map("tenant_id")
   tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeCode String         @map("employee_code")
   name         String
   phone        String
   role         String
@@ -1709,11 +1712,14 @@ model Employee {
   status       EmployeeStatus @default(ACTIVE)
   joinedAt     DateTime       @map("joined_at") @db.Date
   createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
   attendance   Attendance[]
   payAdvances  PayAdvance[]
   payslipLines PayslipLine[]
+  salaryRevisions EmployeeSalaryRevision[]
   disbursements PayrollDisbursement[]
 
+  @@unique([tenantId, employeeCode])
   @@index([tenantId, status])
   @@index([tenantId, department])
   @@map("employees")
@@ -1791,6 +1797,7 @@ model PayrollRun {
   tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   period            String
   runAt             DateTime      @default(now()) @map("run_at")
+  generatedAt       DateTime?     @map("generated_at")
   status            PayrollStatus @default(DRAFT)
   runBy             String?       @map("run_by")
   notes             String?
@@ -1801,6 +1808,24 @@ model PayrollRun {
   @@unique([tenantId, period])
   @@index([tenantId, status])
   @@map("payroll_runs")
+}
+
+model EmployeeSalaryRevision {
+  id            String    @id @default(cuid())
+  tenantId      String    @map("tenant_id")
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employeeId    String    @map("employee_id")
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  previousSalary Decimal? @map("previous_salary") @db.Decimal(10, 2)
+  newSalary     Decimal   @map("new_salary") @db.Decimal(10, 2)
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  reason        String?
+  changedById   String?   @map("changed_by")
+  changedBy     User?     @relation("EmployeeSalaryRevisionChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId, employeeId, effectiveFrom])
+  @@map("employee_salary_revisions")
 }
 
 enum PayrollStatus {

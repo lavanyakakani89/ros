@@ -23,7 +23,15 @@ const timeSchema = z
   .nullable()
   .optional();
 
+const employeeCodeSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(32)
+  .regex(/^[A-Za-z0-9/-]+$/, "Use letters, numbers, / or -");
+
 const employeePayloadSchema = z.object({
+  employeeCode: employeeCodeSchema.optional(),
   name: z.string().trim().min(2).max(128),
   phone: z.string().trim().min(6).max(32),
   role: z.string().trim().min(2).max(64),
@@ -36,7 +44,10 @@ const employeePayloadSchema = z.object({
   joinedAt: dateOnlySchema,
 });
 
-const employeeUpdateSchema = employeePayloadSchema.partial();
+const employeeUpdateSchema = employeePayloadSchema.partial().extend({
+  salaryEffectiveFrom: dateOnlySchema.optional(),
+  salaryChangeReason: z.string().trim().max(500).optional(),
+});
 
 const attendancePayloadSchema = z.object({
   employeeId: z.string().min(1),
@@ -124,6 +135,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       ...(query.search
         ? {
             OR: [
+              { employeeCode: { contains: query.search, mode: "insensitive" as const } },
               { name: { contains: query.search, mode: "insensitive" as const } },
               { phone: { contains: query.search } },
               { role: { contains: query.search, mode: "insensitive" as const } },
@@ -150,20 +162,39 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.post("/api/payroll/employees", async (request, reply) => {
     ensurePayrollManager(request.user.role);
     const input = employeePayloadSchema.parse(request.body);
-    const employee = await fastify.prisma.employee.create({
-      data: {
-        tenantId: request.tenant.id,
-        name: input.name,
-        phone: input.phone,
-        role: input.role,
-        department: input.department,
-        baseSalary: input.baseSalary,
-        paidLeavesPerMonth: input.paidLeavesPerMonth,
-        unusedPaidLeavePolicy: input.unusedPaidLeavePolicy,
-        salaryType: input.salaryType,
-        status: input.status,
-        joinedAt: input.joinedAt,
-      },
+    const employee = await fastify.prisma.$transaction(async (tx) => {
+      const employeeCode = input.employeeCode
+        ? normalizeEmployeeCode(input.employeeCode)
+        : await nextEmployeeCode(tx, request.tenant.id);
+      await ensureEmployeeCodeAvailable(tx, request.tenant.id, employeeCode);
+      const created = await tx.employee.create({
+        data: {
+          tenantId: request.tenant.id,
+          employeeCode,
+          name: input.name,
+          phone: input.phone,
+          role: input.role,
+          department: input.department,
+          baseSalary: input.baseSalary,
+          paidLeavesPerMonth: input.paidLeavesPerMonth,
+          unusedPaidLeavePolicy: input.unusedPaidLeavePolicy,
+          salaryType: input.salaryType,
+          status: input.status,
+          joinedAt: input.joinedAt,
+        },
+      });
+      await tx.employeeSalaryRevision.create({
+        data: {
+          tenantId: request.tenant.id,
+          employeeId: created.id,
+          previousSalary: null,
+          newSalary: input.baseSalary,
+          effectiveFrom: input.joinedAt,
+          reason: "Initial salary",
+          changedById: request.user.userId,
+        },
+      });
+      return created;
     });
     await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_EMPLOYEE_CREATED", "EMPLOYEE", employee.id, input, request.ip);
     return reply.status(201).send(formatEmployee(employee));
@@ -171,6 +202,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   fastify.get("/api/payroll/employees/:id", async (request, reply) => {
     return handlePayroll(reply, async () => {
+      ensurePayrollOwner(request.user.role);
       const { id } = idParamsSchema.parse(request.params);
       const employee = await fastify.prisma.employee.findFirst({
         where: { id, tenantId: request.tenant.id },
@@ -178,55 +210,128 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           attendance: { orderBy: { date: "desc" }, take: 30 },
           payAdvances: { orderBy: { requestedAt: "desc" }, take: 30 },
           payslipLines: { include: { payrollRun: true }, orderBy: { payrollRun: { runAt: "desc" } }, take: 12 },
+          salaryRevisions: { include: { changedBy: { select: { id: true, name: true, role: true } } }, orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }], take: 20 },
         },
       });
       if (!employee) throw new PayrollError("Employee not found", 404);
+      const auditLogs = await fastify.prisma.auditLog.findMany({
+        where: { tenantId: request.tenant.id, entity: "EMPLOYEE", entityId: id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+      const actorIds = Array.from(new Set(auditLogs.map((entry) => entry.userId).filter((value): value is string => Boolean(value))));
+      const actors = actorIds.length > 0
+        ? await fastify.prisma.user.findMany({ where: { tenantId: request.tenant.id, id: { in: actorIds } }, select: { id: true, name: true, role: true } })
+        : [];
+      const actorById = new Map(actors.map((actor) => [actor.id, actor]));
       return {
         ...formatEmployee(employee),
         attendance: employee.attendance.map(formatAttendance),
         payAdvances: employee.payAdvances.map(formatPayAdvance),
         payslips: employee.payslipLines.map(formatPayslipLine),
+        salaryHistory: employee.salaryRevisions.map((revision) => ({
+          id: revision.id,
+          previousSalary: revision.previousSalary ? decimalToNumber(revision.previousSalary) : null,
+          newSalary: decimalToNumber(revision.newSalary),
+          effectiveFrom: revision.effectiveFrom.toISOString().slice(0, 10),
+          reason: revision.reason,
+          changedBy: revision.changedBy ? { id: revision.changedBy.id, name: revision.changedBy.name, role: revision.changedBy.role } : null,
+          createdAt: revision.createdAt.toISOString(),
+        })),
+        auditHistory: auditLogs.map((entry) => ({
+          id: entry.id,
+          action: entry.action,
+          entity: entry.entity,
+          entityId: entry.entityId,
+          changes: entry.changes,
+          ip: entry.ip,
+          createdAt: entry.createdAt.toISOString(),
+          user: actorById.get(entry.userId) ?? null,
+        })),
       };
     });
   });
 
   fastify.patch("/api/payroll/employees/:id", async (request, reply) => {
     return handlePayroll(reply, async () => {
-      ensurePayrollManager(request.user.role);
+      ensurePayrollOwner(request.user.role);
       const { id } = idParamsSchema.parse(request.params);
       const input = employeeUpdateSchema.parse(request.body);
-      const result = await fastify.prisma.employee.updateMany({
-        where: { id, tenantId: request.tenant.id },
-        data: {
-          ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.phone !== undefined ? { phone: input.phone } : {}),
-          ...(input.role !== undefined ? { role: input.role } : {}),
-          ...(input.department !== undefined ? { department: input.department } : {}),
-          ...(input.baseSalary !== undefined ? { baseSalary: input.baseSalary } : {}),
-          ...(input.paidLeavesPerMonth !== undefined ? { paidLeavesPerMonth: input.paidLeavesPerMonth } : {}),
-          ...(input.unusedPaidLeavePolicy !== undefined ? { unusedPaidLeavePolicy: input.unusedPaidLeavePolicy } : {}),
-          ...(input.salaryType !== undefined ? { salaryType: input.salaryType } : {}),
-          ...(input.status !== undefined ? { status: input.status } : {}),
-          ...(input.joinedAt !== undefined ? { joinedAt: input.joinedAt } : {}),
-        },
+      const existing = await getEmployeeOrThrow(fastify, request.tenant.id, id);
+      const nextBaseSalary = input.baseSalary ?? decimalToNumber(existing.baseSalary);
+      const salaryChanged = nextBaseSalary !== decimalToNumber(existing.baseSalary);
+      const salaryEffectiveFrom = salaryChanged ? input.salaryEffectiveFrom : undefined;
+      if (salaryChanged && !input.salaryEffectiveFrom) {
+        throw new PayrollError("Salary effective date is required when base salary changes", 400);
+      }
+      const normalizedEmployeeCode = input.employeeCode ? normalizeEmployeeCode(input.employeeCode) : undefined;
+      const employee = await fastify.prisma.$transaction(async (tx) => {
+        if (normalizedEmployeeCode && normalizedEmployeeCode !== existing.employeeCode) {
+          await ensureEmployeeCodeAvailable(tx, request.tenant.id, normalizedEmployeeCode, id);
+        }
+        const updated = await tx.employee.update({
+          where: { id },
+          data: {
+            ...(normalizedEmployeeCode !== undefined ? { employeeCode: normalizedEmployeeCode } : {}),
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.phone !== undefined ? { phone: input.phone } : {}),
+            ...(input.role !== undefined ? { role: input.role } : {}),
+            ...(input.department !== undefined ? { department: input.department } : {}),
+            ...(input.baseSalary !== undefined ? { baseSalary: input.baseSalary } : {}),
+            ...(input.paidLeavesPerMonth !== undefined ? { paidLeavesPerMonth: input.paidLeavesPerMonth } : {}),
+            ...(input.unusedPaidLeavePolicy !== undefined ? { unusedPaidLeavePolicy: input.unusedPaidLeavePolicy } : {}),
+            ...(input.salaryType !== undefined ? { salaryType: input.salaryType } : {}),
+            ...(input.status !== undefined ? { status: input.status } : {}),
+            ...(input.joinedAt !== undefined ? { joinedAt: input.joinedAt } : {}),
+          },
+        });
+        if (salaryChanged) {
+          const effectiveFrom = salaryEffectiveFrom;
+          if (!effectiveFrom) throw new PayrollError("Salary effective date is required when base salary changes", 400);
+          await tx.employeeSalaryRevision.create({
+            data: {
+              tenantId: request.tenant.id,
+              employeeId: id,
+              previousSalary: decimalToNumber(existing.baseSalary),
+              newSalary: nextBaseSalary,
+              effectiveFrom,
+              reason: input.salaryChangeReason?.trim() || null,
+              changedById: request.user.userId,
+            },
+          });
+        }
+        return updated;
       });
-      if (result.count === 0) throw new PayrollError("Employee not found", 404);
-      const employee = await getEmployeeOrThrow(fastify, request.tenant.id, id);
-      await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_EMPLOYEE_UPDATED", "EMPLOYEE", id, input, request.ip);
+      await writePayrollAudit(
+        fastify,
+        request.tenant.id,
+        request.user.userId,
+        "PAYROLL_EMPLOYEE_UPDATED",
+        "EMPLOYEE",
+        id,
+        describeEmployeeChanges(existing, input, normalizedEmployeeCode),
+        request.ip,
+      );
       return formatEmployee(employee);
     });
   });
 
   fastify.delete("/api/payroll/employees/:id", async (request, reply) => {
     return handlePayroll(reply, async () => {
-      ensurePayrollManager(request.user.role);
+      ensurePayrollOwner(request.user.role);
       const { id } = idParamsSchema.parse(request.params);
-      const result = await fastify.prisma.employee.updateMany({
-        where: { id, tenantId: request.tenant.id },
-        data: { status: EmployeeStatus.TERMINATED },
-      });
-      if (result.count === 0) throw new PayrollError("Employee not found", 404);
-      await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_EMPLOYEE_TERMINATED", "EMPLOYEE", id, {}, request.ip);
+      const existing = await getEmployeeOrThrow(fastify, request.tenant.id, id);
+      await fastify.prisma.employee.update({ where: { id }, data: { status: EmployeeStatus.INACTIVE } });
+      await writePayrollAudit(
+        fastify,
+        request.tenant.id,
+        request.user.userId,
+        "PAYROLL_EMPLOYEE_DEACTIVATED",
+        "EMPLOYEE",
+        id,
+        { status: { from: existing.status, to: EmployeeStatus.INACTIVE } },
+        request.ip,
+      );
       return { status: "ok" };
     });
   });
@@ -399,7 +504,8 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return handlePayroll(reply, async () => {
       const { id } = idParamsSchema.parse(request.params);
       const run = await getPayrollRunOrThrow(fastify, request.tenant.id, id);
-      return formatPayrollRunDetail(run);
+      const warnings = await getPayrollRunWarnings(fastify, request.tenant.id, run);
+      return formatPayrollRunDetail(run, warnings);
     });
   });
 
@@ -423,6 +529,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           },
           include: {
             attendance: { where: { date: { gte: start, lt: endExclusive } } },
+            salaryRevisions: { where: { effectiveFrom: { lt: endExclusive } }, orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }] },
             payAdvances: {
               where: {
                 status: PayAdvanceStatus.APPROVED,
@@ -456,7 +563,9 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
               netPay,
               breakdown: {
                 salaryType: employee.salaryType,
-                baseSalary: decimalToNumber(employee.baseSalary),
+                employeeCode: employee.employeeCode,
+                baseSalary: payroll.baseSalary,
+                salaryEffectiveFrom: payroll.salaryEffectiveFrom,
                 daysInMonth,
                 eligibleDays: payroll.eligibleDays,
                 paidLeavesPerMonth: employee.paidLeavesPerMonth,
@@ -474,6 +583,8 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           }),
         });
 
+        await tx.payrollRun.update({ where: { id: run.id }, data: { generatedAt: new Date() } });
+
         return tx.payslipLine.findMany({
           where: { payrollRunId: run.id },
           include: { employee: true, payrollRun: true },
@@ -482,7 +593,8 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       });
 
       await writePayrollAudit(fastify, request.tenant.id, request.user.userId, "PAYROLL_RUN_GENERATED", "PAYROLL_RUN", run.id, { period: run.period, lines: generated.length }, request.ip);
-      return reply.status(201).send({ run: formatPayrollRun(run), payslips: generated.map(formatPayslipLine) });
+      const refreshedRun = await fastify.prisma.payrollRun.findFirst({ where: { id: run.id, tenantId: request.tenant.id } });
+      return reply.status(201).send({ run: refreshedRun ? formatPayrollRun(refreshedRun) : formatPayrollRun(run), payslips: generated.map(formatPayslipLine) });
     });
   });
 
@@ -710,6 +822,12 @@ function ensurePayrollManager(role: UserRole) {
   }
 }
 
+function ensurePayrollOwner(role: UserRole) {
+  if (role !== UserRole.OWNER) {
+    throw new PayrollError("Only owners can edit employee master data", 403);
+  }
+}
+
 async function handlePayroll<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {
   try {
     return await handler();
@@ -741,12 +859,132 @@ async function getPayrollRunOrThrow(fastify: FastifyInstance, tenantId: string, 
   return run;
 }
 
+async function getPayrollRunWarnings(
+  fastify: FastifyInstance,
+  tenantId: string,
+  run: PayrollRunDetailForResponse,
+) {
+  if (!run.generatedAt || run.payslipLines.length === 0) {
+    return { salaryChangesAfterGeneration: [] };
+  }
+  const { endExclusive } = periodBounds(run.period);
+  const employeeIds = Array.from(new Set(run.payslipLines.map((line) => line.employeeId)));
+  const revisions = await fastify.prisma.employeeSalaryRevision.findMany({
+    where: {
+      tenantId,
+      employeeId: { in: employeeIds },
+      effectiveFrom: { lt: endExclusive },
+      createdAt: { gt: run.generatedAt },
+    },
+    include: { employee: { select: { id: true, name: true } } },
+    orderBy: [{ createdAt: "desc" }, { effectiveFrom: "desc" }],
+  });
+  const seen = new Set<string>();
+  return {
+    salaryChangesAfterGeneration: revisions
+      .filter((revision) => {
+        if (seen.has(revision.employeeId)) return false;
+        seen.add(revision.employeeId);
+        return true;
+      })
+      .map((revision) => ({
+        employeeId: revision.employeeId,
+        employeeName: revision.employee.name,
+        effectiveFrom: revision.effectiveFrom.toISOString().slice(0, 10),
+        changedAt: revision.createdAt.toISOString(),
+      })),
+  };
+}
+
+function normalizeEmployeeCode(code: string) {
+  return code.trim().toUpperCase();
+}
+
+async function nextEmployeeCode(tx: Prisma.TransactionClient, tenantId: string) {
+  let sequence = await tx.employee.count({ where: { tenantId } }) + 1;
+  for (;;) {
+    const candidate = `EMP${String(sequence).padStart(4, "0")}`;
+    const exists = await tx.employee.findFirst({ where: { tenantId, employeeCode: candidate }, select: { id: true } });
+    if (!exists) return candidate;
+    sequence += 1;
+  }
+}
+
+async function ensureEmployeeCodeAvailable(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  employeeCode: string,
+  excludeEmployeeId?: string,
+) {
+  const duplicate = await tx.employee.findFirst({
+    where: {
+      tenantId,
+      employeeCode,
+      ...(excludeEmployeeId ? { NOT: { id: excludeEmployeeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (duplicate) throw new PayrollError(`Employee code "${employeeCode}" already exists`, 409);
+}
+
+function describeEmployeeChanges(
+  existing: Awaited<ReturnType<typeof getEmployeeOrThrow>>,
+  input: z.infer<typeof employeeUpdateSchema>,
+  normalizedEmployeeCode?: string,
+) {
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  const nextValues = {
+    employeeCode: normalizedEmployeeCode ?? existing.employeeCode,
+    name: input.name ?? existing.name,
+    phone: input.phone ?? existing.phone,
+    role: input.role ?? existing.role,
+    department: input.department ?? existing.department,
+    baseSalary: input.baseSalary ?? decimalToNumber(existing.baseSalary),
+    paidLeavesPerMonth: input.paidLeavesPerMonth ?? existing.paidLeavesPerMonth,
+    unusedPaidLeavePolicy: input.unusedPaidLeavePolicy ?? existing.unusedPaidLeavePolicy,
+    salaryType: input.salaryType ?? existing.salaryType,
+    status: input.status ?? existing.status,
+    joinedAt: (input.joinedAt ?? existing.joinedAt).toISOString().slice(0, 10),
+  };
+
+  const currentValues = {
+    employeeCode: existing.employeeCode,
+    name: existing.name,
+    phone: existing.phone,
+    role: existing.role,
+    department: existing.department,
+    baseSalary: decimalToNumber(existing.baseSalary),
+    paidLeavesPerMonth: existing.paidLeavesPerMonth,
+    unusedPaidLeavePolicy: existing.unusedPaidLeavePolicy,
+    salaryType: existing.salaryType,
+    status: existing.status,
+    joinedAt: existing.joinedAt.toISOString().slice(0, 10),
+  };
+
+  for (const [key, currentValue] of Object.entries(currentValues)) {
+    const nextValue = nextValues[key as keyof typeof nextValues];
+    if (currentValue !== nextValue) {
+      changes[key] = { from: currentValue, to: nextValue };
+    }
+  }
+
+  if (input.salaryEffectiveFrom) {
+    changes.salaryEffectiveFrom = { from: null, to: input.salaryEffectiveFrom.toISOString().slice(0, 10) };
+  }
+  if (input.salaryChangeReason) {
+    changes.salaryChangeReason = { from: null, to: input.salaryChangeReason };
+  }
+  return changes;
+}
+
 function calculatePayslip(employee: {
   baseSalary: { toNumber(): number };
+  employeeCode: string;
   paidLeavesPerMonth: number;
   unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
   salaryType: SalaryType;
   joinedAt: Date;
+  salaryRevisions: Array<{ newSalary: { toNumber(): number }; effectiveFrom: Date }>;
   attendance: Array<{ status: AttendanceStatus; overtimeMinutes: number; date: Date }>;
   payAdvances: Array<{ amount: { toNumber(): number } }>;
 }, period: { start: Date; endExclusive: Date; daysInMonth: number }) {
@@ -796,7 +1034,11 @@ function calculatePayslip(employee: {
     0,
   ), eligibleDays));
 
-  const baseSalary = decimalToNumber(employee.baseSalary);
+  const resolvedSalaryRevision = resolveSalaryRevisionForPeriod(employee.salaryRevisions, period.endExclusive);
+  const baseSalary = resolvedSalaryRevision ? decimalToNumber(resolvedSalaryRevision.newSalary) : decimalToNumber(employee.baseSalary);
+  const salaryEffectiveFrom = resolvedSalaryRevision
+    ? resolvedSalaryRevision.effectiveFrom.toISOString().slice(0, 10)
+    : employee.joinedAt.toISOString().slice(0, 10);
   const overtimeHours = roundQuantity(overtimeMinutes / 60);
   const hourlyRate = employee.salaryType === SalaryType.MONTHLY
     ? baseSalary / (Math.max(eligibleDays, 1) * 8)
@@ -819,8 +1061,11 @@ function calculatePayslip(employee: {
   const advancesDeducted = roundMoney(employee.payAdvances.reduce((sum, advance) => sum + decimalToNumber(advance.amount), 0));
 
   return {
+    employeeCode: employee.employeeCode,
     attendanceCounts,
     attendanceMode: explicitPresentMode ? "explicit" : "exceptions",
+    baseSalary,
+    salaryEffectiveFrom,
     eligibleDays,
     payableLeaveDays,
     unpaidLeaveDays,
@@ -884,8 +1129,16 @@ function differenceInDays(later: Date, earlier: Date): number {
   return Math.max(Math.round((later.getTime() - earlier.getTime()) / 86400000), 0);
 }
 
+function resolveSalaryRevisionForPeriod(
+  revisions: Array<{ newSalary: { toNumber(): number }; effectiveFrom: Date }>,
+  endExclusive: Date,
+) {
+  return [...revisions].reverse().find((revision) => startOfUtcDay(revision.effectiveFrom) < endExclusive) ?? null;
+}
+
 type EmployeeForResponse = {
   id: string;
+  employeeCode: string;
   name: string;
   phone: string;
   role: string;
@@ -897,6 +1150,7 @@ type EmployeeForResponse = {
   status: EmployeeStatus;
   joinedAt: Date;
   createdAt: Date;
+  updatedAt: Date;
   _count?: { attendance: number; payAdvances: number; payslipLines: number };
 };
 
@@ -930,6 +1184,7 @@ type PayrollRunForResponse = {
   id: string;
   period: string;
   runAt: Date;
+  generatedAt: Date | null;
   status: PayrollStatus;
   runBy: string | null;
   notes: string | null;
@@ -980,6 +1235,7 @@ type PayrollRunDetailForResponse = PayrollRunForResponse & {
 function formatEmployee(employee: EmployeeForResponse) {
   return {
     id: employee.id,
+    employeeCode: employee.employeeCode,
     name: employee.name,
     phone: employee.phone,
     role: employee.role,
@@ -991,6 +1247,7 @@ function formatEmployee(employee: EmployeeForResponse) {
     status: employee.status,
     joinedAt: employee.joinedAt.toISOString().slice(0, 10),
     createdAt: employee.createdAt.toISOString(),
+    updatedAt: employee.updatedAt.toISOString(),
     counts: employee._count,
   };
 }
@@ -1030,6 +1287,7 @@ function formatPayrollRun(run: PayrollRunForResponse) {
     id: run.id,
     period: run.period,
     runAt: run.runAt.toISOString(),
+    generatedAt: run.generatedAt?.toISOString() ?? null,
     status: run.status,
     runBy: run.runBy,
     notes: run.notes,
@@ -1037,12 +1295,18 @@ function formatPayrollRun(run: PayrollRunForResponse) {
   };
 }
 
-function formatPayrollRunDetail(run: PayrollRunDetailForResponse) {
+function formatPayrollRunDetail(
+  run: PayrollRunDetailForResponse,
+  warnings?: {
+    salaryChangesAfterGeneration: Array<{ employeeId: string; employeeName: string; effectiveFrom: string; changedAt: string }>;
+  },
+) {
   return {
     ...formatPayrollRun(run),
     payslips: run.payslipLines.map(formatPayslipLine),
     recoveredAdvances: run.recoveredAdvances.map(formatPayAdvance),
     disbursements: run.disbursements?.map(formatPayrollDisbursement) ?? [],
+    warnings: warnings ?? { salaryChangesAfterGeneration: [] },
   };
 }
 

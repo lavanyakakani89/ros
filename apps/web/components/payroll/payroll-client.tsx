@@ -2,9 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Banknote, CalendarDays, Check, CreditCard, Plus, RefreshCw, Send, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { createAuthenticatedApiClient, type PaginatedResponse } from "@/lib/api-client";
+import { getStoredAuthSession } from "@/lib/vertical-config";
 
 type SalaryType = "MONTHLY" | "DAILY" | "HOURLY";
 type EmployeeStatus = "ACTIVE" | "INACTIVE" | "TERMINATED";
@@ -12,9 +13,11 @@ type AttendanceStatus = "PRESENT" | "ABSENT" | "HALF_DAY" | "LEAVE" | "ON_DUTY";
 type PayrollStatus = "DRAFT" | "APPROVED" | "PAID";
 type AdvanceStatus = "PENDING" | "APPROVED" | "REJECTED" | "RECOVERED";
 type UnusedPaidLeavePolicy = "NONE" | "PAY_IN_PAYROLL";
+type UserRole = "OWNER" | "MANAGER" | "STAFF" | "DELIVERY";
 
 interface Employee {
   id: string;
+  employeeCode: string;
   name: string;
   phone: string;
   role: string;
@@ -25,6 +28,8 @@ interface Employee {
   salaryType: SalaryType;
   status: EmployeeStatus;
   joinedAt: string;
+  updatedAt?: string;
+  createdAt?: string;
 }
 
 interface AttendanceRow {
@@ -51,6 +56,7 @@ interface PayrollRun {
   id: string;
   period: string;
   runAt: string;
+  generatedAt?: string | null;
   status: PayrollStatus;
   notes?: string | null;
   counts?: { payslipLines: number; recoveredAdvances: number };
@@ -97,6 +103,43 @@ interface PayrollRunDetail extends PayrollRun {
   payslips: PayslipLine[];
   recoveredAdvances: PayAdvance[];
   disbursements: PayrollDisbursement[];
+  warnings?: {
+    salaryChangesAfterGeneration: Array<{
+      employeeId: string;
+      employeeName: string;
+      effectiveFrom: string;
+      changedAt: string;
+    }>;
+  };
+}
+
+interface SalaryRevision {
+  id: string;
+  previousSalary: number | null;
+  newSalary: number;
+  effectiveFrom: string;
+  reason?: string | null;
+  changedBy?: { id: string; name: string; role: UserRole } | null;
+  createdAt: string;
+}
+
+interface AuditHistoryEntry {
+  id: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  changes?: Record<string, unknown> | null;
+  ip?: string | null;
+  createdAt: string;
+  user?: { id: string; name: string; role: UserRole } | null;
+}
+
+interface EmployeeDetail extends Employee {
+  attendance: AttendanceRow[];
+  payAdvances: PayAdvance[];
+  payslips: PayslipLine[];
+  salaryHistory: SalaryRevision[];
+  auditHistory: AuditHistoryEntry[];
 }
 
 const tabs = [
@@ -120,8 +163,11 @@ function currentPeriod() {
 export function PayrollClient() {
   const api = createAuthenticatedApiClient();
   const queryClient = useQueryClient();
+  const currentRole = getStoredAuthSession()?.user?.role ?? "OWNER";
+  const canEditEmployees = currentRole === "OWNER";
   const [activeTab, setActiveTab] = useState<TabId>("employees");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [employeeForm, setEmployeeForm] = useState({
     name: "",
@@ -133,6 +179,21 @@ export function PayrollClient() {
     unusedPaidLeavePolicy: "NONE" as UnusedPaidLeavePolicy,
     salaryType: "MONTHLY" as SalaryType,
     joinedAt: today(),
+  });
+  const [employeeEditForm, setEmployeeEditForm] = useState({
+    employeeCode: "",
+    name: "",
+    phone: "",
+    role: "",
+    department: "",
+    baseSalary: "",
+    paidLeavesPerMonth: "0",
+    unusedPaidLeavePolicy: "NONE" as UnusedPaidLeavePolicy,
+    salaryType: "MONTHLY" as SalaryType,
+    status: "ACTIVE" as EmployeeStatus,
+    joinedAt: today(),
+    salaryEffectiveFrom: today(),
+    salaryChangeReason: "",
   });
   const [attendanceForm, setAttendanceForm] = useState({
     employeeId: "",
@@ -149,6 +210,11 @@ export function PayrollClient() {
   const employeesQuery = useQuery({
     queryKey: ["payroll", "employees"],
     queryFn: () => api.get<PaginatedResponse<Employee>>("/payroll/employees?limit=100"),
+  });
+  const employeeDetailQuery = useQuery({
+    queryKey: ["payroll", "employee", selectedEmployeeId],
+    enabled: canEditEmployees && Boolean(selectedEmployeeId),
+    queryFn: () => api.get<EmployeeDetail>(`/payroll/employees/${selectedEmployeeId ?? ""}`),
   });
   const attendanceQuery = useQuery({
     queryKey: ["payroll", "attendance"],
@@ -182,9 +248,30 @@ export function PayrollClient() {
 
   const employees = employeesQuery.data?.data ?? [];
   const activeEmployees = employees.filter((employee) => employee.status === "ACTIVE");
+  const selectedEmployee = employeeDetailQuery.data ?? null;
   const runDetail = runDetailQuery.data ?? null;
   const payslips = runDetail?.payslips ?? [];
+  const runWarnings = runDetail?.warnings?.salaryChangesAfterGeneration ?? [];
   const paymentMethods = paymentMethodsQuery.data ?? [];
+
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    setEmployeeEditForm({
+      employeeCode: selectedEmployee.employeeCode,
+      name: selectedEmployee.name,
+      phone: selectedEmployee.phone,
+      role: selectedEmployee.role,
+      department: selectedEmployee.department,
+      baseSalary: String(selectedEmployee.baseSalary),
+      paidLeavesPerMonth: String(selectedEmployee.paidLeavesPerMonth),
+      unusedPaidLeavePolicy: selectedEmployee.unusedPaidLeavePolicy,
+      salaryType: selectedEmployee.salaryType,
+      status: selectedEmployee.status,
+      joinedAt: selectedEmployee.joinedAt,
+      salaryEffectiveFrom: today(),
+      salaryChangeReason: "",
+    });
+  }, [selectedEmployee]);
 
   const payrollTotals = useMemo(() => {
     return payslips.reduce(
@@ -208,6 +295,44 @@ export function PayrollClient() {
       await invalidatePayroll(queryClient);
       setEmployeeForm({ name: "", phone: "", role: "Cashier", department: "Store", baseSalary: "", paidLeavesPerMonth: "0", unusedPaidLeavePolicy: "NONE", salaryType: "MONTHLY", joinedAt: today() });
       setMessage("Employee added.");
+    },
+  });
+  const updateEmployee = useMutation({
+    mutationFn: () => {
+      if (!selectedEmployeeId) throw new Error("Select an employee first");
+      const salaryChanged = selectedEmployee ? Number(employeeEditForm.baseSalary) !== selectedEmployee.baseSalary : false;
+      return api.patch<Employee>(`/payroll/employees/${selectedEmployeeId}`, {
+        employeeCode: employeeEditForm.employeeCode,
+        name: employeeEditForm.name,
+        phone: employeeEditForm.phone,
+        role: employeeEditForm.role,
+        department: employeeEditForm.department,
+        baseSalary: Number(employeeEditForm.baseSalary),
+        paidLeavesPerMonth: Number(employeeEditForm.paidLeavesPerMonth || 0),
+        unusedPaidLeavePolicy: employeeEditForm.unusedPaidLeavePolicy,
+        salaryType: employeeEditForm.salaryType,
+        status: employeeEditForm.status,
+        joinedAt: employeeEditForm.joinedAt,
+        ...(salaryChanged ? {
+          salaryEffectiveFrom: employeeEditForm.salaryEffectiveFrom,
+          salaryChangeReason: employeeEditForm.salaryChangeReason || undefined,
+        } : {}),
+      });
+    },
+    onSuccess: async () => {
+      await invalidatePayroll(queryClient);
+      setMessage("Employee updated.");
+    },
+  });
+  const deactivateEmployee = useMutation({
+    mutationFn: () => {
+      if (!selectedEmployeeId) throw new Error("Select an employee first");
+      return api.delete(`/payroll/employees/${selectedEmployeeId}`);
+    },
+    onSuccess: async () => {
+      await invalidatePayroll(queryClient);
+      setSelectedEmployeeId(null);
+      setMessage("Employee deactivated.");
     },
   });
   const markAttendance = useMutation({
@@ -273,7 +398,7 @@ export function PayrollClient() {
     },
   });
 
-  const error = [createEmployee, markAttendance, createAdvance, updateAdvanceStatus, createRun, generateRun, updateRunStatus, disburseRun].find((mutation) => mutation.error)?.error;
+  const error = [createEmployee, updateEmployee, deactivateEmployee, markAttendance, createAdvance, updateAdvanceStatus, createRun, generateRun, updateRunStatus, disburseRun].find((mutation) => mutation.error)?.error;
 
   function selectedEmployeeName(id: string) {
     return employees.find((employee) => employee.id === id)?.name ?? "Employee";
@@ -304,6 +429,9 @@ export function PayrollClient() {
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <form onSubmit={(event) => { event.preventDefault(); createEmployee.mutate(); }} className="rounded-md border border-border bg-white p-4">
             <SectionTitle title="Add employee" subtitle="Base salary, paid leave allowance, and leave payout policy drive payroll generation." />
+            <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Employee code is auto-generated and can be edited later by the owner.
+            </div>
             <div className="grid gap-3">
               <input value={employeeForm.name} onChange={(event) => setEmployeeForm((form) => ({ ...form, name: event.target.value }))} placeholder="Employee name" required className={inputClass} />
               <input value={employeeForm.phone} onChange={(event) => setEmployeeForm((form) => ({ ...form, phone: event.target.value }))} placeholder="Phone" required className={inputClass} />
@@ -333,9 +461,12 @@ export function PayrollClient() {
           <DataPanel title="Employees" empty={employees.length === 0 ? "No employees yet." : null}>
             <div className="divide-y divide-border">
               {employees.map((employee) => (
-                <div key={employee.id} className="grid gap-2 px-4 py-3 md:grid-cols-[1fr_140px_140px_120px_140px] md:items-center">
+                <div key={employee.id} className="grid gap-2 px-4 py-3 md:grid-cols-[1fr_120px_140px_120px_140px_90px] md:items-center">
                   <div>
-                    <div className="font-medium text-slate-950">{employee.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="font-medium text-slate-950">{employee.name}</div>
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{employee.employeeCode}</span>
+                    </div>
                     <div className="text-xs text-slate-500">{employee.phone} | {employee.role} | {employee.department}</div>
                     <div className="text-xs text-slate-500">
                       Joined {formatDate(employee.joinedAt)} | Paid leaves {employee.paidLeavesPerMonth}/month | {employee.unusedPaidLeavePolicy === "PAY_IN_PAYROLL" ? "Unused leaves paid in payroll" : "Unused leaves not encashed"}
@@ -345,10 +476,25 @@ export function PayrollClient() {
                   <div className="text-sm text-slate-700">{money(employee.baseSalary)}</div>
                   <div className="text-xs font-semibold text-slate-500">{employee.salaryType}</div>
                   <div className="text-xs text-slate-500">{formatDate(employee.joinedAt)}</div>
+                  <div className="flex justify-end">
+                    {canEditEmployees ? <button onClick={() => setSelectedEmployeeId(employee.id)} className={smallButtonClass}>Edit</button> : null}
+                  </div>
                 </div>
               ))}
             </div>
           </DataPanel>
+          {canEditEmployees && selectedEmployeeId ? (
+            <EmployeeEditor
+              employee={selectedEmployee}
+              form={employeeEditForm}
+              onChange={setEmployeeEditForm}
+              onClose={() => setSelectedEmployeeId(null)}
+              onSave={() => updateEmployee.mutate()}
+              onDeactivate={() => deactivateEmployee.mutate()}
+              saving={updateEmployee.isPending}
+              deactivating={deactivateEmployee.isPending}
+            />
+          ) : null}
         </section>
       ) : null}
 
@@ -439,6 +585,14 @@ export function PayrollClient() {
             </DataPanel>
           </div>
           <div className="space-y-4">
+            {runWarnings.length > 0 ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <div className="font-semibold">Employee salary changed after last payroll generation. Regenerate payslips.</div>
+                <div className="mt-1 text-xs text-amber-800">
+                  {runWarnings.map((warning) => `${warning.employeeName} (effective ${formatDate(warning.effectiveFrom)})`).join(", ")}
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric title="Gross" value={money(payrollTotals.gross)} />
               <Metric title="Deductions" value={money(payrollTotals.deductions)} />
@@ -590,9 +744,159 @@ function formatDate(value: string) {
   });
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function unusedLeavePayout(line: PayslipLine) {
   const raw = line.breakdown && typeof line.breakdown === "object" ? line.breakdown.unusedPaidLeavePayout : 0;
   return typeof raw === "number" ? raw : 0;
+}
+
+function EmployeeEditor({
+  employee,
+  form,
+  onChange,
+  onClose,
+  onSave,
+  onDeactivate,
+  saving,
+  deactivating,
+}: Readonly<{
+  employee: EmployeeDetail | null;
+  form: {
+    employeeCode: string;
+    name: string;
+    phone: string;
+    role: string;
+    department: string;
+    baseSalary: string;
+    paidLeavesPerMonth: string;
+    unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
+    salaryType: SalaryType;
+    status: EmployeeStatus;
+    joinedAt: string;
+    salaryEffectiveFrom: string;
+    salaryChangeReason: string;
+  };
+  onChange: React.Dispatch<React.SetStateAction<{
+    employeeCode: string;
+    name: string;
+    phone: string;
+    role: string;
+    department: string;
+    baseSalary: string;
+    paidLeavesPerMonth: string;
+    unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
+    salaryType: SalaryType;
+    status: EmployeeStatus;
+    joinedAt: string;
+    salaryEffectiveFrom: string;
+    salaryChangeReason: string;
+  }>>;
+  onClose: () => void;
+  onSave: () => void;
+  onDeactivate: () => void;
+  saving: boolean;
+  deactivating: boolean;
+}>) {
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-slate-950/30">
+      <div className="h-full w-full max-w-2xl overflow-y-auto bg-white p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-lg font-semibold text-slate-950">{employee?.name ?? "Edit employee"}</div>
+            <div className="mt-1 text-sm text-slate-500">Owner-only employee master data, salary history, and audit trail.</div>
+          </div>
+          <button onClick={onClose} className={smallButtonClass}>Close</button>
+        </div>
+
+        {!employee ? (
+          <div className="mt-6 text-sm text-slate-500">Loading employee details...</div>
+        ) : (
+          <div className="mt-5 space-y-5">
+            <div className="rounded-md border border-border p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input value={form.employeeCode} onChange={(event) => onChange((current) => ({ ...current, employeeCode: event.target.value.toUpperCase() }))} placeholder="Employee code" className={inputClass} />
+                <select value={form.status} onChange={(event) => onChange((current) => ({ ...current, status: event.target.value as EmployeeStatus }))} className={inputClass}>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                  <option value="TERMINATED">Terminated</option>
+                </select>
+                <input value={form.name} onChange={(event) => onChange((current) => ({ ...current, name: event.target.value }))} placeholder="Employee name" className={inputClass} />
+                <input value={form.phone} onChange={(event) => onChange((current) => ({ ...current, phone: event.target.value }))} placeholder="Phone" className={inputClass} />
+                <input value={form.role} onChange={(event) => onChange((current) => ({ ...current, role: event.target.value }))} placeholder="Role" className={inputClass} />
+                <input value={form.department} onChange={(event) => onChange((current) => ({ ...current, department: event.target.value }))} placeholder="Department" className={inputClass} />
+                <input type="number" min="0" step="0.01" value={form.baseSalary} onChange={(event) => onChange((current) => ({ ...current, baseSalary: event.target.value }))} placeholder="Base salary" className={inputClass} />
+                <select value={form.salaryType} onChange={(event) => onChange((current) => ({ ...current, salaryType: event.target.value as SalaryType }))} className={inputClass}>
+                  <option value="MONTHLY">Monthly</option>
+                  <option value="DAILY">Daily</option>
+                  <option value="HOURLY">Hourly</option>
+                </select>
+                <input type="number" min="0" max="31" value={form.paidLeavesPerMonth} onChange={(event) => onChange((current) => ({ ...current, paidLeavesPerMonth: event.target.value }))} placeholder="Paid leaves / month" className={inputClass} />
+                <input type="date" value={form.joinedAt} onChange={(event) => onChange((current) => ({ ...current, joinedAt: event.target.value }))} className={inputClass} />
+                <select value={form.unusedPaidLeavePolicy} onChange={(event) => onChange((current) => ({ ...current, unusedPaidLeavePolicy: event.target.value as UnusedPaidLeavePolicy }))} className={inputClass}>
+                  <option value="NONE">Unused paid leaves: no extra payout</option>
+                  <option value="PAY_IN_PAYROLL">Unused paid leaves: pay in payroll</option>
+                </select>
+                <div className="rounded-md border border-border px-3 py-2 text-sm text-slate-500">
+                  Last updated {employee.updatedAt ? formatDateTime(employee.updatedAt) : "-"}
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <input type="date" value={form.salaryEffectiveFrom} onChange={(event) => onChange((current) => ({ ...current, salaryEffectiveFrom: event.target.value }))} className={inputClass} />
+                <input value={form.salaryChangeReason} onChange={(event) => onChange((current) => ({ ...current, salaryChangeReason: event.target.value }))} placeholder="Salary change note (optional)" className={inputClass} />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={onSave} disabled={saving} className={primaryButtonClass}>Save changes</button>
+                <button onClick={onDeactivate} disabled={deactivating || form.status === "INACTIVE"} className={secondaryButtonClass}>Deactivate employee</button>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-border p-4">
+              <div className="text-sm font-semibold text-slate-950">Salary history</div>
+              <div className="mt-3 space-y-3">
+                {employee.salaryHistory.length === 0 ? <div className="text-sm text-slate-500">No salary revisions yet.</div> : employee.salaryHistory.map((revision) => (
+                  <div key={revision.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm">
+                    <div className="font-medium text-slate-900">{money(revision.newSalary)} effective {formatDate(revision.effectiveFrom)}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {revision.previousSalary !== null ? `${money(revision.previousSalary)} -> ${money(revision.newSalary)}` : "Initial salary"}
+                      {" | "}
+                      {revision.changedBy?.name ?? "System"}
+                      {" | "}
+                      {formatDateTime(revision.createdAt)}
+                    </div>
+                    {revision.reason ? <div className="mt-1 text-xs text-slate-600">{revision.reason}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-border p-4">
+              <div className="text-sm font-semibold text-slate-950">Audit history</div>
+              <div className="mt-3 space-y-3">
+                {employee.auditHistory.length === 0 ? <div className="text-sm text-slate-500">No employee changes recorded yet.</div> : employee.auditHistory.map((entry) => (
+                  <div key={entry.id} className="rounded-md border border-slate-200 px-3 py-2 text-sm">
+                    <div className="font-medium text-slate-900">{label(entry.action)}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {entry.user?.name ?? "Unknown user"} | {formatDateTime(entry.createdAt)}{entry.ip ? ` | ${entry.ip}` : ""}
+                    </div>
+                    {entry.changes ? <pre className="mt-2 overflow-x-auto rounded bg-slate-50 p-2 text-xs text-slate-600">{JSON.stringify(entry.changes, null, 2)}</pre> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const inputClass = "h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-500";
