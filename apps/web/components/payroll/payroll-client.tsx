@@ -11,6 +11,7 @@ type EmployeeStatus = "ACTIVE" | "INACTIVE" | "TERMINATED";
 type AttendanceStatus = "PRESENT" | "ABSENT" | "HALF_DAY" | "LEAVE" | "ON_DUTY";
 type PayrollStatus = "DRAFT" | "APPROVED" | "PAID";
 type AdvanceStatus = "PENDING" | "APPROVED" | "REJECTED" | "RECOVERED";
+type UnusedPaidLeavePolicy = "NONE" | "PAY_IN_PAYROLL";
 
 interface Employee {
   id: string;
@@ -20,6 +21,7 @@ interface Employee {
   department: string;
   baseSalary: number;
   paidLeavesPerMonth: number;
+  unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
   salaryType: SalaryType;
   status: EmployeeStatus;
   joinedAt: string;
@@ -67,6 +69,7 @@ interface PayslipLine {
   advancesDeducted: number;
   otherDeductions: number;
   netPay: number;
+  breakdown?: Record<string, unknown>;
 }
 
 interface PayrollDisbursement {
@@ -127,6 +130,7 @@ export function PayrollClient() {
     department: "Store",
     baseSalary: "",
     paidLeavesPerMonth: "0",
+    unusedPaidLeavePolicy: "NONE" as UnusedPaidLeavePolicy,
     salaryType: "MONTHLY" as SalaryType,
     joinedAt: today(),
   });
@@ -202,7 +206,7 @@ export function PayrollClient() {
     }),
     onSuccess: async () => {
       await invalidatePayroll(queryClient);
-      setEmployeeForm({ name: "", phone: "", role: "Cashier", department: "Store", baseSalary: "", paidLeavesPerMonth: "0", salaryType: "MONTHLY", joinedAt: today() });
+      setEmployeeForm({ name: "", phone: "", role: "Cashier", department: "Store", baseSalary: "", paidLeavesPerMonth: "0", unusedPaidLeavePolicy: "NONE", salaryType: "MONTHLY", joinedAt: today() });
       setMessage("Employee added.");
     },
   });
@@ -299,7 +303,7 @@ export function PayrollClient() {
       {activeTab === "employees" ? (
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <form onSubmit={(event) => { event.preventDefault(); createEmployee.mutate(); }} className="rounded-md border border-border bg-white p-4">
-            <SectionTitle title="Add employee" subtitle="Base salary, paid leave allowance, and salary type drive payroll generation." />
+            <SectionTitle title="Add employee" subtitle="Base salary, paid leave allowance, and leave payout policy drive payroll generation." />
             <div className="grid gap-3">
               <input value={employeeForm.name} onChange={(event) => setEmployeeForm((form) => ({ ...form, name: event.target.value }))} placeholder="Employee name" required className={inputClass} />
               <input value={employeeForm.phone} onChange={(event) => setEmployeeForm((form) => ({ ...form, phone: event.target.value }))} placeholder="Phone" required className={inputClass} />
@@ -319,6 +323,10 @@ export function PayrollClient() {
                 <input type="number" min="0" max="31" value={employeeForm.paidLeavesPerMonth} onChange={(event) => setEmployeeForm((form) => ({ ...form, paidLeavesPerMonth: event.target.value }))} placeholder="Paid leaves / month" className={inputClass} />
                 <input type="date" value={employeeForm.joinedAt} onChange={(event) => setEmployeeForm((form) => ({ ...form, joinedAt: event.target.value }))} required className={inputClass} />
               </div>
+              <select value={employeeForm.unusedPaidLeavePolicy} onChange={(event) => setEmployeeForm((form) => ({ ...form, unusedPaidLeavePolicy: event.target.value as UnusedPaidLeavePolicy }))} className={inputClass}>
+                <option value="NONE">Unused paid leaves: no extra payout</option>
+                <option value="PAY_IN_PAYROLL">Unused paid leaves: pay in payroll</option>
+              </select>
               <button disabled={createEmployee.isPending} className={primaryButtonClass}><Plus className="size-4" />Add employee</button>
             </div>
           </form>
@@ -329,7 +337,9 @@ export function PayrollClient() {
                   <div>
                     <div className="font-medium text-slate-950">{employee.name}</div>
                     <div className="text-xs text-slate-500">{employee.phone} | {employee.role} | {employee.department}</div>
-                    <div className="text-xs text-slate-500">Joined {formatDate(employee.joinedAt)} | Paid leaves {employee.paidLeavesPerMonth}/month</div>
+                    <div className="text-xs text-slate-500">
+                      Joined {formatDate(employee.joinedAt)} | Paid leaves {employee.paidLeavesPerMonth}/month | {employee.unusedPaidLeavePolicy === "PAY_IN_PAYROLL" ? "Unused leaves paid in payroll" : "Unused leaves not encashed"}
+                    </div>
                   </div>
                   <StatusPill value={employee.status} />
                   <div className="text-sm text-slate-700">{money(employee.baseSalary)}</div>
@@ -445,7 +455,10 @@ export function PayrollClient() {
               <Table headers={["Employee", "Worked", "Gross", "Advances", "Other", "Net"]}>
                 {payslips.map((line) => (
                   <tr key={line.id} className="border-t border-border">
-                    <td className="px-3 py-2">{line.employee?.name ?? selectedEmployeeName(line.employeeId)}</td>
+                    <td className="px-3 py-2">
+                      <div>{line.employee?.name ?? selectedEmployeeName(line.employeeId)}</div>
+                      {unusedLeavePayout(line) > 0 ? <div className="text-xs text-slate-500">Includes {money(unusedLeavePayout(line))} unused leave payout</div> : null}
+                    </td>
                     <td className="px-3 py-2">{line.daysWorked} d / {line.overtimeHours} h</td>
                     <td className="px-3 py-2">{money(line.grossPay + line.overtimePay)}</td>
                     <td className="px-3 py-2">{money(line.advancesDeducted)}</td>
@@ -575,6 +588,11 @@ function formatDate(value: string) {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+function unusedLeavePayout(line: PayslipLine) {
+  const raw = line.breakdown && typeof line.breakdown === "object" ? line.breakdown.unusedPaidLeavePayout : 0;
+  return typeof raw === "number" ? raw : 0;
 }
 
 const inputClass = "h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-500";

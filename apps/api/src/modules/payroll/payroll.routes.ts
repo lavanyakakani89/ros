@@ -1,4 +1,4 @@
-import { AttendanceStatus, EmployeeStatus, PayAdvanceStatus, PayrollStatus, SalaryType, UserRole, type Prisma } from "@prisma/client";
+import { AttendanceStatus, EmployeeStatus, PayAdvanceStatus, PayrollStatus, SalaryType, UnusedPaidLeavePolicy, UserRole, type Prisma } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -30,6 +30,7 @@ const employeePayloadSchema = z.object({
   department: z.string().trim().min(2).max(64),
   baseSalary: z.coerce.number().finite().nonnegative(),
   paidLeavesPerMonth: z.coerce.number().int().min(0).max(31).default(0),
+  unusedPaidLeavePolicy: z.nativeEnum(UnusedPaidLeavePolicy).default(UnusedPaidLeavePolicy.NONE),
   salaryType: z.nativeEnum(SalaryType),
   status: z.nativeEnum(EmployeeStatus).default(EmployeeStatus.ACTIVE),
   joinedAt: dateOnlySchema,
@@ -158,6 +159,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         department: input.department,
         baseSalary: input.baseSalary,
         paidLeavesPerMonth: input.paidLeavesPerMonth,
+        unusedPaidLeavePolicy: input.unusedPaidLeavePolicy,
         salaryType: input.salaryType,
         status: input.status,
         joinedAt: input.joinedAt,
@@ -202,6 +204,7 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           ...(input.department !== undefined ? { department: input.department } : {}),
           ...(input.baseSalary !== undefined ? { baseSalary: input.baseSalary } : {}),
           ...(input.paidLeavesPerMonth !== undefined ? { paidLeavesPerMonth: input.paidLeavesPerMonth } : {}),
+          ...(input.unusedPaidLeavePolicy !== undefined ? { unusedPaidLeavePolicy: input.unusedPaidLeavePolicy } : {}),
           ...(input.salaryType !== undefined ? { salaryType: input.salaryType } : {}),
           ...(input.status !== undefined ? { status: input.status } : {}),
           ...(input.joinedAt !== undefined ? { joinedAt: input.joinedAt } : {}),
@@ -459,6 +462,9 @@ export const payrollRoutes: FastifyPluginCallback = (fastify, _options, done) =>
                 paidLeavesPerMonth: employee.paidLeavesPerMonth,
                 payableLeaveDays: payroll.payableLeaveDays,
                 unpaidLeaveDays: payroll.unpaidLeaveDays,
+                unusedPaidLeavePolicy: employee.unusedPaidLeavePolicy,
+                unusedPaidLeaveDays: payroll.unusedPaidLeaveDays,
+                unusedPaidLeavePayout: payroll.unusedPaidLeavePayout,
                 attendanceMode: payroll.attendanceMode,
                 attendance: payroll.attendanceCounts,
                 approvedAdvanceIds: employee.payAdvances.map((advance) => advance.id),
@@ -738,6 +744,7 @@ async function getPayrollRunOrThrow(fastify: FastifyInstance, tenantId: string, 
 function calculatePayslip(employee: {
   baseSalary: { toNumber(): number };
   paidLeavesPerMonth: number;
+  unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
   salaryType: SalaryType;
   joinedAt: Date;
   attendance: Array<{ status: AttendanceStatus; overtimeMinutes: number; date: Date }>;
@@ -776,6 +783,9 @@ function calculatePayslip(employee: {
   const leaveAllowance = Math.min(employee.paidLeavesPerMonth, eligibleDays);
   const payableLeaveDays = Math.min(attendanceCounts.leave, leaveAllowance);
   const unpaidLeaveDays = Math.max(attendanceCounts.leave - leaveAllowance, 0);
+  const unusedPaidLeaveDays = employee.salaryType === SalaryType.MONTHLY && employee.unusedPaidLeavePolicy === UnusedPaidLeavePolicy.PAY_IN_PAYROLL
+    ? Math.max(leaveAllowance - attendanceCounts.leave, 0)
+    : 0;
   const baseWorkedDays = explicitPresentMode
     ? attendanceCounts.present + attendanceCounts.onDuty + (attendanceCounts.halfDay * 0.5)
     : Math.max(eligibleDays - attendanceCounts.absent - (attendanceCounts.halfDay * 0.5), 0);
@@ -793,11 +803,18 @@ function calculatePayslip(employee: {
     : employee.salaryType === SalaryType.DAILY
       ? baseSalary / 8
       : baseSalary;
-  const grossPay = employee.salaryType === SalaryType.MONTHLY
+  const dailyRate = employee.salaryType === SalaryType.MONTHLY
+    ? roundMoney(baseSalary / Math.max(eligibleDays, 1))
+    : 0;
+  const baseGrossPay = employee.salaryType === SalaryType.MONTHLY
     ? roundMoney(baseSalary * (daysWorked / Math.max(eligibleDays, 1)))
     : employee.salaryType === SalaryType.DAILY
       ? roundMoney(baseSalary * daysWorked)
       : roundMoney(baseSalary * daysWorked * 8);
+  const unusedPaidLeavePayout = employee.salaryType === SalaryType.MONTHLY
+    ? roundMoney(dailyRate * unusedPaidLeaveDays)
+    : 0;
+  const grossPay = roundMoney(baseGrossPay + unusedPaidLeavePayout);
   const overtimePay = roundMoney(hourlyRate * overtimeHours);
   const advancesDeducted = roundMoney(employee.payAdvances.reduce((sum, advance) => sum + decimalToNumber(advance.amount), 0));
 
@@ -807,6 +824,8 @@ function calculatePayslip(employee: {
     eligibleDays,
     payableLeaveDays,
     unpaidLeaveDays,
+    unusedPaidLeaveDays,
+    unusedPaidLeavePayout,
     daysWorked,
     overtimeHours,
     grossPay,
@@ -873,6 +892,7 @@ type EmployeeForResponse = {
   department: string;
   baseSalary: { toNumber(): number };
   paidLeavesPerMonth: number;
+  unusedPaidLeavePolicy: UnusedPaidLeavePolicy;
   salaryType: SalaryType;
   status: EmployeeStatus;
   joinedAt: Date;
@@ -966,6 +986,7 @@ function formatEmployee(employee: EmployeeForResponse) {
     department: employee.department,
     baseSalary: decimalToNumber(employee.baseSalary),
     paidLeavesPerMonth: employee.paidLeavesPerMonth,
+    unusedPaidLeavePolicy: employee.unusedPaidLeavePolicy,
     salaryType: employee.salaryType,
     status: employee.status,
     joinedAt: employee.joinedAt.toISOString().slice(0, 10),
