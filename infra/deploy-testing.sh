@@ -99,7 +99,7 @@ fi
 
 echo "==> Reconciling testing database credentials from $ENV_FILE"
 docker exec -i -u postgres "$POSTGRES_CONTAINER" \
-  psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_TARGET_USER}" -d postgres \
     -v target_user="${POSTGRES_TARGET_USER}" \
     -v target_password="${POSTGRES_TARGET_PASSWORD}" <<'SQL'
 ALTER USER :"target_user" WITH PASSWORD :'target_password';
