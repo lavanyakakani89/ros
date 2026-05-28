@@ -21,7 +21,7 @@ fi
 
 if [[ -n "${GH_PAT:-}" && -n "${GITHUB_REPOSITORY:-}" ]]; then
   echo "==> Ensuring origin points to GitHub"
-  git remote set-url origin "https://${GH_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+  git remote set-url origin "https://x-access-token:${GH_PAT}@github.com/${GITHUB_REPOSITORY}.git"
 fi
 
 echo "==> Fetching exact ${DEPLOY_BRANCH} commit"

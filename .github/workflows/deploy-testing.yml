@@ -155,12 +155,13 @@ jobs:
         run: |
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "GH_PAT='$GH_PAT' GITHUB_REPOSITORY='$GITHUB_REPOSITORY' DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_TIME='$DEPLOY_TIME' RESET_DATABASE='$RESET_DATABASE' DEPLOY_TEST_PATH='$DEPLOY_TEST_PATH' bash -s" <<'EOF'
           set -Eeuo pipefail
+          REMOTE_URL="https://x-access-token:$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
 
           if [ ! -d "$DEPLOY_TEST_PATH/.git" ]; then
             echo "First time setup: cloning from GitHub..."
             git clone \
               --branch develop \
-              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git" \
+              "$REMOTE_URL" \
               "$DEPLOY_TEST_PATH"
             echo "Clone complete."
           else
@@ -171,7 +172,7 @@ jobs:
             if [[ "$CURRENT_ORIGIN" != *"github.com"* ]]; then
               echo "WARNING: origin is '$CURRENT_ORIGIN' - not GitHub. Fixing..."
               git remote set-url origin \
-                "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+                "$REMOTE_URL"
               echo "Origin fixed."
             fi
           fi
@@ -184,11 +185,11 @@ jobs:
           if [[ "$CURRENT_ORIGIN" != *"github.com"* ]]; then
             echo "Fixing origin from '$CURRENT_ORIGIN' to GitHub..."
             git remote set-url origin \
-              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+              "$REMOTE_URL"
             echo "Origin is now: $(git remote get-url origin)"
           else
             git remote set-url origin \
-              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+              "$REMOTE_URL"
             echo "Origin already points to GitHub. Updated credentials."
           fi
 
