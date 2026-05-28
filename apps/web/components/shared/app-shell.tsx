@@ -346,7 +346,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   async function handleCopyVersion() {
-    if (typeof navigator === "undefined" || !navigator.clipboard || deployCommit === "unknown") {
+    if (deployCommit === "unknown") {
       return;
     }
 

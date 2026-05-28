@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 
 export const systemRoutes: FastifyPluginCallback = (fastify, _options, done) => {
-  fastify.get("/api/version", { config: { isPublic: true } }, async () => {
+  fastify.get("/api/version", { config: { isPublic: true } }, () => {
     return {
       commit: process.env.DEPLOY_SHA ?? "unknown",
       branch: process.env.DEPLOY_BRANCH ?? "unknown",
