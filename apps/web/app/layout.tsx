@@ -9,15 +9,16 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "RetailOS",
-  description: "Retail management for Indian SMB shops",
+  title: "BizBil",
+  description: "BizBil — Bill fast. Biz smart.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "RetailOS",
+    title: "BizBil",
     statusBarStyle: "default",
   },
   icons: {
+    icon: "/icons/icon-192.png",
     apple: "/icons/apple-touch-icon.png",
   },
 };

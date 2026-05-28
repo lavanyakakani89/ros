@@ -61,6 +61,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const [stores, setStores] = useState<StoreOption[]>([]);
   const [storeSwitching, setStoreSwitching] = useState(false);
   const [storeLoadError, setStoreLoadError] = useState<string | null>(null);
+  const [deployVersion, setDeployVersion] = useState<DeploymentVersion | null>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -215,16 +216,43 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     };
   }, [session?.user?.role, session?.user?.tenantId]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/version")
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Unable to load version");
+        }
+
+        return (await response.json()) as DeploymentVersion;
+      })
+      .then((version) => {
+        if (!cancelled) {
+          setDeployVersion(version);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDeployVersion(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface text-sm font-medium text-slate-600">
-        Loading RetailOS
+        Loading BizBil
       </div>
     );
   }
 
-  const tenantName = tenant?.name ?? "RetailOS";
-  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "RetailOS User";
+  const tenantName = tenant?.name ?? "BizBil";
+  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "BizBil User";
   const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const initials = getInitials(userName);
   const appEnvironment = (process.env.NEXT_PUBLIC_APP_ENV ?? "production").toLowerCase();
@@ -262,6 +290,11 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     .filter((group) => group.items.length > 0);
   const visibleAccountLinks = accountLinks.filter((link) => canAccessAccountLink(role, link.href));
   const canSwitchStores = role === "OWNER" || role === "MANAGER";
+  const isDev = appEnvironment !== "production";
+  const isOwner = role === "OWNER";
+  const deployCommit = deployVersion?.commit ?? "unknown";
+  const deployBranch = deployVersion?.branch ?? "unknown";
+  const deployTime = deployVersion?.buildTime ?? "unknown";
 
   if (pathname === "/impersonate") {
     return <>{children}</>;
@@ -312,20 +345,32 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     }
   }
 
+  async function handleCopyVersion() {
+    if (typeof navigator === "undefined" || !navigator.clipboard || deployCommit === "unknown") {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(deployCommit);
+    } catch {
+      // Ignore clipboard failures so the badge stays unobtrusive.
+    }
+  }
+
   return (
     <div className="min-h-screen bg-surface text-ink">
-      <aside className={cn("fixed inset-y-0 left-0 hidden border-r border-border bg-white transition-[width] duration-200 lg:block", sidebarCollapsed ? "w-20" : "w-64")}>
+      <aside className={cn("fixed inset-y-0 left-0 hidden flex-col border-r border-border bg-white transition-[width] duration-200 lg:flex", sidebarCollapsed ? "w-20" : "w-64")}>
         <div className={cn("flex h-16 items-center gap-3 border-b border-border px-4", sidebarCollapsed && "justify-center px-3")}>
           <div className="flex size-9 items-center justify-center rounded-md bg-emerald-600 text-white">
             <CreditCard className="size-5" aria-hidden="true" />
           </div>
           <div className={cn(sidebarCollapsed && "sr-only")}>
-            <div className="text-sm font-semibold">RetailOS</div>
+            <div className="text-sm font-semibold">BizBil</div>
             <div className="text-xs text-slate-500">{tenantName}</div>
             <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>
         </div>
-        <nav className={cn("px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
+        <nav className={cn("flex-1 overflow-y-auto px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
           {visibleDashboard ? (
             <NavigationLink item={visibleDashboard} pathname={pathname} badgeCount={badgeCounts[visibleDashboard.href] ?? 0} collapsed={sidebarCollapsed} />
           ) : null}
@@ -340,6 +385,21 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             </div>
           ))}
         </nav>
+        {(isDev || isOwner) ? (
+          <div className="border-t border-border px-3 py-3">
+            <button
+              type="button"
+              className={cn(
+                "w-full rounded-md px-2 py-1.5 text-left font-mono text-[11px] text-slate-500 transition hover:bg-slate-50 hover:text-slate-700",
+                sidebarCollapsed && "text-center",
+              )}
+              title={`Branch: ${deployBranch} · Built: ${deployTime} · Click to copy full commit SHA`}
+              onClick={() => void handleCopyVersion()}
+            >
+              {deployCommit === "unknown" ? "unknown" : deployCommit.slice(0, 7)}
+            </button>
+          </div>
+        ) : null}
       </aside>
 
       <div className={cn("transition-[padding] duration-200", sidebarWidthClass)}>
@@ -445,7 +505,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-6">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>Your RetailOS subscription needs attention. Billing continues to work, but please contact your administrator.</span>
+              <span>Your BizBil subscription needs attention. Billing continues to work, but please contact your administrator.</span>
             </div>
           </div>
         ) : null}
@@ -489,6 +549,12 @@ interface StoreOption {
   id: string;
   name: string;
   isDefault: boolean;
+}
+
+interface DeploymentVersion {
+  commit: string;
+  branch: string;
+  buildTime: string;
 }
 
 function AccountMenu({

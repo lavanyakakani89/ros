@@ -5,6 +5,12 @@ on:
     branches:
       - develop
   workflow_dispatch:
+    inputs:
+      reset_database:
+        description: "Reset test database (DESTROYS ALL DATA)"
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ jobs:
       REDIS_URL: redis://:password@localhost:6379
       JWT_SECRET: ci-only-jwt-secret
       NEXT_PUBLIC_API_URL: /api
-      NEXT_PUBLIC_APP_NAME: RetailOS Testing
+      NEXT_PUBLIC_APP_NAME: BizBil Testing
       NEXT_PUBLIC_APP_ENV: testing
 
     services:
@@ -91,6 +97,12 @@ jobs:
       PROD_DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
       HEALTH_URL: ${{ secrets.DEPLOY_TEST_HEALTH_URL }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      DEPLOY_SHA: ${{ github.sha }}
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_TIME: ${{ github.event.head_commit.timestamp }}
+      RESET_DATABASE: ${{ inputs.reset_database || false }}
 
     steps:
       - name: Configure SSH
@@ -103,6 +115,11 @@ jobs:
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
           HEALTH_URL="${HEALTH_URL:-https://test-ros.sivsanoils.in/api/health}"
+
+          if [ -z "${GH_PAT:-}" ]; then
+            echo "::error::GH_PAT secret is empty. Add a repository secret or testing environment secret named GH_PAT with GitHub repo read access."
+            exit 1
+          fi
 
           if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
             echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, as a repository secret or testing environment secret named DEPLOY_SSH_KEY."
@@ -119,6 +136,9 @@ jobs:
             echo "PROD_DEPLOY_PATH=$PROD_DEPLOY_PATH"
             echo "DEPLOY_TEST_PATH=$DEPLOY_TEST_PATH"
             echo "HEALTH_URL=$HEALTH_URL"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+            echo "DEPLOY_TIME=$DEPLOY_TIME"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.ssh
@@ -131,16 +151,54 @@ jobs:
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
           ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Deploy latest develop on testing stack
+      - name: Deploy exact testing commit on server
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
-            set -Eeuo pipefail
-            if [ ! -d '$DEPLOY_TEST_PATH/.git' ]; then
-              git clone '$PROD_DEPLOY_PATH' '$DEPLOY_TEST_PATH'
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "GH_PAT='$GH_PAT' GITHUB_REPOSITORY='$GITHUB_REPOSITORY' DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_TIME='$DEPLOY_TIME' RESET_DATABASE='$RESET_DATABASE' DEPLOY_TEST_PATH='$DEPLOY_TEST_PATH' bash -s" <<'EOF'
+          set -Eeuo pipefail
+
+          if [ ! -d "$DEPLOY_TEST_PATH/.git" ]; then
+            echo "First time setup: cloning from GitHub..."
+            git clone \
+              --branch develop \
+              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git" \
+              "$DEPLOY_TEST_PATH"
+            echo "Clone complete."
+          else
+            echo "Repo exists: checking origin is GitHub..."
+            cd "$DEPLOY_TEST_PATH"
+            CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "none")
+            EXPECTED_ORIGIN="https://github.com/$GITHUB_REPOSITORY.git"
+            if [[ "$CURRENT_ORIGIN" != *"github.com"* ]]; then
+              echo "WARNING: origin is '$CURRENT_ORIGIN' - not GitHub. Fixing..."
+              git remote set-url origin \
+                "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+              echo "Origin fixed."
             fi
-            cd '$DEPLOY_TEST_PATH'
-            DEPLOY_BRANCH='develop' DEPLOY_REF='origin/develop' bash infra/deploy-testing.sh
-          "
+          fi
+
+          cd "$DEPLOY_TEST_PATH"
+
+          CURRENT_ORIGIN=$(git remote get-url origin 2>/dev/null || echo "none")
+          echo "Current origin: $CURRENT_ORIGIN"
+
+          if [[ "$CURRENT_ORIGIN" != *"github.com"* ]]; then
+            echo "Fixing origin from '$CURRENT_ORIGIN' to GitHub..."
+            git remote set-url origin \
+              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+            echo "Origin is now: $(git remote get-url origin)"
+          else
+            git remote set-url origin \
+              "https://$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
+            echo "Origin already points to GitHub. Updated credentials."
+          fi
+
+          git fetch origin
+          git checkout -B develop "$DEPLOY_SHA"
+          git reset --hard "$DEPLOY_SHA"
+
+          export DEPLOY_SHA DEPLOY_BRANCH DEPLOY_TIME RESET_DATABASE GH_PAT GITHUB_REPOSITORY
+          bash infra/deploy-testing.sh
+          EOF
 
       - name: Health check
         run: |
@@ -152,6 +210,62 @@ jobs:
           done
           echo "Testing health check failed: $HEALTH_URL" >&2
           exit 1
+
+      - name: Verify deployment - route assertions
+        run: |
+          BASE="https://test-ros.sivsanoils.in"
+          FAIL=0
+
+          check_route() {
+            local url="$BASE$1"
+            local expected="$2"
+            local status=$(curl -Ls -o /dev/null -w "%{http_code}" \
+              --max-time 15 "$url")
+            if [ "$status" = "$expected" ]; then
+              echo "✅ $1 -> $status"
+            else
+              echo "❌ $1 -> $status (expected $expected)"
+              FAIL=1
+            fi
+          }
+
+          echo "Waiting 30s for containers to start..."
+          sleep 30
+
+          check_route "/api/health" "200"
+
+          VERSION_RESPONSE=$(curl -Ls "$BASE/api/version")
+          DEPLOYED_SHA=$(echo "$VERSION_RESPONSE" | grep -o '"commit":"[^"]*"' | cut -d'"' -f4)
+          if [ "$DEPLOYED_SHA" = "$DEPLOY_SHA" ]; then
+            echo "✅ /api/version -> correct SHA $DEPLOYED_SHA"
+          else
+            echo "❌ /api/version -> wrong SHA: $DEPLOYED_SHA (expected $DEPLOY_SHA)"
+            FAIL=1
+          fi
+
+          check_route "/login" "200"
+          check_route "/dashboard" "200"
+          check_route "/payroll" "200"
+          check_route "/settings/payment-methods" "200"
+
+          TITLE=$(curl -Ls "$BASE" | grep -o '<title>[^<]*</title>' | head -1)
+          if echo "$TITLE" | grep -qi "bizbil"; then
+            echo "✅ Page title contains BizBil"
+          else
+            echo "❌ Page title wrong: $TITLE (should contain BizBil)"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" = "1" ]; then
+            echo ""
+            echo "❌ DEPLOYMENT VERIFICATION FAILED"
+            echo "The test server is not serving the correct code."
+            echo "Check the bootstrap and origin configuration."
+            exit 1
+          else
+            echo ""
+            echo "✅ ALL CHECKS PASSED - test server is correct"
+          fi
 
       - name: Dump testing stack logs on failure
         if: failure()

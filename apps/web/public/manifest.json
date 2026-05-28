@@ -1,11 +1,11 @@
 {
-  "name": "RetailOS",
-  "short_name": "RetailOS",
-  "description": "Retail management for Indian SMB shops",
+  "name": "BizBil",
+  "short_name": "BizBil",
+  "description": "BizBil — Bill fast. Biz smart.",
   "start_url": "/billing",
   "display": "standalone",
   "background_color": "#f8fafc",
-  "theme_color": "#059669",
+  "theme_color": "#006b54",
   "orientation": "portrait-primary",
   "shortcuts": [
     {

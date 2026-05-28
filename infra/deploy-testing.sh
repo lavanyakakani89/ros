@@ -2,11 +2,16 @@
 set -Eeuo pipefail
 
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-develop}"
-DEPLOY_REF="${DEPLOY_REF:-origin/${DEPLOY_BRANCH}}"
+DEPLOY_SHA="${DEPLOY_SHA:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose.test.yml}"
 ENV_FILE="${ENV_FILE:-.env.testing}"
 
 cd "$(dirname "$0")/.."
+
+if [[ -z "$DEPLOY_SHA" ]]; then
+  echo "DEPLOY_SHA is required for testing deployments." >&2
+  exit 1
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE" >&2
@@ -14,10 +19,20 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-echo "==> Fetching latest ${DEPLOY_BRANCH} code"
-git fetch origin "$DEPLOY_BRANCH"
-git checkout -B "$DEPLOY_BRANCH" "origin/$DEPLOY_BRANCH"
-git reset --hard "$DEPLOY_REF"
+if [[ -n "${GH_PAT:-}" && -n "${GITHUB_REPOSITORY:-}" ]]; then
+  echo "==> Ensuring origin points to GitHub"
+  git remote set-url origin "https://${GH_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+fi
+
+echo "==> Fetching exact ${DEPLOY_BRANCH} commit"
+echo "Deploying commit: $DEPLOY_SHA"
+git fetch origin
+git checkout -B "$DEPLOY_BRANCH" "$DEPLOY_SHA"
+git reset --hard "$DEPLOY_SHA"
+echo "Now at: $(git rev-parse HEAD) - $(git log -1 --format='%s')"
+
+DEPLOY_TIME="${DEPLOY_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+export DEPLOY_SHA DEPLOY_BRANCH DEPLOY_TIME
 
 echo "==> Building testing application images"
 build_log="$(mktemp)"
@@ -33,15 +48,16 @@ echo "==> Starting testing dependencies"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
 
 echo "==> Running testing database migrations"
-set +e
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
-  pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
-migration_status=$?
-set -e
-if [[ "$migration_status" -ne 0 ]]; then
-  echo "==> Testing migration failed; resetting the testing database and retrying migrations"
+if [[ "${RESET_DATABASE:-false}" == "true" ]]; then
+  echo "==> WARNING: database reset requested for testing deployment"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
     pnpm --filter @retailos/api exec -- prisma migrate reset --force --skip-seed --schema prisma/schema.prisma
+else
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
+    pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma; then
+    echo "==> Prisma migrate deploy failed for the testing database" >&2
+    exit 1
+  fi
 fi
 
 echo "==> Restarting testing application services"

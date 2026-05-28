@@ -21,7 +21,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://test-ros.sivsanoils.in}
-        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-RetailOS}
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-BizBil}
         NEXT_PUBLIC_APP_ENV: ${NEXT_PUBLIC_APP_ENV:-testing}
     restart: unless-stopped
     env_file:
@@ -44,6 +44,9 @@ services:
     environment:
       PORT: 3001
       HOST: 0.0.0.0
+      DEPLOY_SHA: ${DEPLOY_SHA:-unknown}
+      DEPLOY_BRANCH: ${DEPLOY_BRANCH:-unknown}
+      DEPLOY_TIME: ${DEPLOY_TIME:-unknown}
     depends_on:
       postgres:
         condition: service_healthy

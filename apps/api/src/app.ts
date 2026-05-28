@@ -46,6 +46,7 @@ import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.route
 import { superAdminImpersonationRoutes } from "./modules/superadmin/superadmin-impersonation.routes.js";
 import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.routes.js";
 import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
+import systemRoutes from "./modules/system/system.routes.js";
 import { templatesRoutes } from "./modules/templates/templates.routes.js";
 import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.routes.js";
 import { whatsappCampaignsRoutes } from "./modules/whatsapp/whatsapp-campaigns.routes.js";
@@ -138,6 +139,7 @@ export async function buildServer(): Promise<FastifyInstance> {
     return getHealth();
   });
 
+  await fastify.register(systemRoutes);
   await fastify.register(tenantPlugin);
   await fastify.register(verticalConfigRoutes);
   await fastify.register(categoriesRoutes);
@@ -213,9 +215,9 @@ export async function buildServer(): Promise<FastifyInstance> {
 
 function getBuildInfo() {
   return {
-    commit: nonEmpty(process.env.RETAILOS_BUILD_SHA),
-    branch: nonEmpty(process.env.RETAILOS_BUILD_BRANCH),
-    builtAt: nonEmpty(process.env.RETAILOS_BUILD_TIME),
+    commit: nonEmpty(process.env.DEPLOY_SHA) ?? nonEmpty(process.env.RETAILOS_BUILD_SHA),
+    branch: nonEmpty(process.env.DEPLOY_BRANCH) ?? nonEmpty(process.env.RETAILOS_BUILD_BRANCH),
+    builtAt: nonEmpty(process.env.DEPLOY_TIME) ?? nonEmpty(process.env.RETAILOS_BUILD_TIME),
   };
 }
 
