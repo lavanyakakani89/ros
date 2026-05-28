@@ -27,7 +27,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
-import { apiUrl, createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout, refreshAuthSession } from "@/lib/api-client";
 import {
   clearStoredImpersonation,
   type StoredImpersonation,
@@ -295,7 +295,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const deployCommit = deployVersion?.commit ?? "unknown";
   const deployBranch = deployVersion?.branch ?? "unknown";
   const deployTime = deployVersion?.buildTime ?? "unknown";
-  const tenantLogoSrc = tenant?.logoUrl ? `${apiUrl("/settings/logo/view")}?v=${encodeURIComponent(tenant.logoUrl)}` : null;
 
   if (pathname === "/impersonate") {
     return <>{children}</>;
@@ -362,15 +361,11 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     <div className="min-h-screen bg-surface text-ink">
       <aside className={cn("fixed inset-y-0 left-0 hidden flex-col border-r border-border bg-white transition-[width] duration-200 lg:flex", sidebarCollapsed ? "w-20" : "w-64")}>
         <div className={cn("flex h-16 items-center gap-3 border-b border-border px-4", sidebarCollapsed && "justify-center px-3")}>
-          <div className="flex size-9 items-center justify-center overflow-hidden rounded-md border border-emerald-100 bg-white text-emerald-700">
-            {tenantLogoSrc ? (
-              <img src={tenantLogoSrc} alt={`${tenantName} logo`} className="h-full w-full object-contain" />
-            ) : (
-              <CreditCard className="size-5" aria-hidden="true" />
-            )}
+          <div className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-white">
+            <img src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" className="h-full w-full object-contain" />
           </div>
           <div className={cn(sidebarCollapsed && "sr-only")}>
-            <div className="text-sm font-semibold">BizBil</div>
+            <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-5 w-auto object-contain" />
             <div className="text-xs text-slate-500">{tenantName}</div>
             <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>

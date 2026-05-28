@@ -8,7 +8,6 @@ export interface CurrentVerticalConfigResponse {
     status: string;
     gstEnabled: boolean;
     gstNumber?: string | null;
-    logoUrl?: string | null;
   };
   config: VerticalConfig;
   user?: {

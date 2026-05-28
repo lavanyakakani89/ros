@@ -15,7 +15,6 @@ export class VerticalConfigService {
         status: tenant.status,
         gstEnabled: tenant.gstEnabled,
         gstNumber: tenant.gstNumber,
-        logoUrl: tenant.logoUrl,
       },
       config: this.repository.getByVertical(tenant.vertical),
     };

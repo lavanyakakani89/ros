@@ -133,7 +133,6 @@ export async function getCurrentVerticalConfig(): Promise<{
     status: string;
     gstEnabled: boolean;
     gstNumber?: string | null;
-    logoUrl?: string | null;
   };
   config: VerticalConfig;
   user?: {
@@ -157,7 +156,6 @@ export async function getCurrentVerticalConfig(): Promise<{
       status: string;
       gstEnabled: boolean;
       gstNumber?: string | null;
-      logoUrl?: string | null;
     };
     config: VerticalConfig;
     user?: {

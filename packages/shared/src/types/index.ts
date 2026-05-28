@@ -100,7 +100,6 @@ export interface StoredTenant {
   status?: string;
   gstEnabled?: boolean;
   gstNumber?: string | null;
-  logoUrl?: string | null;
 }
 
 export interface PosLine {
