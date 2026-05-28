@@ -19,6 +19,11 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
 if [[ -n "${GH_PAT:-}" && -n "${GITHUB_REPOSITORY:-}" ]]; then
   echo "==> Ensuring origin points to GitHub"
   git remote set-url origin "https://x-access-token:${GH_PAT}@github.com/${GITHUB_REPOSITORY}.git"
@@ -45,7 +50,39 @@ tail -n 40 "$build_log"
 rm -f "$build_log"
 
 echo "==> Starting testing dependencies"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres minio
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate redis
+
+POSTGRES_CONTAINER="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -q postgres)"
+if [[ -z "$POSTGRES_CONTAINER" ]]; then
+  echo "Could not determine the testing postgres container." >&2
+  exit 1
+fi
+
+echo "==> Waiting for testing postgres readiness"
+postgres_ready=false
+for attempt in {1..30}; do
+  if docker exec -u postgres "$POSTGRES_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+    postgres_ready=true
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$postgres_ready" != "true" ]]; then
+  echo "Testing postgres did not become ready." >&2
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps -a
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=120 postgres
+  exit 1
+fi
+
+echo "==> Reconciling testing database credentials from $ENV_FILE"
+docker exec -i -u postgres "$POSTGRES_CONTAINER" \
+  psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    -v target_user="${POSTGRES_USER:-retailos}" \
+    -v target_password="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" <<'SQL'
+ALTER USER :"target_user" WITH PASSWORD :'target_password';
+SQL
 
 echo "==> Running testing database migrations"
 if [[ "${RESET_DATABASE:-false}" == "true" ]]; then
