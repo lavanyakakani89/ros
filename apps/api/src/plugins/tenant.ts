@@ -15,6 +15,7 @@ const writeMethods = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const publicRoutePrefixes = [
   "/health",
   "/api/health",
+  "/api/version",
   "/metrics",
   "/api/auth/",
   "/api/superadmin/",
