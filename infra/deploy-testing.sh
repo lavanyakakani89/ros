@@ -19,10 +19,31 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+get_env_value() {
+  local key="$1"
+  local line
+
+  line="$(grep -E "^${key}=" "$ENV_FILE" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 1
+  fi
+
+  line="${line#*=}"
+  line="${line%$'\r'}"
+  printf '%s' "$line"
+}
+
+POSTGRES_TARGET_USER="$(get_env_value POSTGRES_USER || true)"
+POSTGRES_TARGET_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
+
+if [[ -z "$POSTGRES_TARGET_USER" ]]; then
+  POSTGRES_TARGET_USER="retailos"
+fi
+
+if [[ -z "$POSTGRES_TARGET_PASSWORD" ]]; then
+  echo "POSTGRES_PASSWORD is required in $ENV_FILE" >&2
+  exit 1
+fi
 
 if [[ -n "${GH_PAT:-}" && -n "${GITHUB_REPOSITORY:-}" ]]; then
   echo "==> Ensuring origin points to GitHub"
@@ -79,8 +100,8 @@ fi
 echo "==> Reconciling testing database credentials from $ENV_FILE"
 docker exec -i -u postgres "$POSTGRES_CONTAINER" \
   psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    -v target_user="${POSTGRES_USER:-retailos}" \
-    -v target_password="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}" <<'SQL'
+    -v target_user="${POSTGRES_TARGET_USER}" \
+    -v target_password="${POSTGRES_TARGET_PASSWORD}" <<'SQL'
 ALTER USER :"target_user" WITH PASSWORD :'target_password';
 SQL
 
