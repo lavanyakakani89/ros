@@ -27,6 +27,10 @@ echo "==> Running database migrations"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
   pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
 
+echo "==> Publishing marketing website"
+install -d /opt/bizbil/www
+cp -a apps/web/public/bizbil-landing/. /opt/bizbil/www/
+
 echo "==> Restarting application services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api web caddy prometheus loki promtail grafana
 

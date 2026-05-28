@@ -8,6 +8,10 @@
   @pwaAssets path /sw.js /workbox-* /fallback-* /manifest.json
   header @pwaAssets Cache-Control "no-cache, no-store, must-revalidate"
 
+  handle /bizbil-landing* {
+    respond "Not found" 404
+  }
+
   handle /api/* {
     reverse_proxy api:3001
   }
@@ -19,6 +23,14 @@
   handle {
     reverse_proxy web:3000
   }
+}
+
+www.bizbil.com {
+  encode zstd gzip
+  root * /srv/bizbil-site
+  header Cache-Control "public, max-age=300"
+  try_files {path} /index.html
+  file_server
 }
 
 {$TEST_APP_DOMAIN:test-ros.sivsanoils.in} {

@@ -1,0 +1,2412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BizBil — Bill fast. Biz smart. | Retail Billing Software India</title>
+  <meta name="description" content="Complete billing, inventory, GST and business management for Indian retail shops. WhatsApp orders, thermal printing, Android app. Start free trial.">
+  <meta property="og:title" content="BizBil — Bill fast. Biz smart.">
+  <meta property="og:description" content="The smart billing platform for Indian retail shops. GST ready, works offline, WhatsApp orders.">
+  <link rel="canonical" href="https://www.bizbil.com">
+  <meta name="keywords" content="billing software India, GST billing, retail POS, kirana billing, pharmacy billing, inventory management India">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@500&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --teal: #0F6E56;
+      --teal-dark: #0F2B24;
+      --teal-soft: #E8F5F1;
+      --amber: #B45309;
+      --amber-soft: #FFF7ED;
+      --dark: #0F172A;
+      --muted: #475569;
+      --light: #F8FAFC;
+      --border: #E2E8F0;
+      --white: #FFFFFF;
+      --red: #DC2626;
+      --blue: #2563EB;
+      --shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.08);
+      --shadow-md: 0 18px 45px rgba(15, 23, 42, 0.14);
+      --shadow-teal: 0 22px 60px rgba(15, 110, 86, 0.22);
+      --radius: 8px;
+      --container: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    [id] {
+      scroll-margin-top: 96px;
+    }
+
+    body {
+      margin: 0;
+      color: var(--dark);
+      background: var(--white);
+      font-family: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .container {
+      width: min(calc(100% - 32px), var(--container));
+      margin: 0 auto;
+    }
+
+    .section {
+      padding: 96px 0;
+    }
+
+    .section-sm {
+      padding: 56px 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    .display {
+      margin: 0;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: clamp(2rem, 4vw, 3.25rem);
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      line-height: 1.25;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .section-head {
+      max-width: 720px;
+      margin: 0 auto 48px;
+      text-align: center;
+    }
+
+    .section-head p {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 1.125rem;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--teal);
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-size: 1.45rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .brand-logo {
+      display: inline-flex;
+      align-items: center;
+      width: 150px;
+      height: 44px;
+      color: var(--teal);
+    }
+
+    .brand-logo img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .logo-mark {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      object-fit: contain;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      display: inline-grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      border-radius: 5px;
+      background: var(--teal);
+      color: var(--white);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .brand-stack {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .brand-stack small {
+      color: var(--muted);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.7);
+      background: rgba(255, 255, 255, 0.88);
+      transition: box-shadow 0.25s ease, background 0.25s ease;
+    }
+
+    .nav.scrolled {
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .nav-inner {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 32px;
+      min-height: 76px;
+    }
+
+    .nav-links {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      color: #334155;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    .nav-links a,
+    .footer a {
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover,
+    .footer a:hover {
+      color: var(--teal);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      padding: 0 18px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background: var(--teal);
+      color: var(--white);
+      box-shadow: 0 10px 24px rgba(15, 110, 86, 0.22);
+    }
+
+    .btn-primary:hover {
+      background: #0C5F4A;
+      box-shadow: 0 14px 32px rgba(15, 110, 86, 0.28);
+    }
+
+    .btn-ghost {
+      border-color: var(--border);
+      background: rgba(255, 255, 255, 0.72);
+      color: var(--dark);
+    }
+
+    .btn-white {
+      border-color: rgba(255, 255, 255, 0.42);
+      background: var(--white);
+      color: var(--teal);
+      box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+    }
+
+    .btn-outline-white {
+      border-color: rgba(15, 110, 86, 0.22);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--dark);
+    }
+
+    .hamburger {
+      display: none;
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+      color: var(--dark);
+      cursor: pointer;
+    }
+
+    .hamburger span {
+      display: block;
+      width: 18px;
+      height: 2px;
+      margin: 4px auto;
+      border-radius: 999px;
+      background: currentColor;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+
+    .hamburger[aria-expanded="true"] span:nth-child(1) {
+      transform: translateY(6px) rotate(45deg);
+    }
+
+    .hamburger[aria-expanded="true"] span:nth-child(2) {
+      opacity: 0;
+    }
+
+    .hamburger[aria-expanded="true"] span:nth-child(3) {
+      transform: translateY(-6px) rotate(-45deg);
+    }
+
+    .mobile-menu {
+      display: none;
+      overflow: hidden;
+      max-height: 0;
+      border-top: 1px solid transparent;
+      transition: max-height 0.3s ease, border-color 0.3s ease;
+    }
+
+    .mobile-menu.open {
+      max-height: 420px;
+      border-color: var(--border);
+    }
+
+    .mobile-menu-content {
+      display: grid;
+      gap: 12px;
+      padding: 18px 0 24px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 88px 0 76px;
+      background:
+        linear-gradient(135deg, rgba(15, 110, 86, 0.12), rgba(255, 255, 255, 0.96) 42%, rgba(180, 83, 9, 0.08)),
+        var(--light);
+    }
+
+    .hero::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      background-image:
+        linear-gradient(rgba(15, 110, 86, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(15, 110, 86, 0.07) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 80%);
+      pointer-events: none;
+    }
+
+    .hero-inner {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(480px, 1.08fr);
+      align-items: center;
+      gap: 56px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      border: 1px solid rgba(180, 83, 9, 0.18);
+      border-radius: 999px;
+      background: var(--amber-soft);
+      color: var(--amber);
+      padding: 8px 13px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .hero h1 {
+      margin-top: 22px;
+      font-size: clamp(3.35rem, 6vw, 4rem);
+    }
+
+    .text-teal {
+      color: var(--teal);
+    }
+
+    .hero-copy {
+      max-width: 600px;
+      margin-top: 22px;
+      color: #334155;
+      font-size: clamp(1.08rem, 2vw, 1.25rem);
+      line-height: 1.65;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 30px;
+    }
+
+    .trust-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 24px;
+      color: #334155;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .trust-row span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tick {
+      color: var(--teal);
+      font-weight: 800;
+    }
+
+    .fade-up {
+      opacity: 0;
+      transform: translateY(18px);
+      animation: fadeUp 0.7s ease forwards;
+    }
+
+    .delay-1 { animation-delay: 0.08s; }
+    .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.32s; }
+    .delay-4 { animation-delay: 0.44s; }
+    .delay-5 { animation-delay: 0.56s; }
+
+    @keyframes fadeUp {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .hero-visual {
+      position: relative;
+      min-height: 520px;
+    }
+
+    .laptop {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      width: min(100%, 610px);
+      filter: drop-shadow(0 34px 55px rgba(15, 23, 42, 0.2));
+    }
+
+    .laptop-screen {
+      overflow: hidden;
+      border: 10px solid #162032;
+      border-radius: 18px 18px 10px 10px;
+      background: var(--white);
+    }
+
+    .laptop-base {
+      position: relative;
+      height: 26px;
+      margin: 0 -24px;
+      border-radius: 0 0 28px 28px;
+      background: linear-gradient(180deg, #CBD5E1, #94A3B8);
+    }
+
+    .laptop-base::after {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 96px;
+      height: 8px;
+      border-radius: 0 0 10px 10px;
+      background: rgba(15, 23, 42, 0.16);
+      content: "";
+      transform: translateX(-50%);
+    }
+
+    .billing-ui {
+      min-height: 374px;
+      background: #F8FAFC;
+    }
+
+    .appbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 54px;
+      padding: 0 18px;
+      background: #0B1220;
+      color: var(--white);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22C55E;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
+    }
+
+    .pos-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.75fr;
+      gap: 14px;
+      padding: 18px;
+    }
+
+    .pos-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--light);
+      padding: 10px 12px;
+      color: #64748B;
+      font-size: 0.78rem;
+    }
+
+    .bill-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.79rem;
+    }
+
+    .bill-table th,
+    .bill-table td {
+      padding: 11px 12px;
+      border-top: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .bill-table th {
+      color: #64748B;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+    }
+
+    .bill-table td:last-child,
+    .bill-table th:last-child {
+      text-align: right;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .summary {
+      padding: 14px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--border);
+      color: #475569;
+      font-size: 0.82rem;
+    }
+
+    .summary-row.total {
+      border: 0;
+      color: var(--dark);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .confirm-btn {
+      width: 100%;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 7px;
+      background: var(--teal);
+      color: var(--white);
+      padding: 13px;
+      font-weight: 800;
+    }
+
+    .phone {
+      overflow: hidden;
+      width: 186px;
+      min-height: 374px;
+      border: 9px solid #111827;
+      border-radius: 34px;
+      background: var(--white);
+      box-shadow: var(--shadow-md);
+    }
+
+    .phone::before {
+      display: block;
+      width: 58px;
+      height: 5px;
+      margin: 9px auto 6px;
+      border-radius: 999px;
+      background: #111827;
+      content: "";
+    }
+
+    .hero-phone {
+      position: absolute;
+      right: 0;
+      bottom: 16px;
+      transform: rotate(4deg);
+    }
+
+    .phone-screen {
+      padding: 12px;
+    }
+
+    .mobile-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      color: var(--dark);
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+
+    .mobile-app-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .mobile-app-brand .logo-mark {
+      width: 22px;
+      height: 22px;
+    }
+
+    .metric-card {
+      border-radius: var(--radius);
+      background: var(--teal);
+      color: var(--white);
+      padding: 14px;
+      box-shadow: 0 12px 24px rgba(15, 110, 86, 0.18);
+    }
+
+    .metric-card small,
+    .mini-card small {
+      display: block;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 0.66rem;
+    }
+
+    .metric-card strong {
+      display: block;
+      margin-top: 5px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 1.18rem;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 9px;
+      margin-top: 12px;
+    }
+
+    .mini-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #F8FAFC;
+      padding: 11px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .mini-card small {
+      color: #64748B;
+    }
+
+    .proof-strip {
+      background: var(--light);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .proof-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .proof-title {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-weight: 800;
+      font-size: 1.15rem;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .shop-pill,
+    .feature-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--white);
+      padding: 9px 13px;
+      color: #334155;
+      font-size: 0.88rem;
+      font-weight: 700;
+      box-shadow: 0 5px 16px rgba(15, 23, 42, 0.04);
+    }
+
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    .pain-card,
+    .feature-card,
+    .testimonial-card,
+    .pricing-card,
+    .shop-card,
+    .step-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .pain-card {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    .pain-icon {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      border-radius: var(--radius);
+      background: #FEF2F2;
+      color: var(--red);
+      font-size: 1.45rem;
+    }
+
+    .pain-card p,
+    .feature-card p {
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .better-way {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      margin-top: 42px;
+      color: var(--teal);
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-weight: 800;
+    }
+
+    .better-way::before,
+    .better-way::after {
+      width: min(22vw, 180px);
+      height: 1px;
+      background: var(--border);
+      content: "";
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .feature-card {
+      padding: 28px;
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(15, 110, 86, 0.28);
+      box-shadow: var(--shadow-md);
+    }
+
+    .card-icon {
+      display: grid;
+      width: 58px;
+      height: 58px;
+      place-items: center;
+      margin-bottom: 20px;
+      border-radius: 999px;
+      background: var(--teal-soft);
+      font-size: 1.75rem;
+    }
+
+    .feature-card ul,
+    .pricing-card ul {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .feature-card li,
+    .pricing-card li {
+      display: flex;
+      gap: 9px;
+      color: #334155;
+      font-size: 0.95rem;
+    }
+
+    .dark-feature {
+      overflow: hidden;
+      background: var(--teal-dark);
+      color: var(--white);
+    }
+
+    .spotlight {
+      display: grid;
+      grid-template-columns: 1fr 0.86fr;
+      align-items: center;
+      gap: 64px;
+    }
+
+    .dark-feature .badge {
+      border-color: rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.09);
+      color: #FDE68A;
+    }
+
+    .spotlight h2,
+    .download h2,
+    .final-cta h2 {
+      color: var(--white);
+    }
+
+    .spotlight-sub,
+    .download-sub,
+    .final-cta p {
+      margin-top: 16px;
+      color: #B7E7DA;
+      font-size: 1.15rem;
+    }
+
+    .steps {
+      display: grid;
+      gap: 18px;
+      margin-top: 34px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .step-num {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.14);
+      color: #A7F3D0;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.9rem;
+    }
+
+    .step strong {
+      color: var(--white);
+    }
+
+    .step p {
+      margin-top: 4px;
+      color: #CDEDE5;
+    }
+
+    .whatsapp-wrap {
+      position: relative;
+      width: 280px;
+      margin: 0 auto;
+    }
+
+    .wa-logo {
+      position: absolute;
+      top: -28px;
+      right: -8px;
+      z-index: 2;
+      display: grid;
+      width: 64px;
+      height: 64px;
+      place-items: center;
+      border: 5px solid var(--teal-dark);
+      border-radius: 999px;
+      background: #25D366;
+      color: var(--white);
+      font-size: 2rem;
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+    }
+
+    .wa-logo svg {
+      width: 36px;
+      height: 36px;
+      fill: currentColor;
+    }
+
+    .wa-phone {
+      width: 280px;
+      min-height: 526px;
+      border-color: #071713;
+      background: #ECE5DD;
+    }
+
+    .wa-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: -2px -12px 12px;
+      padding: 12px;
+      background: #075E54;
+      color: var(--white);
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .wa-avatar {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--white);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+    }
+
+    .wa-avatar .logo-mark {
+      width: 24px;
+      height: 24px;
+    }
+
+    .chat {
+      display: grid;
+      gap: 12px;
+      padding: 4px 0 12px;
+      background:
+        radial-gradient(circle at 18px 18px, rgba(7, 94, 84, 0.06) 0 1px, transparent 1px) 0 0 / 28px 28px,
+        #ECE5DD;
+    }
+
+    .bubble {
+      width: fit-content;
+      max-width: 232px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      box-shadow: 0 2px 3px rgba(15, 23, 42, 0.08);
+    }
+
+    .bubble.gray {
+      background: #F1F5F9;
+      color: #1E293B;
+    }
+
+    .bubble.white {
+      justify-self: end;
+      background: #DCF8C6;
+      color: #172554;
+    }
+
+    .printer-grid {
+      display: grid;
+      grid-template-columns: 0.9fr 1fr;
+      align-items: center;
+      gap: 70px;
+    }
+
+    .printer-scene {
+      display: grid;
+      place-items: center;
+      min-height: 430px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, #EFF6FF, #F8FAFC);
+    }
+
+    .printer {
+      position: relative;
+      width: 330px;
+      height: 176px;
+      border-radius: 18px 18px 28px 28px;
+      background: linear-gradient(180deg, #1F2937, #0B1220);
+      box-shadow: var(--shadow-md);
+    }
+
+    .printer::before {
+      position: absolute;
+      top: 34px;
+      left: 36px;
+      width: 258px;
+      height: 22px;
+      border-radius: 999px;
+      background: #030712;
+      content: "";
+    }
+
+    .printer::after {
+      position: absolute;
+      right: 34px;
+      bottom: 32px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: #22C55E;
+      box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.16);
+      content: "";
+    }
+
+    .receipt {
+      position: absolute;
+      left: 50%;
+      bottom: 124px;
+      width: 214px;
+      min-height: 284px;
+      padding: 20px 16px;
+      background:
+        linear-gradient(45deg, transparent 75%, #F8FAFC 75%) 0 100% / 12px 12px,
+        linear-gradient(-45deg, transparent 75%, #F8FAFC 75%) 0 100% / 12px 12px,
+        var(--white);
+      color: #111827;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.72rem;
+      line-height: 1.55;
+      text-align: left;
+      box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
+      transform: translateX(-50%);
+    }
+
+    .receipt .center {
+      display: block;
+      text-align: center;
+    }
+
+    .receipt .dash {
+      display: block;
+      margin: 8px 0;
+      border-top: 1px dotted #64748B;
+    }
+
+    .point-list {
+      display: grid;
+      gap: 13px;
+      margin: 26px 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .point-list li {
+      display: flex;
+      gap: 10px;
+      color: #334155;
+      font-weight: 500;
+    }
+
+    .shops-row {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(240px, 1fr);
+      gap: 18px;
+      overflow-x: auto;
+      padding: 4px 4px 18px;
+      scroll-snap-type: x mandatory;
+    }
+
+    .shop-card {
+      min-height: 188px;
+      padding: 24px;
+      scroll-snap-align: start;
+    }
+
+    .shop-card .emoji {
+      display: block;
+      margin-bottom: 18px;
+      font-size: 2rem;
+    }
+
+    .pricing {
+      background: var(--light);
+    }
+
+    .pricing-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      margin: -18px auto 36px;
+    }
+
+    .toggle {
+      position: relative;
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      width: 232px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--white);
+      padding: 4px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .toggle button {
+      position: relative;
+      z-index: 2;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      padding: 10px 12px;
+      color: #475569;
+      font-weight: 800;
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+
+    .toggle::before {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: calc(50% - 4px);
+      height: calc(100% - 8px);
+      border-radius: 999px;
+      background: var(--teal);
+      content: "";
+      transition: transform 0.25s ease;
+    }
+
+    .pricing.yearly .toggle::before {
+      transform: translateX(100%);
+    }
+
+    .pricing:not(.yearly) .toggle .monthly,
+    .pricing.yearly .toggle .yearly {
+      color: var(--white);
+    }
+
+    .save-badge {
+      border-radius: 999px;
+      background: var(--amber-soft);
+      color: var(--amber);
+      padding: 7px 10px;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .pricing-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 30px;
+    }
+
+    .pricing-card.featured {
+      border: 2px solid var(--teal);
+      box-shadow: var(--shadow-teal);
+      transform: translateY(-10px);
+    }
+
+    .plan-badge {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      background: var(--teal-soft);
+      color: var(--teal);
+      padding: 7px 11px;
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    .popular {
+      position: absolute;
+      top: -14px;
+      right: 24px;
+      border-radius: 999px;
+      background: var(--amber);
+      color: var(--white);
+      padding: 7px 12px;
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .price {
+      display: flex;
+      align-items: baseline;
+      gap: 5px;
+      margin: 18px 0 6px;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-weight: 800;
+    }
+
+    .price .amount {
+      font-size: 2.35rem;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .pricing-card ul {
+      flex: 1;
+      margin-bottom: 26px;
+    }
+
+    .no {
+      color: #94A3B8;
+    }
+
+    .pricing-note {
+      max-width: 780px;
+      margin: 34px auto 0;
+      color: #475569;
+      text-align: center;
+    }
+
+    .pricing-note strong {
+      color: var(--dark);
+    }
+
+    .testimonials {
+      background: var(--light);
+    }
+
+    .testimonial-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .testimonial-card {
+      display: flex;
+      min-height: 360px;
+      flex-direction: column;
+      padding: 28px;
+    }
+
+    .stars {
+      color: #F59E0B;
+      letter-spacing: 0;
+    }
+
+    .quote {
+      margin: 18px 0 24px;
+      color: #334155;
+      font-size: 1rem;
+      line-height: 1.7;
+    }
+
+    .person {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      margin-top: auto;
+    }
+
+    .avatar {
+      display: grid;
+      width: 48px;
+      height: 48px;
+      place-items: center;
+      border-radius: 999px;
+      color: var(--white);
+      font-weight: 800;
+    }
+
+    .avatar.teal { background: var(--teal); }
+    .avatar.blue { background: var(--blue); }
+    .avatar.amber { background: var(--amber); }
+
+    .how-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .how-grid::before {
+      position: absolute;
+      top: 44px;
+      left: 16%;
+      right: 16%;
+      height: 2px;
+      background: linear-gradient(90deg, var(--border), rgba(15, 110, 86, 0.45), var(--border));
+      content: "";
+    }
+
+    .step-card {
+      position: relative;
+      padding: 28px;
+      text-align: center;
+    }
+
+    .step-icon {
+      display: grid;
+      width: 72px;
+      height: 72px;
+      place-items: center;
+      margin: -2px auto 22px;
+      border: 8px solid var(--white);
+      border-radius: 999px;
+      background: var(--teal-soft);
+      font-size: 2rem;
+      box-shadow: 0 0 0 1px var(--border);
+    }
+
+    .download {
+      overflow: hidden;
+      background: var(--teal-dark);
+      color: var(--white);
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: 0.95fr 1fr;
+      align-items: center;
+      gap: 72px;
+    }
+
+    .feature-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 28px 0;
+    }
+
+    .download .feature-pill {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.08);
+      color: #DDF8F1;
+      box-shadow: none;
+    }
+
+    .play-btn {
+      min-height: 56px;
+      border-color: rgba(255, 255, 255, 0.12);
+      background: #020617;
+      color: var(--white);
+    }
+
+    .play-icon {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #22C55E, #3B82F6, #F59E0B);
+      color: var(--white);
+      font-size: 0.8rem;
+    }
+
+    .phone-stack {
+      position: relative;
+      min-height: 520px;
+    }
+
+    .stack-phone {
+      position: absolute;
+      top: 40px;
+      left: 50%;
+      width: 210px;
+      min-height: 432px;
+      transform-origin: bottom center;
+    }
+
+    .stack-phone.one {
+      transform: translateX(-92%) rotate(-8deg);
+      opacity: 0.72;
+    }
+
+    .stack-phone.two {
+      transform: translateX(-58%) rotate(-3deg);
+      opacity: 0.9;
+    }
+
+    .stack-phone.three {
+      transform: translateX(-22%) rotate(0deg);
+      box-shadow: 0 30px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    .app-preview {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .screen-title {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-size: 1rem;
+      font-weight: 800;
+    }
+
+    .chart-bars {
+      display: flex;
+      align-items: end;
+      gap: 8px;
+      height: 92px;
+      padding: 12px;
+      border-radius: var(--radius);
+      background: var(--light);
+    }
+
+    .chart-bars span {
+      flex: 1;
+      border-radius: 999px 999px 3px 3px;
+      background: var(--teal);
+    }
+
+    .faq-wrap {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+    }
+
+    .faq-item + .faq-item {
+      margin-top: 12px;
+    }
+
+    .faq-question {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      border: 0;
+      background: transparent;
+      padding: 20px 22px;
+      color: var(--dark);
+      font-weight: 800;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .faq-icon {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--teal-soft);
+      color: var(--teal);
+      transition: transform 0.25s ease;
+    }
+
+    .faq-item.open .faq-icon {
+      transform: rotate(45deg);
+    }
+
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.28s ease;
+    }
+
+    .faq-answer p {
+      padding: 0 22px 22px;
+      color: var(--muted);
+    }
+
+    .final-cta {
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(135deg, rgba(15, 110, 86, 0.96), rgba(15, 43, 36, 0.98)),
+        var(--teal);
+      text-align: center;
+    }
+
+    .final-cta::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+      background-size: 42px 42px;
+      pointer-events: none;
+    }
+
+    .final-inner {
+      position: relative;
+      max-width: 830px;
+      margin: 0 auto;
+    }
+
+    .final-cta h2 {
+      font-size: clamp(2.2rem, 5vw, 4rem);
+    }
+
+    .small-note {
+      margin-top: 14px;
+      color: #CFF4EB;
+      font-size: 0.94rem;
+    }
+
+    .final-trust {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 18px;
+      margin-top: 26px;
+      color: #EAFBF7;
+      font-weight: 700;
+    }
+
+    .footer {
+      background: var(--dark);
+      color: var(--white);
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.3fr repeat(3, 1fr);
+      gap: 44px;
+      padding: 64px 0 46px;
+    }
+
+    .footer .brand-logo {
+      width: 178px;
+      height: 52px;
+      border-radius: var(--radius);
+      background: var(--white);
+      padding: 10px 12px;
+    }
+
+    .footer .brand-stack small,
+    .footer p,
+    .footer a {
+      color: #CBD5E1;
+    }
+
+    .footer h3 {
+      margin-bottom: 16px;
+      font-size: 0.95rem;
+    }
+
+    .footer ul {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 0.94rem;
+    }
+
+    .footer-brand-copy {
+      margin-top: 18px;
+      max-width: 280px;
+    }
+
+    .made {
+      margin-top: 16px;
+      color: #E2E8F0;
+      font-weight: 800;
+    }
+
+    .footer-bottom {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 22px 0;
+      border-top: 1px solid rgba(226, 232, 240, 0.12);
+      color: #94A3B8;
+      font-size: 0.9rem;
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .reveal.in-view {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media (max-width: 1120px) {
+      .hero-inner,
+      .spotlight,
+      .printer-grid,
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-visual {
+        min-height: 590px;
+      }
+
+      .laptop {
+        left: 0;
+        right: auto;
+      }
+
+      .hero-phone {
+        right: 34px;
+      }
+
+      .feature-grid,
+      .pricing-grid,
+      .testimonial-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .pricing-card.featured {
+        transform: none;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .nav-inner {
+        grid-template-columns: 1fr auto;
+        min-height: 68px;
+      }
+
+      .nav-links,
+      .nav-actions {
+        display: none;
+      }
+
+      .hamburger,
+      .mobile-menu {
+        display: block;
+      }
+
+      .mobile-menu .btn {
+        width: 100%;
+      }
+
+      .section {
+        padding: 72px 0;
+      }
+
+      .hero {
+        padding: 64px 0 62px;
+      }
+
+      .hero h1 {
+        font-size: clamp(3rem, 16vw, 3.75rem);
+      }
+
+      .hero-visual {
+        min-height: 640px;
+      }
+
+      .laptop {
+        width: 100%;
+      }
+
+      .pos-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .summary {
+        display: none;
+      }
+
+      .hero-phone {
+        right: 6px;
+        bottom: 0;
+      }
+
+      .proof-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .pill-row {
+        justify-content: flex-start;
+      }
+
+      .pain-grid,
+      .feature-grid,
+      .pricing-grid,
+      .testimonial-grid,
+      .how-grid,
+      .footer-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .how-grid::before {
+        display: none;
+      }
+
+      .printer-grid,
+      .download-grid {
+        gap: 44px;
+      }
+
+      .phone-stack {
+        min-height: 470px;
+      }
+
+      .footer-bottom {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .container {
+        width: min(calc(100% - 24px), var(--container));
+      }
+
+      .btn {
+        width: 100%;
+      }
+
+      .hero-actions {
+        width: 100%;
+      }
+
+      .trust-row {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .hero-visual {
+        min-height: 590px;
+      }
+
+      .laptop-screen {
+        border-width: 7px;
+      }
+
+      .billing-ui {
+        min-height: 330px;
+      }
+
+      .bill-table th:nth-child(2),
+      .bill-table td:nth-child(2) {
+        display: none;
+      }
+
+      .hero-phone {
+        width: 152px;
+        min-height: 318px;
+      }
+
+      .metric-card strong {
+        font-size: 0.98rem;
+      }
+
+      .phone-screen {
+        padding: 9px;
+      }
+
+      .pain-card {
+        grid-template-columns: 1fr;
+      }
+
+      .better-way::before,
+      .better-way::after {
+        display: none;
+      }
+
+      .whatsapp-wrap,
+      .wa-phone {
+        width: min(100%, 280px);
+      }
+
+      .printer {
+        width: 292px;
+      }
+
+      .receipt {
+        width: 196px;
+        font-size: 0.68rem;
+      }
+
+      .pricing-toggle {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .toggle {
+        width: 100%;
+      }
+
+      .stack-phone {
+        width: 178px;
+      }
+
+      .stack-phone.one {
+        transform: translateX(-88%) rotate(-8deg);
+      }
+
+      .stack-phone.two {
+        transform: translateX(-60%) rotate(-3deg);
+      }
+
+      .stack-phone.three {
+        transform: translateX(-34%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="nav" id="top">
+    <div class="container nav-inner">
+      <a href="#top" class="brand-logo" aria-label="BizBil home">
+        <img src="icons/bizbil-wordmark.png" alt="BizBil - Bill fast. Biz smart.">
+      </a>
+      <div class="nav-links" aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#shops">For shops</a>
+        <a href="#download">Download</a>
+      </div>
+      <div class="nav-actions">
+        <a class="btn btn-ghost" href="https://app.bizbil.com/login">Login</a>
+        <a class="btn btn-primary" href="https://app.bizbil.com/register">Start free trial</a>
+      </div>
+      <button class="hamburger" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+    <div class="mobile-menu" id="mobileMenu">
+      <div class="container mobile-menu-content">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#shops">For shops</a>
+        <a href="#download">Download</a>
+        <a class="btn btn-ghost" href="https://app.bizbil.com/login">Login</a>
+        <a class="btn btn-primary" href="https://app.bizbil.com/register">Start free trial</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <div>
+          <div class="badge fade-up delay-1">🇮🇳 Built for Indian retail shops</div>
+          <h1 class="fade-up delay-2">Bill <span class="text-teal">fast</span>.<br>Biz <span class="text-teal">smart</span>.</h1>
+          <p class="hero-copy fade-up delay-3">Complete billing, inventory, GST and business management. Works on computer, tablet and mobile. Even offline.</p>
+          <div class="hero-actions fade-up delay-4">
+            <a class="btn btn-primary" href="https://app.bizbil.com/register">Start free — 30 days</a>
+            <a class="btn btn-outline-white" href="#whatsapp-orders">▶ Watch 2-min demo</a>
+          </div>
+          <div class="trust-row fade-up delay-5">
+            <span><span class="tick">✓</span> GST ready</span>
+            <span><span class="tick">✓</span> Works offline</span>
+            <span><span class="tick">✓</span> WhatsApp billing</span>
+            <span><span class="tick">✓</span> Thermal printing</span>
+            <span><span class="tick">✓</span> Android app</span>
+          </div>
+        </div>
+        <div class="hero-visual fade-up delay-4" aria-label="BizBil billing screen and mobile dashboard mockup">
+          <div class="laptop">
+            <div class="laptop-screen">
+              <div class="billing-ui">
+                <div class="appbar">
+                  <span>BizBil · Sivsan Oils · Billing</span>
+                  <span><span class="status-dot"></span></span>
+                </div>
+                <div class="pos-grid">
+                  <div class="pos-panel">
+                    <div class="search-bar">⌕ Scan barcode or search product</div>
+                    <table class="bill-table">
+                      <thead>
+                        <tr><th>Product</th><th>Qty</th><th>Total</th></tr>
+                      </thead>
+                      <tbody>
+                        <tr><td>Sesame Oil 5L</td><td>1</td><td>₹2,750</td></tr>
+                        <tr><td>Sea Salt</td><td>2</td><td>₹160</td></tr>
+                        <tr><td>Mustard Seeds</td><td>1</td><td>₹300</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="pos-panel summary">
+                    <div class="summary-row"><span>Subtotal</span><span>₹3,210</span></div>
+                    <div class="summary-row"><span>GST</span><span>Included</span></div>
+                    <div class="summary-row"><span>Payment</span><span>UPI</span></div>
+                    <div class="summary-row total"><span>Total</span><span>₹3,210</span></div>
+                    <button class="confirm-btn" type="button">Confirm ₹3,210</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="laptop-base"></div>
+          </div>
+          <div class="phone hero-phone">
+            <div class="phone-screen">
+              <div class="mobile-top"><span class="mobile-app-brand"><img class="logo-mark" src="icons/bizbil-mark.png" alt="">BizBil</span><span>●</span></div>
+              <div class="metric-card">
+                <small>Today sales</small>
+                <strong>₹42,860</strong>
+              </div>
+              <div class="mini-list">
+                <div class="mini-card">12 orders<small>WhatsApp queue</small></div>
+                <div class="mini-card">8 alerts<small>Low stock</small></div>
+                <div class="mini-card">₹18,420<small>Dues pending</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-strip section-sm">
+      <div class="container proof-inner reveal">
+        <p class="proof-title">Trusted by shops across Telangana & Andhra Pradesh</p>
+        <div class="pill-row">
+          <span class="shop-pill">Sivsan Oils · Manikonda</span>
+          <span class="shop-pill">Prasanna Medicals · Kukatpally</span>
+          <span class="shop-pill">Sri Lakshmi Groceries · LB Nagar</span>
+          <span class="shop-pill">Ravi Hardware · Dilsukhnagar</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <h2>Still managing your shop like this?</h2>
+          <p>Most Indian shop owners waste hours every day on things software can handle in seconds.</p>
+        </div>
+        <div class="pain-grid">
+          <article class="pain-card reveal">
+            <div class="pain-icon">🧾</div>
+            <div><h3>Handwritten bills</h3><p>Slow, messy, no records, customers argue on amounts</p></div>
+          </article>
+          <article class="pain-card reveal">
+            <div class="pain-icon">📦</div>
+            <div><h3>Stock runs out</h3><p>You discover a product is out only when a customer asks</p></div>
+          </article>
+          <article class="pain-card reveal">
+            <div class="pain-icon">💸</div>
+            <div><h3>Unpaid dues piling up</h3><p>No system to track who owes what and for how long</p></div>
+          </article>
+          <article class="pain-card reveal">
+            <div class="pain-icon">📊</div>
+            <div><h3>No idea how business is doing</h3><p>Monthly reports take hours to prepare manually</p></div>
+          </article>
+        </div>
+        <div class="better-way reveal">There is a better way →</div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-head reveal">
+          <h2>Everything your shop needs</h2>
+          <p>One platform. Every feature. No complexity.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card reveal">
+            <div class="card-icon">🧾</div>
+            <h3>Billing & POS</h3>
+            <p>Bill customers in seconds. Works even when internet is down.</p>
+            <ul>
+              <li><span class="tick">✓</span> Barcode scanner + manual search</li>
+              <li><span class="tick">✓</span> Thermal receipt printing via Bluetooth</li>
+              <li><span class="tick">✓</span> Cash, UPI, card and credit billing</li>
+              <li><span class="tick">✓</span> Split payments and held bills</li>
+            </ul>
+          </article>
+          <article class="feature-card reveal">
+            <div class="card-icon">📦</div>
+            <h3>Smart Inventory</h3>
+            <p>Always know what you have. Never run out of your best sellers.</p>
+            <ul>
+              <li><span class="tick">✓</span> Low stock alerts before you run out</li>
+              <li><span class="tick">✓</span> Expiry date tracking (pharmacy)</li>
+              <li><span class="tick">✓</span> Batch management and FEFO</li>
+              <li><span class="tick">✓</span> CSV import from Excel</li>
+            </ul>
+          </article>
+          <article class="feature-card reveal">
+            <div class="card-icon">👥</div>
+            <h3>Customer Accounts</h3>
+            <p>Track every customer. Collect dues. Build loyalty.</p>
+            <ul>
+              <li><span class="tick">✓</span> Credit accounts with due tracking</li>
+              <li><span class="tick">✓</span> One-tap WhatsApp payment reminders</li>
+              <li><span class="tick">✓</span> Loyalty points programme</li>
+              <li><span class="tick">✓</span> Full purchase history</li>
+            </ul>
+          </article>
+          <article class="feature-card reveal">
+            <div class="card-icon">💬</div>
+            <h3>WhatsApp Orders</h3>
+            <p>Customers order on WhatsApp. BizBil handles the rest.</p>
+            <ul>
+              <li><span class="tick">✓</span> Orders auto-converted to invoices</li>
+              <li><span class="tick">✓</span> Confirm or edit before processing</li>
+              <li><span class="tick">✓</span> Delivery status updates sent automatically</li>
+              <li><span class="tick">✓</span> No extra app needed for customers</li>
+            </ul>
+          </article>
+          <article class="feature-card reveal">
+            <div class="card-icon">📊</div>
+            <h3>GST & Reports</h3>
+            <p>All your numbers, always ready. No more month-end panic.</p>
+            <ul>
+              <li><span class="tick">✓</span> Auto GST invoice (Tax Invoice)</li>
+              <li><span class="tick">✓</span> GSTR-1 ready HSN summary</li>
+              <li><span class="tick">✓</span> Daily, weekly, monthly P&L</li>
+              <li><span class="tick">✓</span> Sales by product and category</li>
+            </ul>
+          </article>
+          <article class="feature-card reveal">
+            <div class="card-icon">📱</div>
+            <h3>Android App</h3>
+            <p>Your entire shop in your pocket. Bill from anywhere.</p>
+            <ul>
+              <li><span class="tick">✓</span> Camera barcode scanner</li>
+              <li><span class="tick">✓</span> Bluetooth thermal printing</li>
+              <li><span class="tick">✓</span> Push notifications for orders</li>
+              <li><span class="tick">✓</span> Delivery agent app included</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section dark-feature" id="whatsapp-orders">
+      <div class="container spotlight">
+        <div class="reveal">
+          <div class="badge">✨ Unique to BizBil</div>
+          <h2 style="margin-top:18px;">Your customers already order on WhatsApp.</h2>
+          <p class="spotlight-sub">Let BizBil turn those messages into invoices automatically.</p>
+          <div class="steps">
+            <div class="step"><div class="step-num">1</div><div><strong>Customer sends a WhatsApp message:</strong><p>"2 sunflower oil 5L, 1 sea salt please"</p></div></div>
+            <div class="step"><div class="step-num">2</div><div><strong>BizBil reads the message and creates a draft invoice</strong><p>Product matched, quantity confirmed, total ₹5,580</p></div></div>
+            <div class="step"><div class="step-num">3</div><div><strong>You confirm with one tap</strong><p>Bill generated → delivery created → confirmation sent back to customer</p></div></div>
+          </div>
+        </div>
+        <div class="whatsapp-wrap reveal">
+          <div class="wa-logo" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img">
+              <path d="M16 3.2A12.2 12.2 0 0 0 5.7 21.9L4 28l6.3-1.7A12.2 12.2 0 1 0 16 3.2Zm0 2.4a9.8 9.8 0 0 1 8.3 15.1A9.8 9.8 0 0 1 11 23.9l-.4-.2-3.1.8.8-3-.2-.5A9.8 9.8 0 0 1 16 5.6Zm-3.6 5.1c-.3 0-.7.1-1 .5-.3.4-1.2 1.2-1.2 2.9s1.2 3.3 1.4 3.5c.2.2 2.4 3.8 5.9 5.1 2.9 1.1 3.5.9 4.2.8.6-.1 2- .8 2.3-1.6.3-.8.3-1.5.2-1.6-.1-.2-.3-.2-.7-.4l-2.1-1c-.3-.1-.6-.2-.8.2-.2.3-.8 1-.9 1.2-.2.2-.3.2-.7.1-.3-.2-1.4-.5-2.6-1.6-1-.9-1.6-2-1.8-2.3-.2-.3 0-.5.1-.7l.5-.6c.2-.2.2-.3.3-.6.1-.2 0-.4 0-.6l-1-2.4c-.3-.6-.5-.6-.8-.6h-.3Z"/>
+            </svg>
+          </div>
+          <div class="phone wa-phone">
+            <div class="phone-screen">
+              <div class="wa-header"><span class="wa-avatar"><img class="logo-mark" src="icons/bizbil-mark.png" alt=""></span><span>BizBil Orders</span></div>
+              <div class="chat">
+                <div class="bubble gray">2 sunflower oil 5L, 1 sea salt please</div>
+                <div class="bubble white">✅ Order received!<br>Order #INV-0042<br>• Sunflower Oil 5L × 2 — ₹5,500<br>• Sea Salt × 1 — ₹80<br><strong>Total: ₹5,580</strong><br>We'll confirm shortly. 🙏</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container printer-grid">
+        <div class="printer-scene reveal" aria-label="CSS thermal printer with printed receipt">
+          <div class="printer">
+            <div class="receipt">
+              <span class="center">Sivsan Oils</span>
+              <span class="dash"></span>
+              Sesame Oil 5L&nbsp;&nbsp;&nbsp;₹2,750<br>
+              Sea Salt × 2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;₹80<br>
+              <span class="dash"></span>
+              GRAND TOTAL&nbsp;&nbsp;&nbsp;₹2,830<br>
+              <span class="dash"></span>
+              <span class="center">Thank You!<br>Visit Again!</span>
+            </div>
+          </div>
+        </div>
+        <div class="reveal">
+          <h2>Professional bills for ₹3,000</h2>
+          <p class="section-head-copy muted" style="margin-top:16px;font-size:1.1rem;">Works with any 3-inch Bluetooth thermal printer including ATPOS.</p>
+          <ul class="point-list">
+            <li><span class="tick">✓</span> Connects to phone via Bluetooth — no PC needed</li>
+            <li><span class="tick">✓</span> Auto-cut after every bill</li>
+            <li><span class="tick">✓</span> Amount in words printed automatically</li>
+            <li><span class="tick">✓</span> UPI QR code on bill (optional)</li>
+            <li><span class="tick">✓</span> FSSAI number, GSTIN, logo on every bill</li>
+          </ul>
+          <a class="btn btn-primary" href="#download">See supported printers →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="shops">
+      <div class="container">
+        <div class="section-head reveal">
+          <h2>Built for every type of retail shop</h2>
+        </div>
+        <div class="shops-row reveal" aria-label="Retail shop categories">
+          <article class="shop-card"><span class="emoji">🛢️</span><h3>Oils & Provisions</h3><p class="muted">Track bulk oil stock, FSSAI billing, delivery orders</p></article>
+          <article class="shop-card"><span class="emoji">🏪</span><h3>Grocery / Kirana</h3><p class="muted">Fast billing, expiry tracking, daily cash summary</p></article>
+          <article class="shop-card"><span class="emoji">💊</span><h3>Pharmacy</h3><p class="muted">Batch tracking, expiry alerts, FEFO stock management</p></article>
+          <article class="shop-card"><span class="emoji">🔧</span><h3>Hardware Store</h3><p class="muted">Large catalogue, supplier management, credit accounts</p></article>
+          <article class="shop-card"><span class="emoji">📱</span><h3>Electronics</h3><p class="muted">Serial number tracking, warranty, high-value billing</p></article>
+          <article class="shop-card"><span class="emoji">👗</span><h3>Fashion & Clothing</h3><p class="muted">Size/colour variants, seasonal stock, returns</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section pricing" id="pricing">
+      <div class="container">
+        <div class="section-head reveal">
+          <h2>Simple, honest pricing</h2>
+          <p>No hidden charges. GST invoice provided. Cancel anytime.</p>
+        </div>
+        <div class="pricing-toggle reveal">
+          <div class="toggle" role="group" aria-label="Pricing period">
+            <button type="button" class="monthly" data-period="monthly">Monthly</button>
+            <button type="button" class="yearly" data-period="yearly">Yearly</button>
+          </div>
+          <span class="save-badge">Yearly: 2 months free</span>
+        </div>
+        <div class="pricing-grid">
+          <article class="pricing-card reveal">
+            <span class="plan-badge">For solo shops</span>
+            <h3 style="margin-top:18px;">Starter</h3>
+            <div class="price"><span class="amount" data-monthly="₹499" data-yearly="₹4,990">₹499</span><span class="period">/month</span></div>
+            <ul>
+              <li><span class="tick">✓</span> 1 user</li>
+              <li><span class="tick">✓</span> Unlimited billing</li>
+              <li><span class="tick">✓</span> Inventory management</li>
+              <li><span class="tick">✓</span> Customer accounts</li>
+              <li><span class="tick">✓</span> Basic reports</li>
+              <li><span class="tick">✓</span> Thermal printing</li>
+              <li class="no">✗ WhatsApp orders</li>
+              <li class="no">✗ Multi-user</li>
+            </ul>
+            <a class="btn btn-ghost" href="https://app.bizbil.com/register">Start free trial</a>
+          </article>
+          <article class="pricing-card featured reveal">
+            <span class="popular">Most popular</span>
+            <span class="plan-badge">Most popular</span>
+            <h3 style="margin-top:18px;">Standard</h3>
+            <div class="price"><span class="amount" data-monthly="₹999" data-yearly="₹9,990">₹999</span><span class="period">/month</span></div>
+            <ul>
+              <li><span class="tick">✓</span> 3 users</li>
+              <li><span class="tick">✓</span> Everything in Starter</li>
+              <li><span class="tick">✓</span> WhatsApp orders</li>
+              <li><span class="tick">✓</span> Loyalty programme</li>
+              <li><span class="tick">✓</span> Delivery management</li>
+              <li><span class="tick">✓</span> Purchase orders</li>
+              <li><span class="tick">✓</span> GST reports</li>
+              <li><span class="tick">✓</span> Android mobile app</li>
+            </ul>
+            <a class="btn btn-primary" href="https://app.bizbil.com/register">Start free trial</a>
+          </article>
+          <article class="pricing-card reveal">
+            <span class="plan-badge">For growing shops</span>
+            <h3 style="margin-top:18px;">Professional</h3>
+            <div class="price"><span class="amount" data-monthly="₹1,999" data-yearly="₹19,990">₹1,999</span><span class="period">/month</span></div>
+            <ul>
+              <li><span class="tick">✓</span> Unlimited users</li>
+              <li><span class="tick">✓</span> Everything in Standard</li>
+              <li><span class="tick">✓</span> Multi-branch support (coming soon)</li>
+              <li><span class="tick">✓</span> Advanced analytics</li>
+              <li><span class="tick">✓</span> Priority WhatsApp support</li>
+              <li><span class="tick">✓</span> Custom invoice templates</li>
+              <li><span class="tick">✓</span> API access</li>
+              <li><span class="tick">✓</span> Dedicated onboarding</li>
+            </ul>
+            <a class="btn btn-ghost" href="https://wa.me/919394231444">Contact us</a>
+          </article>
+        </div>
+        <p class="pricing-note reveal">30-day free trial on all plans. No credit card required.<br><strong>Comparing with Vyapar or myBillBook?</strong> BizBil includes WhatsApp orders and mobile app in Standard plan.</p>
+      </div>
+    </section>
+
+    <section class="section testimonials">
+      <div class="container">
+        <div class="section-head reveal"><h2>Shop owners love BizBil</h2></div>
+        <div class="testimonial-grid">
+          <article class="testimonial-card reveal">
+            <div class="stars">★★★★★</div>
+            <p class="quote">"We were writing bills by hand for 15 years. BizBil changed everything. Our delivery customers order on WhatsApp and bills are ready in seconds. The thermal printer works perfectly."</p>
+            <div class="person"><div class="avatar teal">SV</div><div><strong>S. Venkata Rao</strong><p class="muted">Sivsan Oils, Manikonda, Hyderabad</p></div></div>
+          </article>
+          <article class="testimonial-card reveal">
+            <div class="stars">★★★★★</div>
+            <p class="quote">"Expiry date tracking alone saved us thousands. We used to write off expired medicines every month. Now BizBil alerts us 30 days before expiry. The GST reports are accurate and ready instantly."</p>
+            <div class="person"><div class="avatar blue">PK</div><div><strong>Dr. Prasanna Kumar</strong><p class="muted">Prasanna Medicals, Kukatpally</p></div></div>
+          </article>
+          <article class="testimonial-card reveal">
+            <div class="stars">★★★★★</div>
+            <p class="quote">"My staff now bills customers 3x faster. The barcode scanner on the phone works great. Outstanding dues have reduced because WhatsApp reminders go automatically. Very happy with BizBil."</p>
+            <div class="person"><div class="avatar amber">RS</div><div><strong>Ravi Shankar</strong><p class="muted">Ravi Hardware, Dilsukhnagar</p></div></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="section-head reveal">
+          <h2>Up and running in 5 minutes</h2>
+          <p>No training needed. No IT person required.</p>
+        </div>
+        <div class="how-grid">
+          <article class="step-card reveal"><div class="step-icon">🏪</div><h3>Create your shop</h3><p class="muted">Sign up with your shop name and GST number. Takes 2 minutes.</p></article>
+          <article class="step-card reveal"><div class="step-icon">📦</div><h3>Add your products</h3><p class="muted">Import from Excel or add products one by one. Barcode scanning makes it fast.</p></article>
+          <article class="step-card reveal"><div class="step-icon">🧾</div><h3>Start billing</h3><p class="muted">Scan. Add customer. Confirm. Print. Your first bill in under 30 seconds.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section download" id="download">
+      <div class="container download-grid">
+        <div class="reveal">
+          <div class="badge">Now available</div>
+          <h2 style="margin-top:18px;">Take BizBil everywhere</h2>
+          <p class="download-sub">The full BizBil experience on your Android phone. Bill customers, manage stock, track deliveries — from anywhere.</p>
+          <div class="feature-pills">
+            <span class="feature-pill">📷 Camera barcode scanner</span>
+            <span class="feature-pill">🖨️ Bluetooth thermal printing</span>
+            <span class="feature-pill">🔔 Push notifications</span>
+            <span class="feature-pill">📍 Delivery GPS proof</span>
+            <span class="feature-pill">📵 Offline billing</span>
+          </div>
+          <a class="btn play-btn" href="https://play.google.com/store/apps"><span class="play-icon">▶</span> Get it on Google Play</a>
+        </div>
+        <div class="phone-stack reveal" aria-label="Three BizBil Android app screens">
+          <div class="phone stack-phone one"><div class="app-preview"><div class="screen-title">Dashboard</div><div class="metric-card"><small>Revenue</small><strong>₹1.8L</strong></div><div class="mini-card">Top item<small>Sesame Oil 5L</small></div></div></div>
+          <div class="phone stack-phone two"><div class="app-preview"><div class="screen-title">Billing</div><div class="search-bar">Scan product</div><div class="mini-card">Sea Salt × 2<small>₹160</small></div><div class="mini-card">Confirm bill<small>₹3,210</small></div></div></div>
+          <div class="phone stack-phone three"><div class="app-preview"><div class="screen-title">Reports</div><div class="chart-bars"><span style="height:44%"></span><span style="height:72%"></span><span style="height:54%"></span><span style="height:92%"></span></div><div class="mini-card">P&L ready<small>This month</small></div></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="container">
+        <div class="section-head reveal"><h2>Questions shop owners ask us</h2></div>
+        <div class="faq-wrap reveal">
+          <div class="faq-item open"><button class="faq-question" type="button">Does BizBil work without internet?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Yes. BizBil works fully offline for billing and inventory. Bills created offline sync automatically when internet returns. You will never lose a sale due to connectivity.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">Does it generate proper GST invoices?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Yes. BizBil generates GST-compliant Tax Invoices with GSTIN, HSN codes, CGST, SGST breakdown. GSTR-1 summary is available in one click. If your shop is not GST registered, BizBil generates regular invoices without tax.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">Which thermal printers does it work with?<span class="faq-icon">+</span></button><div class="faq-answer"><p>BizBil works with any 3-inch (80mm) ESC/POS thermal printer via network (WiFi/LAN) or Bluetooth. We specifically recommend and support the ATPOS 3-inch printer available for ₹2,500-3,500.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">Is my shop data safe?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Your data is stored securely on encrypted servers in India. We take automatic backups daily. Your data belongs to you — you can export it anytime in CSV or PDF format.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">What happens if I stop paying?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Your account is paused, not deleted. Your data is kept for 90 days. Resume anytime and continue from where you left off. We never delete data without warning.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">Can multiple staff members use it?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Yes. Standard and Professional plans support multiple users. Each user has their own login with role-based access — owner, manager, staff, or delivery agent.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">How do I transfer my existing products?<span class="faq-icon">+</span></button><div class="faq-answer"><p>Upload an Excel/CSV file with your product list and prices. BizBil imports everything in minutes. Our support team helps you with the first import for free.</p></div></div>
+          <div class="faq-item"><button class="faq-question" type="button">What support do you offer?<span class="faq-icon">+</span></button><div class="faq-answer"><p>WhatsApp support during business hours (9am-7pm). Video call onboarding for new shops. Help documentation in Telugu and English. Professional plan gets priority response within 2 hours.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section final-cta">
+      <div class="container final-inner reveal">
+        <h2>Ready to run your shop smarter?</h2>
+        <p>Join hundreds of Indian shop owners who bill faster with BizBil.</p>
+        <div style="margin-top:32px;"><a class="btn btn-white" href="https://app.bizbil.com/register">Start free — 30 days, no credit card</a></div>
+        <p class="small-note">Setup in 5 minutes · Cancel anytime · GST invoice provided</p>
+        <div class="final-trust">
+          <span>🔒 Secure & encrypted</span>
+          <span>🇮🇳 Made in India</span>
+          <span>⚡ 99.9% uptime</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <a href="#top" class="brand-logo" aria-label="BizBil home">
+            <img src="icons/bizbil-wordmark.png" alt="BizBil - Bill fast. Biz smart.">
+          </a>
+          <p class="footer-brand-copy">Complete retail billing and business management for Indian shops.</p>
+          <p class="made">Made in India 🇮🇳</p>
+        </div>
+        <div><h3>Product</h3><ul><li><a href="#features">Features</a></li><li><a href="#pricing">Pricing</a></li><li><a href="#download">Android App</a></li><li><a href="#whatsapp-orders">WhatsApp Orders</a></li><li><a href="#features">GST Billing</a></li><li><a href="#features">Thermal Printing</a></li></ul></div>
+        <div><h3>Support</h3><ul><li><a href="#">Help Centre</a></li><li><a href="https://wa.me/919394231444">Contact us</a></li><li><a href="https://wa.me/919394231444">WhatsApp: +91 93942 31444</a></li><li><a href="mailto:support@bizbil.com">Email: support@bizbil.com</a></li><li><a href="#">Privacy Policy</a></li><li><a href="#">Terms of Service</a></li></ul></div>
+        <div><h3>For shops</h3><ul><li><a href="#shops">Grocery / Kirana</a></li><li><a href="#shops">Pharmacy</a></li><li><a href="#shops">Hardware</a></li><li><a href="#shops">Electronics</a></li><li><a href="#shops">Oils & Provisions</a></li><li><a href="#shops">Fashion</a></li></ul></div>
+      </div>
+      <div class="footer-bottom"><span>© 2026 BizBil. All rights reserved.</span><span>A product by Sivsan Technologies Pvt Ltd</span></div>
+    </div>
+  </footer>
+
+  <script>
+    const nav = document.querySelector(".nav");
+    const hamburger = document.querySelector(".hamburger");
+    const mobileMenu = document.querySelector("#mobileMenu");
+    const pricing = document.querySelector(".pricing");
+    const faqItems = Array.from(document.querySelectorAll(".faq-item"));
+
+    function setNavState() {
+      nav.classList.toggle("scrolled", window.scrollY > 8);
+    }
+
+    function closeMobileMenu() {
+      hamburger.setAttribute("aria-expanded", "false");
+      mobileMenu.classList.remove("open");
+    }
+
+    function setFaqHeights() {
+      faqItems.forEach((item) => {
+        const answer = item.querySelector(".faq-answer");
+        answer.style.maxHeight = item.classList.contains("open") ? answer.scrollHeight + "px" : "0px";
+      });
+    }
+
+    window.addEventListener("scroll", setNavState, { passive: true });
+    setNavState();
+
+    hamburger.addEventListener("click", () => {
+      const expanded = hamburger.getAttribute("aria-expanded") === "true";
+      hamburger.setAttribute("aria-expanded", String(!expanded));
+      mobileMenu.classList.toggle("open", !expanded);
+    });
+
+    document.querySelectorAll('a[href^="#"]').forEach((link) => {
+      link.addEventListener("click", (event) => {
+        const target = document.querySelector(link.getAttribute("href"));
+        if (!target) return;
+        event.preventDefault();
+        closeMobileMenu();
+        const navOffset = nav.offsetHeight + 18;
+        const targetTop = target.getBoundingClientRect().top + window.scrollY - navOffset;
+        window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+      });
+    });
+
+    document.querySelectorAll("[data-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const yearly = button.dataset.period === "yearly";
+        pricing.classList.toggle("yearly", yearly);
+        document.querySelectorAll(".amount").forEach((amount) => {
+          amount.style.opacity = "0";
+          amount.style.transform = "translateY(4px)";
+          window.setTimeout(() => {
+            amount.textContent = yearly ? amount.dataset.yearly : amount.dataset.monthly;
+            amount.nextElementSibling.textContent = yearly ? "/year" : "/month";
+            amount.style.opacity = "1";
+            amount.style.transform = "translateY(0)";
+          }, 120);
+        });
+      });
+    });
+
+    faqItems.forEach((item) => {
+      item.querySelector(".faq-question").addEventListener("click", () => {
+        faqItems.forEach((other) => {
+          if (other !== item) other.classList.remove("open");
+        });
+        item.classList.toggle("open");
+        setFaqHeights();
+      });
+    });
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("in-view");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.14, rootMargin: "0px 0px -40px 0px" });
+
+    document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
+    window.addEventListener("resize", setFaqHeights);
+    setFaqHeights();
+  </script>
+</body>
+</html>
