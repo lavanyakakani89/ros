@@ -8,7 +8,7 @@ import { useState } from "react";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { appendDateRange, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
-import { getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
+import { getStoredTenant } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatDeliveryWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
@@ -53,25 +53,14 @@ export function DeliveryBoard() {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState(() => todayDate());
   const [to, setTo] = useState(() => todayDate());
-  const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const activeDeliveriesQuery = useQuery({
     queryKey: ["deliveries", "board", "active"],
-    queryFn: async () => {
-      if (!hasSession) {
-        return fallbackDeliveries;
-      }
-
-      return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active");
-    },
+    queryFn: () => createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active"),
     staleTime: 30_000,
   });
   const deliveredDeliveriesQuery = useQuery({
     queryKey: ["deliveries", "board", "delivered", from, to],
     queryFn: async () => {
-      if (!hasSession) {
-        return fallbackDeliveries;
-      }
-
       const params = new URLSearchParams();
       appendDateRange(params, from, to);
       params.set("status", "DELIVERED");
@@ -83,13 +72,11 @@ export function DeliveryBoard() {
   const usersQuery = useQuery({
     queryKey: ["settings-current", "delivery-users"],
     queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
-    enabled: hasSession,
     staleTime: 60_000,
   });
   const whatsappTemplatesQuery = useQuery({
     queryKey: ["whatsapp-message-templates"],
     queryFn: fetchWhatsappMessageTemplates,
-    enabled: hasSession,
     staleTime: 60_000,
   });
   const updateStatus = useMutation({
