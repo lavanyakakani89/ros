@@ -57,6 +57,9 @@ export function DeliveryBoard() {
     queryKey: ["deliveries", "board", "active"],
     queryFn: () => createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active"),
     staleTime: 30_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 15_000,
   });
   const deliveredDeliveriesQuery = useQuery({
     queryKey: ["deliveries", "board", "delivered", from, to],
@@ -68,6 +71,9 @@ export function DeliveryBoard() {
       return createAuthenticatedApiClient().get<DeliveryItem[]>(`/delivery${query ? `?${query}` : ""}`);
     },
     staleTime: 30_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 15_000,
   });
   const usersQuery = useQuery({
     queryKey: ["settings-current", "delivery-users"],
@@ -90,6 +96,8 @@ export function DeliveryBoard() {
 
   const deliveries = [...(activeDeliveriesQuery.data ?? fallbackDeliveries), ...(deliveredDeliveriesQuery.data ?? fallbackDeliveries)];
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
+  const isLoadingBoard = activeDeliveriesQuery.isLoading || deliveredDeliveriesQuery.isLoading;
+  const boardError = activeDeliveriesQuery.error ?? deliveredDeliveriesQuery.error;
 
   function shareDeliveryUpdate(delivery: DeliveryItem) {
     const templateKey = delivery.status === "DELIVERED" ? "deliveryDelivered" : "deliveryOutForDelivery";
@@ -123,6 +131,11 @@ export function DeliveryBoard() {
           </Link>
         </div>
       </div>
+      {boardError ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {(boardError instanceof Error ? boardError.message : "Unable to load deliveries right now.")} Try again in a moment.
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-4">
       {statuses.map((status) => {
         const items = deliveries.filter((delivery) => delivery.status === status);
@@ -192,7 +205,11 @@ export function DeliveryBoard() {
                   </div>
                 </article>
               ))}
-              {items.length === 0 ? <div className="rounded-md border border-dashed border-slate-200 p-3 text-xs text-slate-400">No deliveries</div> : null}
+              {items.length === 0 ? (
+                <div className="rounded-md border border-dashed border-slate-200 p-3 text-xs text-slate-400">
+                  {isLoadingBoard ? "Loading deliveries..." : "No deliveries"}
+                </div>
+              ) : null}
             </div>
           </section>
         );
