@@ -35,6 +35,7 @@ import { dashboardItem, groupedNavigation } from "@/lib/navigation-groups";
 import { cn } from "@/lib/utils";
 import {
   storeTenant,
+  storeAuthSession,
   storeVerticalConfig,
   type StoredAuthSession,
   type StoredTenant,
@@ -76,7 +77,9 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         storeTenant(current.tenant);
         storeVerticalConfig(current.config);
         if (current.user) {
-          setSession({ user: current.user });
+          const nextSession = { user: current.user };
+          storeAuthSession(nextSession);
+          setSession(nextSession);
         } else {
           setSession(null);
           setBadgeCounts({});
