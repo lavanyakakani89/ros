@@ -55,8 +55,19 @@ export function DeliveryBoard() {
   const [from, setFrom] = useState(() => todayDate());
   const [to, setTo] = useState(() => todayDate());
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
-  const deliveriesQuery = useQuery({
-    queryKey: ["deliveries", "board", from, to],
+  const activeDeliveriesQuery = useQuery({
+    queryKey: ["deliveries", "board", "active"],
+    queryFn: async () => {
+      if (!hasSession) {
+        return fallbackDeliveries;
+      }
+
+      return createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active");
+    },
+    staleTime: 30_000,
+  });
+  const deliveredDeliveriesQuery = useQuery({
+    queryKey: ["deliveries", "board", "delivered", from, to],
     queryFn: async () => {
       if (!hasSession) {
         return fallbackDeliveries;
@@ -64,6 +75,7 @@ export function DeliveryBoard() {
 
       const params = new URLSearchParams();
       appendDateRange(params, from, to);
+      params.set("status", "DELIVERED");
       const query = params.toString();
       return createAuthenticatedApiClient().get<DeliveryItem[]>(`/delivery${query ? `?${query}` : ""}`);
     },
@@ -98,7 +110,7 @@ export function DeliveryBoard() {
     onError: (error) => setRouteMessage(error instanceof Error ? error.message : "Route optimization failed."),
   });
 
-  const deliveries = deliveriesQuery.data ?? fallbackDeliveries;
+  const deliveries = [...(activeDeliveriesQuery.data ?? fallbackDeliveries), ...(deliveredDeliveriesQuery.data ?? fallbackDeliveries)];
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
 
   function shareDeliveryUpdate(delivery: DeliveryItem) {
