@@ -107,13 +107,13 @@ jobs:
     steps:
       - name: Configure SSH
         env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_TEST_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
         run: |
           set -Eeuo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
           DEPLOY_USER="${DEPLOY_USER:-root}"
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
-          DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
+          DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/bizbil-testing}"
           HEALTH_URL="${HEALTH_URL:-https://test.bizbil.com/api/health}"
 
           if [ -z "${GH_PAT:-}" ]; then
@@ -150,6 +150,7 @@ jobs:
           fi
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
           ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" "echo SSH preflight OK on \$(hostname)"
 
       - name: Deploy exact testing commit on server
         run: |
