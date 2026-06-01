@@ -92,11 +92,11 @@ jobs:
     environment: testing
 
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER || secrets.DEPLOY_USER }}
       PROD_DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
-      HEALTH_URL: ${{ secrets.DEPLOY_TEST_HEALTH_URL }}
+      HEALTH_URL: https://test.bizbil.com/api/health
       GH_PAT: ${{ secrets.GH_PAT }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       DEPLOY_SHA: ${{ github.sha }}
@@ -110,7 +110,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -Eeuo pipefail
-          DEPLOY_HOST="${DEPLOY_HOST:-66.42.79.12}"
+          DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
           DEPLOY_USER="${DEPLOY_USER:-root}"
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
