@@ -114,7 +114,7 @@ jobs:
           DEPLOY_USER="${DEPLOY_USER:-root}"
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/retailos-testing}"
-          HEALTH_URL="${HEALTH_URL:-https://test-ros.sivsanoils.in/api/health}"
+          HEALTH_URL="${HEALTH_URL:-https://test.bizbil.com/api/health}"
 
           if [ -z "${GH_PAT:-}" ]; then
             echo "::error::GH_PAT secret is empty. Add a repository secret or testing environment secret named GH_PAT with GitHub repo read access."
@@ -214,7 +214,7 @@ jobs:
 
       - name: Verify deployment - route assertions
         run: |
-          BASE="https://test-ros.sivsanoils.in"
+          BASE="${HEALTH_URL%/api/health}"
           FAIL=0
 
           check_route() {

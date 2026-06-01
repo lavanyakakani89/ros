@@ -21,7 +21,7 @@
   }
 }
 
-{$TEST_APP_DOMAIN:test-ros.sivsanoils.in} {
+{$TEST_APP_DOMAIN:test.bizbil.com} {
   encode zstd gzip
 
   @pwaAssets path /sw.js /workbox-* /fallback-* /manifest.json
