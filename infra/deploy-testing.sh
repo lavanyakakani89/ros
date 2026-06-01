@@ -59,6 +59,109 @@ get_env_value() {
   printf '%s' "$line"
 }
 
+TEST_HTTP_PORT_VALUE="$(get_env_value TEST_HTTP_PORT || true)"
+if [[ -z "$TEST_HTTP_PORT_VALUE" || "$TEST_HTTP_PORT_VALUE" == "80" ]]; then
+  echo "==> Setting test stack internal proxy port to 3100"
+  {
+    echo ""
+    echo "# Managed override: host nginx owns public 80/443 and proxies to this local port."
+    echo "TEST_HTTP_PORT=3100"
+  } >> "$ENV_FILE"
+fi
+
+configure_host_nginx() {
+  local domain
+  local port
+  local config_path
+  local cert_path
+  local key_path
+
+  domain="$(get_env_value TEST_APP_DOMAIN || true)"
+  port="$(get_env_value TEST_HTTP_PORT || true)"
+
+  domain="${domain:-test.bizbil.com}"
+  port="${port:-3100}"
+  cert_path="/etc/letsencrypt/live/${domain}/fullchain.pem"
+  key_path="/etc/letsencrypt/live/${domain}/privkey.pem"
+
+  if [[ "$(id -u)" != "0" ]]; then
+    echo "==> Skipping host nginx configuration because deploy user is not root"
+    return
+  fi
+
+  if ! command -v nginx >/dev/null 2>&1; then
+    echo "==> Skipping host nginx configuration because nginx is not installed"
+    return
+  fi
+
+  config_path="/etc/nginx/sites-available/${domain}"
+  echo "==> Configuring host nginx proxy for ${domain} -> 127.0.0.1:${port}"
+  if [[ -f "$cert_path" && -f "$key_path" ]]; then
+    cat > "$config_path" <<NGINX
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${domain};
+  return 301 https://\$host\$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  listen [::]:443 ssl;
+  server_name ${domain};
+
+  ssl_certificate ${cert_path};
+  ssl_certificate_key ${key_path};
+
+  client_max_body_size 25m;
+
+  location / {
+    proxy_pass http://127.0.0.1:${port};
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
+NGINX
+  else
+    cat > "$config_path" <<NGINX
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${domain};
+
+  client_max_body_size 25m;
+
+  location / {
+    proxy_pass http://127.0.0.1:${port};
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+  }
+}
+NGINX
+  fi
+
+  ln -sf "$config_path" "/etc/nginx/sites-enabled/${domain}"
+  nginx -t
+  systemctl reload nginx
+
+  if command -v certbot >/dev/null 2>&1 && [[ ! -f "$cert_path" ]]; then
+    echo "==> Requesting Let's Encrypt certificate for ${domain}"
+    certbot --nginx -d "$domain" --non-interactive --agree-tos -m "admin@bizbil.com" --redirect
+  elif command -v certbot >/dev/null 2>&1; then
+    echo "==> Existing Let's Encrypt certificate found for ${domain}"
+  fi
+}
+
 POSTGRES_TARGET_USER="$(get_env_value POSTGRES_USER || true)"
 POSTGRES_TARGET_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
 
@@ -146,6 +249,8 @@ fi
 
 echo "==> Restarting testing application services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate --remove-orphans api web caddy
+
+configure_host_nginx
 
 echo "==> Waiting for testing API readiness"
 api_ready=false

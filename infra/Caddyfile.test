@@ -1,4 +1,4 @@
-{$TEST_APP_DOMAIN:test.bizbil.com} {
+:80 {
   encode zstd gzip
 
   @pwaAssets path /sw.js /workbox-* /fallback-* /manifest.json
