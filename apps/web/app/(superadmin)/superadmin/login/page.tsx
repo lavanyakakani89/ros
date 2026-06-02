@@ -45,7 +45,7 @@ export default function SuperAdminLoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
       <section className="w-full max-w-sm rounded-md border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-        <div className="text-xl font-semibold">RetailOS Super Admin</div>
+        <div className="text-xl font-semibold">BizBil Admin</div>
         <div className="mt-1 text-sm text-slate-400">Manage shops, licenses, and access.</div>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-200">

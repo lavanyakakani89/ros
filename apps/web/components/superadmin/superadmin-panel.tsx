@@ -388,7 +388,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
       <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-lg font-semibold">RetailOS Super Admin</div>
+            <div className="text-lg font-semibold">BizBil Admin</div>
             <div className="text-sm text-slate-400">
               {admin.name} | {admin.role}
             </div>
