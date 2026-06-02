@@ -45,15 +45,10 @@ export default function SuperAdminLoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
       <section className="w-full max-w-sm rounded-md border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-        <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-white">
-            <img src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" className="h-full w-full object-contain" />
-          </div>
-          <div>
-            <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-5 w-auto object-contain" />
-            <div className="text-xs text-slate-400">Super Admin</div>
-          </div>
+        <div className="flex min-w-0 items-center">
+          <img src="/icons/bizbil-wordmark.png" alt="BizBil" className="h-14 max-w-full object-contain" />
         </div>
+        <div className="mt-4 text-xl font-semibold">BizBil Super Admin</div>
         <div className="mt-1 text-sm text-slate-400">Manage shops, licenses, and access.</div>
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium text-slate-200">
