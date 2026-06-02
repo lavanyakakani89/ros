@@ -46,10 +46,12 @@ export default function SuperAdminLoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
       <section className="w-full max-w-sm rounded-md border border-slate-800 bg-slate-900 p-6 shadow-2xl">
         <div className="flex items-center gap-3">
-          <img src="/bizbil-landing/icons/bizbil-mark.png" alt="" className="size-12 rounded-md object-contain" />
+          <div className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-white">
+            <img src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" className="h-full w-full object-contain" />
+          </div>
           <div>
-            <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-9 w-auto object-contain" />
-            <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-emerald-200">Admin</div>
+            <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-5 w-auto object-contain" />
+            <div className="text-xs text-slate-400">Super Admin</div>
           </div>
         </div>
         <div className="mt-1 text-sm text-slate-400">Manage shops, licenses, and access.</div>
