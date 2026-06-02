@@ -387,10 +387,13 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-lg font-semibold">BizBil Admin</div>
+          <div className="flex items-center gap-3">
+            <img src="/bizbil-landing/icons/bizbil-mark.png" alt="" className="size-10 rounded-md object-contain" />
             <div className="text-sm text-slate-400">
-              {admin.name} | {admin.role}
+              <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-6 w-auto object-contain" />
+              <div className="mt-1">
+                {admin.name} | {admin.role}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
