@@ -3,6 +3,7 @@ import { Prisma, UserRole } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { InventoryError, InventoryService } from "./inventory.service.js";
+import { ProductImageDiscoveryService } from "./product-image-discovery.service.js";
 import { importProducts, sendProductExport, sendProductTemplate } from "../import-export/product-import-export.js";
 import {
   addBatchSchema,
@@ -18,8 +19,15 @@ import {
 
 export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new InventoryService(fastify);
+  const imageDiscovery = new ProductImageDiscoveryService(fastify);
   const productExportQuerySchema = z.object({
     format: z.enum(["csv", "xls"]).optional().default("xls"),
+  });
+  const imageSuggestionParamsSchema = productIdParamsSchema.extend({
+    suggestionId: z.string().min(1),
+  });
+  const imageSuggestionSearchSchema = z.object({
+    limit: z.coerce.number().int().min(1).max(10).optional().default(6),
   });
 
   fastify.post("/api/inventory/products", async (request, reply) => {
@@ -217,6 +225,47 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
       return {
         imageUrl: null,
       };
+    });
+  });
+
+  fastify.get("/api/inventory/products/:id/image-suggestions", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = productIdParamsSchema.parse(request.params);
+      const suggestions = await imageDiscovery.listSuggestions(request.tenant.id, params.id);
+      return {
+        configured: imageDiscovery.isConfigured(),
+        suggestions,
+      };
+    });
+  });
+
+  fastify.post("/api/inventory/products/:id/image-suggestions/search", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = productIdParamsSchema.parse(request.params);
+      const input = imageSuggestionSearchSchema.parse(request.body ?? {});
+      const suggestions = await imageDiscovery.searchSuggestions(request.tenant, params.id, input.limit);
+      return {
+        configured: true,
+        suggestions,
+      };
+    });
+  });
+
+  fastify.post("/api/inventory/products/:id/image-suggestions/:suggestionId/apply", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = imageSuggestionParamsSchema.parse(request.params);
+      return imageDiscovery.approveSuggestion(request.tenant.id, params.id, params.suggestionId, request.user.userId);
+    });
+  });
+
+  fastify.post("/api/inventory/products/:id/image-suggestions/:suggestionId/reject", async (request, reply) => {
+    return handleInventory(reply, async () => {
+      ensureProductImageManager(request.user.role);
+      const params = imageSuggestionParamsSchema.parse(request.params);
+      return imageDiscovery.rejectSuggestion(request.tenant.id, params.id, params.suggestionId);
     });
   });
 

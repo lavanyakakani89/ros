@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, FileSpreadsheet, History, Save, Search, Trash2, Upload, X } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, FileSpreadsheet, History, Image as ImageIcon, Save, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ProductFieldForm } from "@/components/inventory/product-field-form";
@@ -33,6 +33,27 @@ interface PaginatedMovements {
   page: number;
   limit: number;
   total: number;
+}
+
+interface ProductImageSuggestion {
+  id: string;
+  title: string;
+  sourceImageUrl: string;
+  thumbnailUrl?: string | null;
+  contextUrl?: string | null;
+  mime?: string | null;
+  width?: number | null;
+  height?: number | null;
+  rights?: string | null;
+  relevance: "VERY_RELEVANT" | "RELEVANT" | "LOW";
+  score: number;
+  status: "SUGGESTED" | "APPROVED" | "REJECTED";
+  createdAt: string;
+}
+
+interface ProductImageSuggestionsResponse {
+  configured: boolean;
+  suggestions: ProductImageSuggestion[];
 }
 
 type InventoryView = "products" | "stock-count" | "expiry";
@@ -577,6 +598,8 @@ function ProductList({ products, loading, error, hasSearch, canManageProducts }:
 
 function ProductImageControls({
   canManage,
+  productId,
+  productName,
   imageSrc,
   uploadPending,
   removePending,
@@ -585,6 +608,8 @@ function ProductImageControls({
   onRemove,
 }: Readonly<{
   canManage: boolean;
+  productId: string;
+  productName: string;
   imageSrc: string | null;
   uploadPending: boolean;
   removePending: boolean;
@@ -592,6 +617,41 @@ function ProductImageControls({
   onUpload: (file: File | undefined) => void;
   onRemove: () => void;
 }>) {
+  const queryClient = useQueryClient();
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsQueryKey = ["product-image-suggestions", productId];
+  const suggestionsQuery = useQuery({
+    queryKey: suggestionsQueryKey,
+    queryFn: () => createAuthenticatedApiClient().get<ProductImageSuggestionsResponse>(`/inventory/products/${productId}/image-suggestions`),
+    enabled: canManage && showSuggestions,
+  });
+  const searchSuggestions = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<ProductImageSuggestionsResponse>(`/inventory/products/${productId}/image-suggestions/search`, { limit: 6 }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(suggestionsQueryKey, data);
+    },
+  });
+  const applySuggestion = useMutation({
+    mutationFn: (suggestionId: string) => createAuthenticatedApiClient().post(`/inventory/products/${productId}/image-suggestions/${suggestionId}/apply`, {}),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["products"] }),
+        queryClient.invalidateQueries({ queryKey: suggestionsQueryKey }),
+      ]);
+    },
+  });
+  const rejectSuggestion = useMutation({
+    mutationFn: (suggestionId: string) => createAuthenticatedApiClient().post(`/inventory/products/${productId}/image-suggestions/${suggestionId}/reject`, {}),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: suggestionsQueryKey }),
+  });
+  const suggestionsData = suggestionsQuery.data;
+  const suggestions = suggestionsData?.suggestions ?? [];
+
+  function findImages() {
+    setShowSuggestions(true);
+    searchSuggestions.mutate();
+  }
+
   return (
     <div className="md:col-span-2 rounded-md border border-border bg-slate-50 p-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -612,12 +672,141 @@ function ProductImageControls({
                   Remove
                 </button>
               ) : null}
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+                disabled={searchSuggestions.isPending}
+                onClick={findImages}
+              >
+                <Sparkles className="size-4" aria-hidden="true" />
+                {searchSuggestions.isPending ? "Finding..." : "Find images"}
+              </button>
             </div>
             {error ? <div className="text-xs text-red-700">{error.message}</div> : null}
+            {searchSuggestions.error ? <div className="text-xs text-red-700">{searchSuggestions.error.message}</div> : null}
+            {applySuggestion.error ? <div className="text-xs text-red-700">{applySuggestion.error.message}</div> : null}
           </div>
         ) : null}
       </div>
+      {showSuggestions ? (
+        <div className="mt-4 rounded-md border border-border bg-white p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                <ImageIcon className="size-4 text-emerald-700" aria-hidden="true" />
+                Image suggestions
+              </div>
+              <div className="mt-1 text-xs text-slate-500">Review the source before using a suggested product image.</div>
+            </div>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
+              disabled={searchSuggestions.isPending}
+              onClick={findImages}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {suggestionsQuery.isLoading ? <div className="mt-3 text-sm text-slate-500">Loading image suggestions...</div> : null}
+          {suggestionsData && !suggestionsData.configured ? (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Google image search is not configured yet. Add the Custom Search API key and Search Engine ID in the API environment.
+            </div>
+          ) : null}
+          {!suggestionsQuery.isLoading && suggestionsData?.configured && suggestions.length === 0 ? (
+            <div className="mt-3 text-sm text-slate-500">No image suggestions found for {productName}.</div>
+          ) : null}
+          {suggestions.length > 0 ? (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {suggestions.map((suggestion) => (
+                <ProductImageSuggestionCard
+                  key={suggestion.id}
+                  suggestion={suggestion}
+                  applying={applySuggestion.isPending}
+                  rejecting={rejectSuggestion.isPending}
+                  onApply={() => applySuggestion.mutate(suggestion.id)}
+                  onReject={() => rejectSuggestion.mutate(suggestion.id)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function ProductImageSuggestionCard({
+  suggestion,
+  applying,
+  rejecting,
+  onApply,
+  onReject,
+}: Readonly<{
+  suggestion: ProductImageSuggestion;
+  applying: boolean;
+  rejecting: boolean;
+  onApply: () => void;
+  onReject: () => void;
+}>) {
+  const sourceHost = suggestion.contextUrl ? safeHost(suggestion.contextUrl) : safeHost(suggestion.sourceImageUrl);
+
+  return (
+    <article className={`overflow-hidden rounded-md border ${suggestion.status === "APPROVED" ? "border-emerald-300 bg-emerald-50" : "border-border bg-white"}`}>
+      <div className="aspect-square bg-slate-100">
+        {suggestion.thumbnailUrl ? (
+          <img
+            src={suggestion.thumbnailUrl}
+            alt={suggestion.title}
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="grid h-full place-items-center text-xs font-semibold uppercase text-slate-400">No preview</div>
+        )}
+      </div>
+      <div className="space-y-2 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase ${imageRelevanceClass(suggestion.relevance)}`}>
+            {suggestion.relevance === "VERY_RELEVANT" ? "Very relevant" : suggestion.relevance === "RELEVANT" ? "Relevant" : "Review"}
+          </span>
+          <span className="text-xs font-semibold text-slate-500">{suggestion.score}%</span>
+        </div>
+        <div className="line-clamp-2 min-h-[36px] text-xs font-semibold leading-5 text-slate-900">{suggestion.title}</div>
+        <div className="truncate text-xs text-slate-500">{sourceHost}</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+            disabled={applying || suggestion.status === "APPROVED"}
+            onClick={onApply}
+          >
+            <CheckCircle2 className="size-3.5" aria-hidden="true" />
+            {suggestion.status === "APPROVED" ? "Used" : "Use image"}
+          </button>
+          {suggestion.status !== "APPROVED" ? (
+            <button
+              type="button"
+              className="h-8 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-600 disabled:opacity-60"
+              disabled={rejecting || suggestion.status === "REJECTED"}
+              onClick={onReject}
+            >
+              {suggestion.status === "REJECTED" ? "Rejected" : "Reject"}
+            </button>
+          ) : null}
+          <a
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-600"
+            href={suggestion.contextUrl ?? suggestion.sourceImageUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Source
+            <ExternalLink className="size-3.5" aria-hidden="true" />
+          </a>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -632,6 +821,24 @@ function ProductImageThumb({ src, name, large = false }: Readonly<{ src: string 
   }
 
   return <img src={src} alt={`${name} product image`} className={`${sizeClass} shrink-0 rounded-md border border-border object-cover`} />;
+}
+
+function imageRelevanceClass(relevance: ProductImageSuggestion["relevance"]): string {
+  if (relevance === "VERY_RELEVANT") {
+    return "bg-emerald-100 text-emerald-800";
+  }
+  if (relevance === "RELEVANT") {
+    return "bg-blue-100 text-blue-800";
+  }
+  return "bg-amber-100 text-amber-800";
+}
+
+function safeHost(value: string): string {
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return "image source";
+  }
 }
 
 function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; canManageProducts: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
@@ -727,6 +934,8 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
           </div>
           <ProductImageControls
             canManage={canManageProducts}
+            productId={product.id}
+            productName={product.name}
             imageSrc={imageSrc}
             uploadPending={uploadImage.isPending}
             removePending={removeImage.isPending}

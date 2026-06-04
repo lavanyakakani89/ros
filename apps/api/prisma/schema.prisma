@@ -29,6 +29,7 @@ model Tenant {
   stores             Store[]
   storeUserAssignments StoreUserAssignment[]
   products           Product[]
+  productImageSuggestions ProductImageSuggestion[]
   productBatches     ProductBatch[]
   productVariants    ProductVariant[]
   stockAdjustments   StockAdjustment[]
@@ -125,6 +126,7 @@ model User {
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
   pushTokens    ExpoPushToken[]
+  approvedProductImageSuggestions ProductImageSuggestion[] @relation("ProductImageSuggestionApprovedBy")
   cashierPayments Payment[] @relation("PaymentCashier")
   voidedPayments Payment[] @relation("PaymentVoidAuthoriser")
   settledSettlements Settlement[] @relation("SettlementSettledBy")
@@ -284,6 +286,7 @@ model Product {
   stockCountItems    StockCountItem[]
   purchaseOrderItems PurchaseOrderItem[]
   creditNoteItems    CreditNoteItem[]
+  imageSuggestions    ProductImageSuggestion[]
   recipesAsMenu      Recipe[]            @relation("RecipeProduct")
   recipesAsIngredient Recipe[]           @relation("RecipeIngredient")
 
@@ -292,6 +295,56 @@ model Product {
   @@index([tenantId, categoryId])
   @@index([tenantId, ecommerceDisabled])
   @@map("products")
+}
+
+model ProductImageSuggestion {
+  id                String                         @id @default(cuid())
+  tenantId          String                         @map("tenant_id")
+  tenant            Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productId         String                         @map("product_id")
+  product           Product                        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  provider          ProductImageSuggestionProvider @default(GOOGLE_CUSTOM_SEARCH)
+  query             String                         @db.Text
+  title             String                         @db.Text
+  sourceImageUrl    String                         @map("source_image_url") @db.Text
+  thumbnailUrl      String?                        @map("thumbnail_url") @db.Text
+  contextUrl        String?                        @map("context_url") @db.Text
+  mime              String?
+  width             Int?
+  height            Int?
+  byteSize          Int?                           @map("byte_size")
+  rights            String?
+  relevance         ProductImageRelevance
+  score             Int
+  status            ProductImageSuggestionStatus   @default(SUGGESTED)
+  storageObjectName String?                        @map("storage_object_name") @db.Text
+  approvedById      String?                        @map("approved_by_id")
+  approvedBy        User?                          @relation("ProductImageSuggestionApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt        DateTime?                      @map("approved_at")
+  rejectedAt        DateTime?                      @map("rejected_at")
+  createdAt         DateTime                       @default(now()) @map("created_at")
+  updatedAt         DateTime                       @updatedAt @map("updated_at")
+
+  @@index([tenantId, productId, status])
+  @@index([tenantId, productId, score])
+  @@index([approvedById])
+  @@map("product_image_suggestions")
+}
+
+enum ProductImageSuggestionProvider {
+  GOOGLE_CUSTOM_SEARCH
+}
+
+enum ProductImageRelevance {
+  VERY_RELEVANT
+  RELEVANT
+  LOW
+}
+
+enum ProductImageSuggestionStatus {
+  SUGGESTED
+  APPROVED
+  REJECTED
 }
 
 model ProductVariant {
