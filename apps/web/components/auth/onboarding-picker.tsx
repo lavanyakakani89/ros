@@ -1,10 +1,10 @@
 "use client";
 
 import type { TenantVertical } from "@retailos/shared";
-import { Hammer, Pill, Shirt, ShoppingBasket, Smartphone, Utensils } from "lucide-react";
+import { Hammer, Pill, Shirt, ShoppingBasket, Smartphone, Utensils, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
-const verticals: Array<{ value: TenantVertical; label: string; caption: string; icon: React.ComponentType<{ className?: string }> }> = [
+const verticals: Array<{ value: TenantVertical; label: string; caption: string; icon: LucideIcon }> = [
   { value: "PHARMACY", label: "Pharmacy", caption: "Batches, expiry, prescriptions", icon: Pill },
   { value: "GROCERY", label: "Grocery", caption: "Weights, perishables, delivery", icon: ShoppingBasket },
   { value: "FASHION", label: "Fashion", caption: "Sizes, colors, seasons", icon: Shirt },
