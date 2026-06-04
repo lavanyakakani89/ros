@@ -21,6 +21,26 @@ export interface CreateInvoiceInput {
   items: InvoiceItemInput[];
 }
 
+export interface PosPaymentInput {
+  mode: PaymentMode;
+  amount?: number | undefined;
+  paymentMethodId?: string | undefined;
+  referenceNumber?: string | undefined;
+}
+
+export interface PosDeliveryInput {
+  customerId: string;
+  deliveryAddress: string;
+  scheduledAt?: Date | undefined;
+  notes?: string | undefined;
+}
+
+export interface CreateConfirmedPosInvoiceInput {
+  invoice: CreateInvoiceInput;
+  payments?: PosPaymentInput[] | undefined;
+  delivery?: PosDeliveryInput | undefined;
+}
+
 export type UpdateInvoiceInput = Omit<
   {
     [Key in keyof CreateInvoiceInput]?: CreateInvoiceInput[Key] | undefined;

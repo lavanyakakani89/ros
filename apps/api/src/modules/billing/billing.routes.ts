@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CreditNoteStatus, InvoiceStatus } from "@prisma/client";
+import { CreditNoteStatus, InvoiceStatus, PaymentMode } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { BillingError, BillingService } from "./billing.service.js";
@@ -25,6 +25,21 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       quantity: z.coerce.number().positive(),
     })).min(1),
   });
+  const posConfirmSchema = z.object({
+    invoice: createInvoiceSchema,
+    payments: z.array(z.object({
+      mode: z.nativeEnum(PaymentMode),
+      amount: z.coerce.number().positive().optional(),
+      paymentMethodId: z.string().trim().min(1).optional(),
+      referenceNumber: z.string().trim().min(1).optional(),
+    })).optional(),
+    delivery: z.object({
+      customerId: z.string().min(1),
+      deliveryAddress: z.string().trim().min(5),
+      scheduledAt: z.coerce.date().optional(),
+      notes: z.string().trim().min(1).optional(),
+    }).optional(),
+  });
 
   fastify.post("/api/billing/invoices", async (request, reply) => {
     const input = createInvoiceSchema.parse(request.body);
@@ -32,6 +47,18 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       ...input,
       ...storeIdForWrite(request.user.role, request.storeId, input.storeId),
     }));
+  });
+
+  fastify.post("/api/billing/invoices/pos-confirm", async (request, reply) => {
+    const input = posConfirmSchema.parse(request.body);
+    return handleBilling(reply, () => service.createConfirmedPosInvoice(request.tenant, {
+      invoice: {
+        ...input.invoice,
+        ...storeIdForWrite(request.user.role, request.storeId, input.invoice.storeId),
+      },
+      ...(input.payments ? { payments: input.payments } : {}),
+      ...(input.delivery ? { delivery: input.delivery } : {}),
+    }, request.user.userId));
   });
 
   fastify.get("/api/billing/invoices", async (request, reply) => {

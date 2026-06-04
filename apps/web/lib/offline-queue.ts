@@ -91,23 +91,20 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
     try {
       await offlineDB.pendingInvoices.update(invoice.id, { syncStatus: "syncing" });
       const envelope = readEnvelope(invoice.payload);
-      const created = await apiClient.post<{ id: string; grandTotal?: string | number }>("/billing/invoices", envelope.invoice);
-      await apiClient.post(`/billing/invoices/${created.id}/confirm`, {});
-      if (!envelope.splitPayments?.length && envelope.autoPay?.mode && envelope.autoPay.mode !== "CREDIT") {
-        await apiClient.post("/payments", {
-          invoiceId: created.id,
-          amount: Number(created.grandTotal ?? 0),
-          mode: envelope.autoPay.mode,
-          ...(envelope.autoPay.paymentMethodId ? { payment_method_id: envelope.autoPay.paymentMethodId } : {}),
-          ...(envelope.autoPay.referenceNumber ? { referenceNumber: envelope.autoPay.referenceNumber } : {}),
-        });
-      }
-      if (envelope.delivery) {
-        await apiClient.post("/delivery", {
-          ...envelope.delivery,
-          invoiceId: created.id,
-        });
-      }
+      const payments = envelope.splitPayments?.length
+        ? envelope.splitPayments
+        : envelope.autoPay?.mode && envelope.autoPay.mode !== "CREDIT"
+          ? [{
+              mode: envelope.autoPay.mode,
+              ...(envelope.autoPay.paymentMethodId ? { paymentMethodId: envelope.autoPay.paymentMethodId } : {}),
+              ...(envelope.autoPay.referenceNumber ? { referenceNumber: envelope.autoPay.referenceNumber } : {}),
+            }]
+          : [];
+      const created = await apiClient.post<{ id: string; grandTotal?: string | number }>("/billing/invoices/pos-confirm", {
+        invoice: envelope.invoice,
+        payments,
+        ...(envelope.delivery ? { delivery: envelope.delivery } : {}),
+      });
       await apiClient.post(`/billing/invoices/${created.id}/pdf`, {});
       await offlineDB.pendingInvoices.delete(invoice.id);
     } catch {

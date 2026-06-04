@@ -87,6 +87,8 @@ interface InvoiceMutationResult {
   id: string;
   invoiceNumber: string;
   grandTotal: string | number;
+  amountDue?: string | number;
+  status?: string;
   stockWarnings?: StockWarning[];
 }
 
@@ -979,18 +981,21 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         return;
       }
 
-      const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices", invoicePayload);
-      const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
-
-      if (!useSplit && paymentMode !== "CREDIT") {
-        await createAuthenticatedApiClient().post("/payments", {
-          invoiceId: created.id,
-          amount: Number(confirmed.grandTotal),
-          mode: paymentMode,
-          ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
-          ...(referenceNumber.trim() ? { referenceNumber: referenceNumber.trim() } : {}),
-        });
-      }
+      const payments = useSplit
+        ? splitPaymentEntries
+        : paymentMode !== "CREDIT"
+          ? [{
+              mode: paymentMode,
+              amount: totals.grandTotal,
+              ...(paymentMethodId ? { paymentMethodId } : {}),
+              ...(referenceNumber.trim() ? { referenceNumber: referenceNumber.trim() } : {}),
+            }]
+          : [];
+      const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices/pos-confirm", {
+        invoice: invoicePayload,
+        payments,
+        ...(deliveryPayload ? { delivery: deliveryPayload } : {}),
+      });
 
       if (loyaltyRedeem > 0 && customerId) {
         await createAuthenticatedApiClient().post("/loyalty/redeem", {
@@ -1000,18 +1005,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         }).catch(() => undefined);
       }
 
-      if (deliveryPayload) {
-        await createAuthenticatedApiClient().post("/delivery", {
-          ...deliveryPayload,
-          invoiceId: created.id,
-        });
-      }
-
       const pdfViewUrl = apiUrl(`/billing/invoices/${created.id}/pdf/view`);
       const nextBill = {
         id: created.id,
-        invoiceNumber: confirmed.invoiceNumber,
-        grandTotal: Number(confirmed.grandTotal),
+        invoiceNumber: created.invoiceNumber,
+        grandTotal: Number(created.grandTotal),
         subtotal: billSnapshot.subtotal,
         lineDiscount: billSnapshot.lineDiscount,
         billLevelDiscount: billSnapshot.billLevelDiscount,
@@ -1026,7 +1024,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       setLastBill(nextBill);
       const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
       if (outputOk) {
-        showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
+        showStockWarnings(created.stockWarnings ?? localStockWarnings);
       }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
       clearBill({ preserveLastBill: true });

@@ -317,7 +317,7 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
       const invoice = await billing.createInvoice(tenant, {
         customerId: customer.id,
         ...(store?.id ? { storeId: store.id } : {}),
-        paymentMode: input.paymentMethod === "RAZORPAY" ? PaymentMode.UPI : PaymentMode.CASH,
+        paymentMode: input.paymentMethod === "RAZORPAY" ? PaymentMode.UPI : PaymentMode.CREDIT,
         billDiscount: coupon?.discount ?? 0,
         verticalData: sourceMetadata,
         notes: orderNotes(input.delivery?.notes),

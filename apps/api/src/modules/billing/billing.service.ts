@@ -2,7 +2,7 @@ import type { InvoiceTemplate, Product, Tenant } from "@prisma/client";
 
 import { generateGstInvoicePdf } from "./billing.pdf.js";
 import { BillingRepository, type InvoiceTotals } from "./billing.repository.js";
-import type { CreateInvoiceInput, InvoiceItemInput, InvoiceListQuery, UpdateInvoiceInput } from "./billing.types.js";
+import type { CreateConfirmedPosInvoiceInput, CreateInvoiceInput, InvoiceItemInput, InvoiceListQuery, UpdateInvoiceInput } from "./billing.types.js";
 import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { getEffectiveTemplate, printInvoiceForTenant } from "../printer/printer.service.js";
@@ -37,6 +37,35 @@ export class BillingService {
       totals: calculated.totals,
       items: calculated.items,
     });
+  }
+
+  async createConfirmedPosInvoice(tenant: Tenant, input: CreateConfirmedPosInvoiceInput, confirmedBy = "system") {
+    const calculated = await this.calculateInvoice(tenant, input.invoice.items, input.invoice.billDiscount, input.invoice.verticalData);
+
+    try {
+      const invoice = await this.repository.createConfirmedPosInvoice({
+        tenantId: tenant.id,
+        datePart: getInvoiceDatePart(),
+        invoice: input.invoice,
+        totals: calculated.totals,
+        items: calculated.items,
+        payments: input.payments ?? [],
+        confirmedBy,
+        ...(input.delivery ? { delivery: input.delivery } : {}),
+      });
+
+      await this.notifyWhatsappInvoiceConfirmed(tenant, invoice).catch((error: unknown) => {
+        this.fastify.log.error({ error, invoiceId: invoice.id, tenantId: tenant.id }, "Failed to queue WhatsApp invoice confirmation");
+      });
+
+      return invoice;
+    } catch (error) {
+      if (error instanceof BillingError) {
+        throw error;
+      }
+
+      throw new BillingError(error instanceof Error ? error.message : "Unable to confirm invoice", 409);
+    }
   }
 
   listInvoices(tenant: Tenant, query: InvoiceListQuery) {

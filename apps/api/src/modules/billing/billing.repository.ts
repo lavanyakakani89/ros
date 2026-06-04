@@ -1,6 +1,6 @@
-import { CreditNoteStatus, InvoiceStatus, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
+import { CreditNoteStatus, InvoiceStatus, PaymentMethodType, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
 
-import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
+import type { CreateConfirmedPosInvoiceInput, CreateInvoiceInput, InvoiceListQuery, PosPaymentInput } from "./billing.types.js";
 
 export interface StockWarning {
   productId: string;
@@ -98,6 +98,205 @@ export class BillingRepository {
         },
         include: invoiceInclude,
       });
+    });
+  }
+
+  async createConfirmedPosInvoice(input: {
+    tenantId: string;
+    datePart: string;
+    invoice: CreateConfirmedPosInvoiceInput["invoice"];
+    totals: InvoiceTotals;
+    items: Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput[];
+    payments: PosPaymentInput[];
+    confirmedBy: string;
+    delivery?: CreateConfirmedPosInvoiceInput["delivery"] | undefined;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const counter = await tx.invoiceCounter.upsert({
+        where: {
+          tenantId_date: {
+            tenantId: input.tenantId,
+            date: input.datePart,
+          },
+        },
+        create: {
+          tenantId: input.tenantId,
+          date: input.datePart,
+          nextSeq: 2,
+        },
+        update: {
+          nextSeq: {
+            increment: 1,
+          },
+        },
+      });
+      const sequence = counter.nextSeq - 1;
+
+      const invoice = await tx.invoice.create({
+        data: {
+          tenantId: input.tenantId,
+          invoiceNumber: `INV-${input.datePart}-${String(sequence).padStart(4, "0")}`,
+          paymentMode: input.invoice.paymentMode,
+          subtotal: input.totals.subtotal,
+          totalDiscount: input.totals.totalDiscount,
+          totalCgst: input.totals.totalCgst,
+          totalSgst: input.totals.totalSgst,
+          totalIgst: 0,
+          deliveryCharge: input.totals.deliveryCharge,
+          grandTotal: input.totals.grandTotal,
+          amountDue: input.totals.grandTotal,
+          ...(input.invoice.storeId ? { storeId: input.invoice.storeId } : {}),
+          ...(input.invoice.customerId ? { customerId: input.invoice.customerId } : {}),
+          ...(input.invoice.dueDate ? { dueDate: input.invoice.dueDate } : {}),
+          ...(input.invoice.verticalData ? { verticalData: input.invoice.verticalData as Prisma.InputJsonValue } : {}),
+          ...(input.invoice.notes ? { notes: input.invoice.notes } : {}),
+          items: {
+            create: input.items,
+          },
+        },
+        include: {
+          items: true,
+        },
+      });
+
+      const stockWarnings: StockWarning[] = [];
+      const products = await tx.product.findMany({
+        where: {
+          tenantId: input.tenantId,
+          id: {
+            in: invoice.items.map((item) => item.productId),
+          },
+        },
+      });
+      const productById = new Map(products.map((product) => [product.id, product]));
+      for (const item of invoice.items) {
+        const product = productById.get(item.productId);
+        if (!product) {
+          throw new Error("Product not found");
+        }
+
+        const available = product.currentStock.toNumber();
+        const requested = item.quantity.toNumber();
+        if (available + 0.0005 < requested) {
+          stockWarnings.push({
+            productId: item.productId,
+            productName: item.productName,
+            available,
+            requested,
+            shortage: roundQuantity(requested - available),
+          });
+        }
+      }
+
+      await Promise.all(
+        invoice.items.map((item) => tx.product.update({
+          where: {
+            id: item.productId,
+          },
+          data: {
+            currentStock: {
+              decrement: item.quantity,
+            },
+          },
+        })),
+      );
+
+      const normalizedPayments = normalizePosPayments(input.payments, input.totals.grandTotal);
+      const payablePayments = normalizedPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
+      const amountPaid = roundMoney(payablePayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0));
+      if (amountPaid > input.totals.grandTotal + 0.01) {
+        throw new Error("Payment amount cannot exceed invoice total");
+      }
+
+      const paymentRows = [];
+      let firstPaymentMethodId: string | null = null;
+      for (const payment of payablePayments) {
+        const paymentMethod = await findMethodForPayment(tx, input.tenantId, invoice.storeId, {
+          mode: payment.mode,
+          amount: payment.amount ?? 0,
+          ...(payment.paymentMethodId ? { paymentMethodId: payment.paymentMethodId } : {}),
+          ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
+        });
+        if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+        if (paymentMethod.type === PaymentMethodType.CREDIT) {
+          throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+        }
+        if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
+          throw new Error(`Reference required for ${paymentMethod.name}`);
+        }
+        firstPaymentMethodId ??= paymentMethod.id;
+        paymentRows.push({
+          tenantId: input.tenantId,
+          invoiceId: invoice.id,
+          amount: payment.amount ?? 0,
+          paymentMethodId: paymentMethod.id,
+          mode: payment.mode,
+          cashierId: input.confirmedBy,
+          ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
+        });
+      }
+      if (paymentRows.length > 0) {
+        await tx.payment.createMany({ data: paymentRows });
+      }
+
+      const amountDue = Math.max(roundMoney(input.totals.grandTotal - amountPaid), 0);
+      const nextStatus = amountDue <= 0.01
+        ? InvoiceStatus.PAID
+        : amountPaid > 0
+          ? InvoiceStatus.PARTIAL
+          : InvoiceStatus.CONFIRMED;
+      const firstMode = payablePayments[0]?.mode ?? normalizedPayments[0]?.mode ?? input.invoice.paymentMode;
+
+      await tx.invoice.update({
+        where: {
+          id: invoice.id,
+        },
+        data: {
+          status: nextStatus,
+          amountPaid,
+          amountDue,
+          paymentMode: firstMode,
+          ...(firstPaymentMethodId ? { paymentMethodId: firstPaymentMethodId } : {}),
+        },
+      });
+
+      if (input.delivery) {
+        const customer = await tx.customer.findFirst({
+          where: {
+            id: input.delivery.customerId,
+            tenantId: input.tenantId,
+          },
+        });
+        if (!customer) {
+          throw new Error("Delivery customer not found");
+        }
+        await tx.delivery.create({
+          data: {
+            tenantId: input.tenantId,
+            invoiceId: invoice.id,
+            customerId: input.delivery.customerId,
+            deliveryAddress: input.delivery.deliveryAddress,
+            ...(input.delivery.scheduledAt ? { scheduledAt: input.delivery.scheduledAt } : {}),
+            ...(input.delivery.notes ? { notes: input.delivery.notes } : {}),
+          },
+        });
+      }
+
+      const updatedInvoice = await tx.invoice.findFirst({
+        where: {
+          id: invoice.id,
+          tenantId: input.tenantId,
+        },
+        include: invoiceInclude,
+      });
+      if (!updatedInvoice) {
+        throw new Error("Invoice could not be loaded after confirmation");
+      }
+
+      return {
+        ...updatedInvoice,
+        stockWarnings,
+      };
     });
   }
 
@@ -677,6 +876,28 @@ function parsePaymentMode(value: unknown): PaymentMode | undefined {
   return typeof value === "string" && Object.values(PaymentMode).includes(value as PaymentMode)
     ? value as PaymentMode
     : undefined;
+}
+
+function normalizePosPayments(payments: PosPaymentInput[], grandTotal: number): PosPaymentInput[] {
+  if (payments.length === 0) {
+    return [];
+  }
+
+  return payments.flatMap((payment) => {
+    const amount = payment.amount === undefined && payments.length === 1 && payment.mode !== PaymentMode.CREDIT
+      ? grandTotal
+      : payment.amount;
+    if (payment.mode !== PaymentMode.CREDIT && (!Number.isFinite(amount) || (amount ?? 0) <= 0)) {
+      return [];
+    }
+
+    return [{
+      mode: payment.mode,
+      ...(amount !== undefined ? { amount: roundMoney(amount) } : {}),
+      ...(payment.paymentMethodId ? { paymentMethodId: payment.paymentMethodId } : {}),
+      ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
+    }];
+  });
 }
 
 async function findMethodForPayment(
