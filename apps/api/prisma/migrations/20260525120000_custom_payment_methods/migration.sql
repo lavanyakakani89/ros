@@ -52,6 +52,103 @@ CREATE TABLE "payment_methods" (
     CONSTRAINT "payment_methods_pkey" PRIMARY KEY ("id")
 );
 
+-- Older tenants can predate the multi-store setup and therefore have no store rows.
+-- Seed a default store before creating payment methods, otherwise legacy invoices
+-- and payments cannot be mapped to Cash/UPI/Card methods.
+INSERT INTO "stores"
+  ("id", "tenant_id", "name", "address", "phone", "is_default", "is_active", "created_at")
+SELECT 'store_' || t."id", t."id", COALESCE(NULLIF(t."name", ''), 'Main Store'), t."address", t."phone", true, true, CURRENT_TIMESTAMP
+FROM "tenants" t
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM "stores" s
+  WHERE s."tenant_id" = t."id"
+);
+
+WITH first_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "id", "tenant_id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "stores" s
+SET "is_default" = true
+FROM first_stores fs
+WHERE s."id" = fs."id"
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "stores" existing
+    WHERE existing."tenant_id" = fs."tenant_id"
+      AND existing."is_default" = true
+      AND existing."is_active" = true
+  );
+
+WITH default_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "tenant_id", "id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "users" u
+SET "primary_store_id" = ds."id"
+FROM default_stores ds
+WHERE u."tenant_id" = ds."tenant_id"
+  AND u."primary_store_id" IS NULL;
+
+INSERT INTO "store_user_assignments" ("tenant_id", "store_id", "user_id", "created_at")
+SELECT u."tenant_id", u."primary_store_id", u."id", CURRENT_TIMESTAMP
+FROM "users" u
+WHERE u."primary_store_id" IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+WITH default_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "tenant_id", "id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "invoices" i
+SET "store_id" = ds."id"
+FROM default_stores ds
+WHERE i."tenant_id" = ds."tenant_id"
+  AND i."store_id" IS NULL;
+
+WITH default_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "tenant_id", "id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "purchase_orders" po
+SET "store_id" = ds."id"
+FROM default_stores ds
+WHERE po."tenant_id" = ds."tenant_id"
+  AND po."store_id" IS NULL;
+
+WITH default_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "tenant_id", "id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "expenses" e
+SET "store_id" = ds."id"
+FROM default_stores ds
+WHERE e."tenant_id" = ds."tenant_id"
+  AND e."store_id" IS NULL;
+
+WITH default_stores AS (
+  SELECT DISTINCT ON ("tenant_id") "tenant_id", "id"
+  FROM "stores"
+  WHERE "is_active" = true
+  ORDER BY "tenant_id", "is_default" DESC, "created_at" ASC
+)
+UPDATE "stock_adjustments" sa
+SET "store_id" = ds."id"
+FROM default_stores ds
+WHERE sa."tenant_id" = ds."tenant_id"
+  AND sa."store_id" IS NULL;
+
 -- Seed default methods for every existing store.
 INSERT INTO "payment_methods"
   ("id", "tenant_id", "store_id", "name", "short_code", "type", "color", "icon", "keyboard_shortcut", "display_order", "is_default", "is_active")
