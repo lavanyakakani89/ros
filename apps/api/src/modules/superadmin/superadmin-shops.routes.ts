@@ -161,6 +161,17 @@ export const superAdminShopsRoutes: FastifyPluginCallback = (fastify, _options, 
       },
       include: {
         license: true,
+        moduleSubscriptions: {
+          orderBy: {
+            module: "asc",
+          },
+        },
+        storefrontSettings: true,
+        storefrontDomains: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
         users: {
           select: {
             id: true,
@@ -444,10 +455,17 @@ function defaultCycleExpiryDate(startDate: Date, cycle: BillingCycle): Date {
   }
 }
 
-function formatTenant<T extends object & { license?: { amountPaid: { toString: () => string } } | null }>(tenant: T) {
+function formatTenant<T extends object & {
+  license?: { amountPaid: { toString: () => string } } | null;
+  moduleSubscriptions?: Array<{ priceOverride: { toString: () => string } | null }>;
+}>(tenant: T) {
   return {
     ...tenant,
     license: tenant.license ? formatLicense(tenant.license) : tenant.license,
+    moduleSubscriptions: tenant.moduleSubscriptions?.map((subscription) => ({
+      ...subscription,
+      priceOverride: subscription.priceOverride?.toString() ?? null,
+    })),
   };
 }
 
