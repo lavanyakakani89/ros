@@ -28,19 +28,40 @@ export const suppliersRoutes: FastifyPluginCallback = (fastify, _options, done) 
   });
 
   // Supplier payments (accounts payable)
-  fastify.get("/api/suppliers/:id/payments", async (request) => {
+  fastify.get("/api/suppliers/:id/payments", async (request, reply) => {
     const { id } = supplierIdParamsSchema.parse(request.params);
-    const payments = await fastify.prisma.supplierPayment.findMany({
-      where: { tenantId: request.tenant.id, supplierId: id },
-      include: { purchaseOrder: { select: { poNumber: true } } },
-      orderBy: { paidAt: "desc" },
+    return handleSuppliers(reply, async () => {
+      const supplier = await fastify.prisma.supplier.findFirst({
+        where: { tenantId: request.tenant.id, id },
+        select: { id: true, name: true, phone: true },
+      });
+      if (!supplier) {
+        throw new SuppliersError("Supplier not found", 404);
+      }
+
+      const [payments, totalPurchased] = await Promise.all([
+        fastify.prisma.supplierPayment.findMany({
+          where: { tenantId: request.tenant.id, supplierId: id },
+          include: { purchaseOrder: { select: { poNumber: true } } },
+          orderBy: { paidAt: "desc" },
+        }),
+        fastify.prisma.purchaseOrder.aggregate({
+          where: { tenantId: request.tenant.id, supplierId: id, status: { in: ["PARTIAL", "RECEIVED"] } },
+          _sum: { totalAmount: true },
+        }),
+      ]);
+      const totalPaid = payments.reduce((s, p) => s + p.amount.toNumber(), 0);
+      const totalBilled = totalPurchased._sum.totalAmount?.toNumber() ?? 0;
+      return {
+        supplier,
+        payments,
+        totalPaid,
+        totalBilled,
+        totalPurchased: totalBilled,
+        outstanding: totalBilled - totalPaid,
+        outstandingDue: totalBilled - totalPaid,
+      };
     });
-    const totalPaid = payments.reduce((s, p) => s + p.amount.toNumber(), 0);
-    const totalPurchased = await fastify.prisma.purchaseOrder.aggregate({
-      where: { tenantId: request.tenant.id, supplierId: id, status: { in: ["PARTIAL", "RECEIVED"] } },
-      _sum: { totalAmount: true },
-    });
-    return { payments, totalPaid, totalPurchased: totalPurchased._sum.totalAmount?.toNumber() ?? 0, outstandingDue: (totalPurchased._sum.totalAmount?.toNumber() ?? 0) - totalPaid };
   });
 
   fastify.post("/api/suppliers/:id/payments", async (request) => {

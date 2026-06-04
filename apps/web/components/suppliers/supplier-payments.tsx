@@ -11,19 +11,23 @@ interface SupplierPaymentRecord {
   id: string;
   amount: number | string;
   mode: string;
+  notes?: string | null;
   note?: string | null;
+  paidAt?: string | null;
   createdAt: string;
 }
 
 interface SupplierPaymentsData {
-  supplier: { id: string; name: string; phone?: string | null };
-  totalBilled: number;
-  totalPaid: number;
-  outstanding: number;
-  payments: SupplierPaymentRecord[];
+  supplier?: { id: string; name: string; phone?: string | null };
+  totalBilled?: number;
+  totalPurchased?: number;
+  totalPaid?: number;
+  outstanding?: number;
+  outstandingDue?: number;
+  payments?: SupplierPaymentRecord[];
 }
 
-const MODES = ["CASH", "UPI", "BANK_TRANSFER", "CHEQUE", "CARD"];
+const MODES = ["CASH", "UPI", "NETBANKING", "CARD"];
 
 export function SupplierPayments({ supplierId }: { supplierId: string }) {
   const queryClient = useQueryClient();
@@ -46,12 +50,18 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
 
   const data = dataQuery.data;
   if (dataQuery.isLoading) return <div className="p-6 text-sm text-slate-500">Loading…</div>;
+  if (dataQuery.isError) return <div className="p-6 text-sm text-red-600">{dataQuery.error instanceof Error ? dataQuery.error.message : "Unable to load supplier payments."}</div>;
   if (!data) return <div className="p-6 text-sm text-slate-400">Supplier not found.</div>;
+  const supplierName = data.supplier?.name ?? "Supplier";
+  const totalBilled = data.totalBilled ?? data.totalPurchased ?? 0;
+  const totalPaid = data.totalPaid ?? 0;
+  const outstanding = data.outstanding ?? data.outstandingDue ?? totalBilled - totalPaid;
+  const payments = data.payments ?? [];
 
   function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!amount) return;
-    addPayment.mutate({ amount: Number(amount), mode, note: note || undefined });
+    addPayment.mutate({ amount: Number(amount), mode, notes: note || undefined });
   }
 
   return (
@@ -59,16 +69,16 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
       <div className="flex items-center gap-3">
         <Link href="/suppliers" className="text-slate-400 hover:text-slate-700"><ArrowLeft className="size-5" /></Link>
         <div>
-          <h1 className="text-xl font-bold text-slate-950">{data.supplier.name}</h1>
+          <h1 className="text-xl font-bold text-slate-950">{supplierName}</h1>
           <div className="text-xs text-slate-500">Accounts Payable Ledger</div>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Total Billed", value: data.totalBilled, color: "text-slate-900" },
-          { label: "Total Paid", value: data.totalPaid, color: "text-emerald-700" },
-          { label: "Outstanding (AP)", value: data.outstanding, color: data.outstanding > 0 ? "text-red-600" : "text-emerald-700" },
+          { label: "Total Billed", value: totalBilled, color: "text-slate-900" },
+          { label: "Total Paid", value: totalPaid, color: "text-emerald-700" },
+          { label: "Outstanding (AP)", value: outstanding, color: outstanding > 0 ? "text-red-600" : "text-emerald-700" },
         ].map((stat) => (
           <div key={stat.label} className="rounded-md border border-border bg-white p-3">
             <div className="text-xs text-slate-500">{stat.label}</div>
@@ -95,7 +105,7 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
 
       <div className="rounded-md border border-border bg-white">
         <div className="border-b border-border px-4 py-3 text-sm font-semibold text-slate-950">Payment history</div>
-        {data.payments.length === 0 ? (
+        {payments.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">No payments recorded yet.</div>
         ) : (
           <table className="w-full text-sm">
@@ -108,12 +118,12 @@ export function SupplierPayments({ supplierId }: { supplierId: string }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.payments.map((p) => (
+              {payments.map((p) => (
                 <tr key={p.id}>
-                  <td className="px-4 py-2 text-xs text-slate-500">{new Date(p.createdAt).toLocaleDateString("en-IN")}</td>
+                  <td className="px-4 py-2 text-xs text-slate-500">{new Date(p.paidAt ?? p.createdAt).toLocaleDateString("en-IN")}</td>
                   <td className="px-4 py-2"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{p.mode}</span></td>
                   <td className="px-4 py-2 text-right font-medium text-emerald-700">₹{Number(p.amount).toFixed(2)}</td>
-                  <td className="px-4 py-2 text-xs text-slate-500">{p.note ?? "—"}</td>
+                  <td className="px-4 py-2 text-xs text-slate-500">{p.notes ?? p.note ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
