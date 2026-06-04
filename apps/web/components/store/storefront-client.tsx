@@ -269,7 +269,6 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   const defaultHostname = storefront?.defaultHostname ?? "BizBil online store";
   const heroTitle = storefront?.heroTitle ?? displayName;
   const heroSubtitle = storefront?.heroSubtitle ?? "Browse live stock, place your order, and choose delivery with cash or online payment where available.";
-  const heroHeadingClass = heroTitle.length > 34 ? "text-4xl md:text-5xl" : "text-5xl md:text-7xl";
   const heroBanner = storefront?.banners[0]?.imageUrl ? storefrontImageUrl(storefront.banners[0].imageUrl) : null;
   const freeDeliveryAbove = bootstrap?.checkout.freeDeliveryAbove ?? 0;
   const freeDeliveryBalance = Math.max(freeDeliveryAbove - subtotal, 0);
@@ -558,40 +557,25 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
         "--store-accent": storefront?.accentColor ?? theme.accent,
       } as React.CSSProperties}
     >
-      <header className={`${theme.header} border-b`}>
+      <header className={`sticky top-0 z-20 border-b ${theme.header}`}>
         <div className={`hidden border-b text-xs font-semibold sm:block ${theme.topBar}`}>
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2 lg:px-8">
-            <div className="flex min-w-0 items-center gap-2">
-              <Truck className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                {freeDeliveryAbove > 0 ? `Free delivery above ${money(freeDeliveryAbove)}` : "Fast local delivery on every order"}
-              </span>
-            </div>
-            <div className="hidden items-center gap-2 md:flex">
-              <PackageCheck className="h-4 w-4" />
-              <span>Live stock from BizBil inventory</span>
-            </div>
-            {tenant?.phone ? (
-              <a className="flex shrink-0 items-center gap-2" href={`tel:${tenant.phone}`}>
-                <Phone className="h-4 w-4" />
-                {tenant.phone}
-              </a>
-            ) : null}
+            <span className="flex min-w-0 items-center gap-2 truncate"><Truck className="h-4 w-4 shrink-0" />{freeDeliveryAbove > 0 ? `Free delivery above ${money(freeDeliveryAbove)}` : "Fast local delivery"}</span>
+            <span className="hidden items-center gap-2 md:flex"><PackageCheck className="h-4 w-4" />Live stock from BizBil</span>
+            {tenant?.phone ? <a className="flex shrink-0 items-center gap-2" href={`tel:${tenant.phone}`}><Phone className="h-4 w-4" />{tenant.phone}</a> : null}
           </div>
         </div>
-        <div className="mx-auto grid max-w-7xl gap-4 px-4 py-3 sm:px-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[minmax(210px,auto)_minmax(280px,1fr)_auto] lg:items-center lg:px-8">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <StoreLogo tenantName={displayName} logoUrl={tenant?.logoUrl} />
               <div className="min-w-0">
-                <div className={`truncate text-xs font-semibold ${theme.muted}`}>{defaultHostname}</div>
-                <h1 className="truncate text-2xl font-bold leading-tight md:text-3xl">{displayName}</h1>
+                <div className={`truncate text-[11px] font-semibold ${theme.muted}`}>{defaultHostname}</div>
+                <h1 className="truncate text-xl font-bold leading-tight md:text-2xl">{displayName}</h1>
               </div>
             </div>
             <div className="flex shrink-0 gap-2 lg:hidden">
-              <button className={iconButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)} aria-label="Account">
-                <User className="h-5 w-5" />
-              </button>
+              <button className={iconButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)} aria-label="Account"><User className="h-5 w-5" /></button>
               <a className={`${iconButtonClass(theme)} relative`} href="#checkout" aria-label="Cart">
                 <ShoppingBag className="h-5 w-5" />
                 {cartCount > 0 ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">{cartCount}</span> : null}
@@ -601,59 +585,33 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
 
           <label className="relative block">
             <Search className={`pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 ${theme.iconMuted}`} />
-            <input
-              className={inputClass(theme, "h-12 w-full pl-12 pr-4 text-base")}
-              placeholder="Search oils, grocery products, and offers"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+            <input className={inputClass(theme, "h-11 w-full pl-12 pr-4 text-sm")} placeholder="Search products" value={search} onChange={(event) => setSearch(event.target.value)} />
           </label>
 
           <div className="hidden items-center gap-2 lg:flex">
-            {storefront?.allowCustomerLogin ? (
-              customer ? (
-                <>
-                  <button className={outlineButtonClass(theme)} type="button" onClick={() => void loadOrders()}>
-                    <History className="h-4 w-4" />
-                    Orders
-                  </button>
-                  <button className={outlineButtonClass(theme)} type="button" onClick={() => void signOutCustomer()}>
-                    <LogOut className="h-4 w-4" />
-                    Sign out
-                  </button>
-                </>
-              ) : (
-                <button className={outlineButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)}>
-                  <LogIn className="h-4 w-4" />
-                  Account
-                </button>
-              )
+            {storefront?.allowCustomerLogin ? customer ? (
+              <>
+                <button className={outlineButtonClass(theme)} type="button" onClick={() => void loadOrders()}><History className="h-4 w-4" />Orders</button>
+                <button className={outlineButtonClass(theme)} type="button" onClick={() => void signOutCustomer()}><LogOut className="h-4 w-4" />Sign out</button>
+              </>
+            ) : (
+              <button className={outlineButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)}><LogIn className="h-4 w-4" />Account</button>
             ) : null}
-            <a className={`inline-flex h-12 items-center gap-3 rounded-md px-4 text-sm font-bold text-white ${theme.primaryBg}`} href="#checkout">
-              <ShoppingBag className="h-5 w-5" />
-              <span>{cartCount} item{cartCount === 1 ? "" : "s"}</span>
-            </a>
+            <a className={`inline-flex h-11 items-center gap-2 rounded-md px-4 text-sm font-bold ${theme.cartButton}`} href="#checkout"><ShoppingBag className="h-5 w-5" />{cartCount} item{cartCount === 1 ? "" : "s"}</a>
           </div>
         </div>
       </header>
 
-      <section className={`overflow-hidden ${theme.hero}`}>
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 py-7 sm:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-center lg:px-8">
-          <div className="max-w-3xl">
-            <h2 className={`${heroHeadingClass} font-bold leading-tight text-white`}>{heroTitle}</h2>
-            <p className={`mt-4 max-w-2xl text-lg leading-7 md:text-xl ${theme.heroMuted}`}>{heroSubtitle}</p>
+      <section className={theme.hero}>
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 md:py-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center lg:px-8">
+          <div className="max-w-2xl">
+            <h2 className="text-4xl font-bold leading-[1.04] tracking-normal text-slate-950 md:text-6xl">{heroTitle}</h2>
+            <p className={`mt-4 max-w-xl text-base leading-7 md:text-lg ${theme.heroMuted}`}>{heroSubtitle}</p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <a className={`inline-flex h-12 items-center justify-center rounded-md px-5 text-base font-bold text-white ${theme.ctaBg}`} href="#store-products">
-                Shop products
-              </a>
-              {tenant?.phone ? (
-                <a className={`inline-flex h-12 items-center justify-center gap-2 rounded-md border px-5 text-base font-semibold ${theme.heroButton}`} href={`tel:${tenant.phone}`}>
-                  <Phone className="h-4 w-4" />
-                  Call store
-                </a>
-              ) : null}
+              <a className={`inline-flex h-11 items-center justify-center rounded-md px-5 text-sm font-bold ${theme.ctaBg}`} href="#store-products">Shop products</a>
+              {tenant?.phone ? <a className={`inline-flex h-11 items-center justify-center gap-2 rounded-md border px-5 text-sm font-semibold ${theme.heroButton}`} href={`tel:${tenant.phone}`}><Phone className="h-4 w-4" />Call store</a> : null}
             </div>
-            <div className="mt-6 grid max-w-2xl grid-cols-3 gap-3">
+            <div className="mt-7 flex flex-wrap gap-3">
               <HeroMetric label="Products" value={products.length > 0 ? String(products.length) : "Live"} />
               <HeroMetric label={freeDeliveryAbove > 0 ? "Free delivery" : "Delivery"} value={freeDeliveryAbove > 0 ? `${money(freeDeliveryAbove)}+` : "Local"} />
               <HeroMetric label="Payment" value={canUseRazorpay ? "COD + Online" : canUseCod ? "COD" : "Online"} />
@@ -663,12 +621,11 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
-        <div className="flex gap-3 overflow-x-auto pb-3">
+      <div className="mx-auto max-w-7xl px-4 pt-2 sm:px-6 lg:px-8">
+        <div className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-0">
           <CategoryTile
             active={selectedCategory === ""}
             label="All products"
-            meta={`${String(products.length)} items`}
             theme={theme}
             onClick={() => setSelectedCategory("")}
           />
@@ -677,21 +634,14 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               active={selectedCategory === category.id}
               key={category.id}
               label={category.name}
-              meta="Shop now"
               theme={theme}
               onClick={() => setSelectedCategory(category.id)}
             />
           ))}
         </div>
-
-        <div className={`mb-4 grid overflow-hidden rounded-md border sm:grid-cols-3 ${theme.trustStrip}`}>
-          <StoreSignal theme={theme} icon={<PackageCheck className="h-4 w-4" />} label="100% live stock" value="Synced from BizBil inventory" />
-          <StoreSignal theme={theme} icon={<Truck className="h-4 w-4" />} label="Delivery ready" value="Address saved with every order" />
-          <StoreSignal theme={theme} icon={<CreditCard className="h-4 w-4" />} label="Secure payment" value={canUseRazorpay ? "COD and online payment" : canUseCod ? "COD available" : "Online payment only"} />
-        </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
         <section className="min-w-0" id="store-products">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -750,7 +700,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
           )}
         </section>
 
-        <aside className="lg:sticky lg:top-5 lg:self-start" id="checkout">
+        <aside className="lg:sticky lg:top-24 lg:self-start" id="checkout">
           <form className={`overflow-hidden rounded-md border shadow-xl shadow-black/5 ${theme.panel}`} onSubmit={submitOrder}>
             <div className={`border-b p-5 ${theme.panelDivider}`}>
               <div className="flex items-center justify-between gap-3">
@@ -862,7 +812,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
                 <PaymentButton theme={theme} active={form.paymentMethod === "RAZORPAY"} disabled={!canUseRazorpay} icon={<CreditCard className="h-4 w-4" />} label="Prepaid" onClick={() => updateFormField("paymentMethod", "RAZORPAY")} />
               </div>
 
-              <button className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${theme.ctaBg}`} disabled={submitting || cartItems.length === 0 || checkoutRequiresLogin} type="submit">
+              <button className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 font-bold disabled:cursor-not-allowed disabled:opacity-60 ${theme.ctaBg}`} disabled={submitting || cartItems.length === 0 || checkoutRequiresLogin} type="submit">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
                 Proceed to checkout
               </button>
@@ -878,9 +828,9 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
 
 function HeroMetric({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
-    <div className="border-l border-white/20 pl-3">
-      <div className="text-base font-bold text-white md:text-lg">{value}</div>
-      <div className="text-[10px] font-semibold uppercase text-white/65 md:text-xs">{label}</div>
+    <div className="rounded-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="text-base font-bold text-slate-950 md:text-lg">{value}</div>
+      <div className="text-[10px] font-semibold uppercase text-slate-500 md:text-xs">{label}</div>
     </div>
   );
 }
@@ -897,9 +847,9 @@ function HeroProductShowcase({
   const showcaseProducts = products.length > 0 ? products : [null, null, null];
 
   return (
-    <div className={`relative hidden min-h-[292px] overflow-hidden rounded-md border p-4 shadow-2xl md:block ${theme.heroShowcase}`}>
-      <div className="absolute inset-x-6 bottom-7 h-8 rounded-full bg-black/25 blur-xl" />
-      <div className="relative grid h-full grid-cols-[0.82fr_1fr_0.82fr] items-end gap-3">
+    <div className={`relative hidden min-h-[320px] overflow-hidden rounded-md border p-5 shadow-xl md:block ${theme.heroShowcase}`}>
+      <div className="absolute inset-x-8 bottom-8 h-8 rounded-full bg-black/10 blur-xl" />
+      <div className="relative grid h-[230px] grid-cols-[0.82fr_1fr_0.82fr] items-end gap-3">
         {showcaseProducts.slice(0, 3).map((product, index) => (
           <div className={index === 1 ? "pb-2" : "pb-10"} key={product?.id ?? `hero-product-${String(index)}`}>
             {product ? (
@@ -911,8 +861,8 @@ function HeroProductShowcase({
         ))}
       </div>
       <div className={`relative mt-3 rounded-md border px-4 py-3 ${theme.heroShelf}`}>
-        <div className="text-sm font-bold text-white">Ready for online orders</div>
-        <div className="mt-1 text-xs text-white/70">Catalog, cart, login, and checkout connected to BizBil.</div>
+        <div className="text-sm font-bold text-slate-950">Ready for online orders</div>
+        <div className="mt-1 text-xs text-slate-500">Catalog, cart, login, and checkout connected to BizBil.</div>
       </div>
     </div>
   );
@@ -920,7 +870,7 @@ function HeroProductShowcase({
 
 function HeroBannerShowcase({ imageUrl, theme, tenantName }: Readonly<{ imageUrl: string; theme: StoreTheme; tenantName: string }>) {
   return (
-    <div className={`relative hidden min-h-[292px] overflow-hidden rounded-md border shadow-2xl md:block ${theme.heroShowcase}`}>
+    <div className={`relative hidden min-h-[320px] overflow-hidden rounded-md border shadow-xl md:block ${theme.heroShowcase}`}>
       <img className="absolute inset-0 h-full w-full object-cover" src={imageUrl} alt={`${tenantName} ecommerce banner`} />
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5">
         <div className="text-sm font-bold text-white">Ready for online orders</div>
@@ -933,31 +883,23 @@ function HeroBannerShowcase({ imageUrl, theme, tenantName }: Readonly<{ imageUrl
 function CategoryTile({
   active,
   label,
-  meta,
   theme,
   onClick,
 }: Readonly<{
   active: boolean;
   label: string;
-  meta: string;
   theme: StoreTheme;
   onClick: () => void;
 }>) {
   return (
     <button
-      className={`grid min-w-[150px] grid-cols-[36px_1fr] items-center gap-3 rounded-md border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
+      className={`shrink-0 border-b-2 px-1 pb-3 pt-2 text-sm font-semibold transition ${
         active ? theme.categoryActive : theme.categoryTile
       }`}
       type="button"
       onClick={onClick}
     >
-      <span className={`grid h-9 w-9 place-items-center rounded-md ${active ? "bg-white/20 text-white" : theme.softBg}`}>
-        <Tag className="h-4 w-4" />
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-bold">{label}</span>
-        <span className={`block truncate text-xs ${active ? "text-white/75" : theme.muted}`}>{meta}</span>
-      </span>
+      {label}
     </button>
   );
 }
@@ -1071,17 +1013,12 @@ function ProductCard({
   const saving = product.mrp > product.sellingPrice ? product.mrp - product.sellingPrice : 0;
 
   return (
-    <article className={`group overflow-hidden rounded-md border shadow-sm transition hover:-translate-y-1 hover:shadow-xl hover:shadow-black/10 ${theme.panel}`}>
+    <article className={`group overflow-hidden rounded-md border transition hover:border-emerald-200 hover:shadow-lg hover:shadow-slate-200/70 ${theme.panel}`}>
       <ProductVisual product={product} theme={theme} tenantName={tenantName} />
       <div className="p-3 sm:p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className={`truncate text-[11px] font-bold uppercase ${theme.accentText}`}>{product.categoryName}</div>
-          <div className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${product.currentStock > 0 ? theme.stockBadge : theme.outBadge}`}>
-            {product.currentStock > 0 ? "In stock" : "Sold out"}
-          </div>
-        </div>
-        <h3 className="mt-2 min-h-[42px] text-sm font-bold leading-snug sm:text-base">{product.name}</h3>
-        <p className={`mt-2 line-clamp-2 min-h-[36px] text-xs leading-5 sm:text-sm ${theme.muted}`}>{product.description ?? `${product.unit} pack ready for delivery.`}</p>
+        <div className={`truncate text-[11px] font-bold uppercase ${theme.accentText}`}>{product.categoryName}</div>
+        <h3 className="mt-2 line-clamp-2 min-h-[40px] text-sm font-bold leading-snug text-slate-950 sm:text-base">{product.name}</h3>
+        <div className={`mt-1 text-xs ${theme.muted}`}>{product.unit} | {product.currentStock} available</div>
         <div className="mt-4 grid gap-3">
           {quantity > 0 ? (
             <div className="flex items-end justify-between gap-2">
@@ -1098,10 +1035,10 @@ function ProductCard({
               <div>
                 <div className="whitespace-nowrap text-lg font-black leading-none sm:text-xl">{money(product.sellingPrice)}</div>
                 <div className={`mt-1 truncate text-[11px] sm:text-xs ${theme.muted}`}>
-                  {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>{product.currentStock} {product.unit} available</span>}
+                  {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>Live stock</span>}
                 </div>
               </div>
-              <button className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${theme.primaryBg}`} type="button" disabled={product.currentStock <= 0} onClick={onAdd}>
+              <button className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60 ${theme.productButton}`} type="button" disabled={product.currentStock <= 0} onClick={onAdd}>
                 <Plus className="h-4 w-4" />
                 Add to cart
               </button>
@@ -1268,18 +1205,6 @@ function StoreLogo({ tenantName, logoUrl }: Readonly<{ tenantName: string; logoU
   return <div className="grid h-12 w-12 place-items-center rounded-md bg-[var(--store-primary)] text-sm font-bold text-white">{initials(tenantName)}</div>;
 }
 
-function StoreSignal({ icon, label, value, theme }: Readonly<{ icon: React.ReactNode; label: string; value: string; theme: StoreTheme }>) {
-  return (
-    <div className={`p-4 ${theme.signal}`}>
-      <div className="flex items-center gap-2 text-sm font-semibold">
-        <span className={`grid h-7 w-7 place-items-center rounded-md ${theme.softBg}`}>{icon}</span>
-        {label}
-      </div>
-      <div className={`mt-1 text-xs ${theme.muted}`}>{value}</div>
-    </div>
-  );
-}
-
 function ErrorBanner({ message, onClose, theme }: Readonly<{ message: string; onClose: () => void; theme: StoreTheme }>) {
   return (
     <div className={`mb-4 flex items-start justify-between gap-3 rounded-md border border-red-200 p-3 text-sm font-medium text-red-700 ${theme.errorBg}`}>
@@ -1418,9 +1343,10 @@ interface StoreTheme {
   primaryBg: string;
   accentBg: string;
   ctaBg: string;
+  cartButton: string;
+  productButton: string;
   accentText: string;
   softBg: string;
-  customerBadge: string;
   outline: string;
   summary: string;
   line: string;
@@ -1429,8 +1355,6 @@ interface StoreTheme {
   productStage: string;
   categoryTile: string;
   categoryActive: string;
-  trustStrip: string;
-  signal: string;
   stockBadge: string;
   outBadge: string;
   progressTrack: string;
@@ -1446,15 +1370,15 @@ function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): St
     return {
       page: "bg-[#f8fafc]",
       ink: "text-slate-950",
-      header: "border-slate-800 bg-slate-950 text-white",
+      header: "border-slate-800 bg-slate-950 text-white shadow-sm shadow-slate-950/10",
       topBar: "border-amber-400/20 bg-slate-900 text-amber-100",
       panel: "border-slate-200 bg-white",
       panelDivider: "border-slate-200",
-      hero: "bg-slate-950 text-white",
-      heroMuted: "text-slate-300",
-      heroButton: "border-amber-300/35 bg-white/5 text-white hover:bg-white/10",
-      heroShowcase: "border-amber-300/25 bg-slate-900",
-      heroShelf: "border-amber-300/20 bg-slate-800",
+      hero: "bg-slate-50",
+      heroMuted: "text-slate-600",
+      heroButton: "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50",
+      heroShowcase: "border-slate-200 bg-white",
+      heroShelf: "border-slate-200 bg-white",
       muted: "text-slate-500",
       iconMuted: "text-slate-300",
       primary: "#0f172a",
@@ -1462,19 +1386,18 @@ function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): St
       primaryBg: "bg-slate-950",
       accentBg: "bg-[var(--store-accent)]",
       ctaBg: "bg-amber-500 hover:bg-amber-400 text-slate-950",
+      cartButton: "bg-amber-500 text-slate-950 hover:bg-amber-400",
+      productButton: "bg-slate-950 text-white hover:bg-slate-800",
       accentText: "text-[var(--store-accent)]",
       softBg: "bg-amber-50 text-amber-700",
-      customerBadge: "border-amber-300/30 bg-white/10 text-white",
       outline: "border-slate-200 bg-white text-slate-700",
       summary: "border-slate-200 bg-slate-50 text-slate-700",
       line: "border-slate-100 bg-white",
       empty: "border-slate-300 bg-slate-50 text-slate-500",
       imageBg: "bg-slate-100",
       productStage: "bg-white",
-      categoryTile: "border-slate-200 bg-white text-slate-900",
-      categoryActive: "border-slate-950 bg-slate-950 text-white",
-      trustStrip: "border-slate-200 bg-white",
-      signal: "bg-transparent",
+      categoryTile: "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-950",
+      categoryActive: "border-slate-950 text-slate-950",
       stockBadge: "bg-amber-50 text-amber-700",
       outBadge: "bg-red-50 text-red-700",
       progressTrack: "bg-slate-100",
@@ -1487,37 +1410,36 @@ function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): St
   }
 
   return {
-    page: "bg-white",
+    page: "bg-[#f7f8f6]",
     ink: "text-slate-950",
-    header: "border-slate-200 bg-white",
-    topBar: "border-emerald-900 bg-emerald-950 text-white",
+    header: "border-slate-200 bg-white/95 shadow-sm shadow-slate-200/50 backdrop-blur",
+    topBar: "border-emerald-100 bg-emerald-50 text-emerald-800",
     panel: "border-slate-200 bg-white",
     panelDivider: "border-slate-200",
-    hero: "bg-emerald-950 text-white",
-    heroMuted: "text-white/75",
-    heroButton: "border-white/25 bg-white/10 text-white hover:bg-white/15",
-    heroShowcase: "border-white/15 bg-white/10 backdrop-blur-sm",
-    heroShelf: "border-white/15 bg-white/10",
+    hero: "bg-white",
+    heroMuted: "text-slate-600",
+    heroButton: "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50",
+    heroShowcase: "border-slate-200 bg-white",
+    heroShelf: "border-slate-200 bg-white",
     muted: "text-slate-500",
     iconMuted: "text-slate-400",
     primary: "#166534",
     accent: "#f97316",
     primaryBg: "bg-[var(--store-primary)]",
     accentBg: "bg-[var(--store-accent)]",
-    ctaBg: "bg-[#ff4b3e] hover:bg-[#e83d31]",
+    ctaBg: "bg-[#ff4b3e] text-white hover:bg-[#e83d31]",
+    cartButton: "bg-emerald-700 text-white hover:bg-emerald-800",
+    productButton: "bg-emerald-700 text-white hover:bg-emerald-800",
     accentText: "text-[var(--store-accent)]",
     softBg: "bg-emerald-50 text-[var(--store-primary)]",
-    customerBadge: "border-emerald-100 bg-white text-slate-900",
     outline: "border-slate-200 bg-white text-slate-700",
     summary: "border-slate-200 bg-slate-50 text-slate-700",
     line: "border-slate-100 bg-white",
     empty: "border-slate-300 bg-slate-50 text-slate-500",
     imageBg: "bg-slate-100",
-    productStage: "bg-[#f7faf8]",
-    categoryTile: "border-slate-200 bg-white text-slate-900",
-    categoryActive: "border-[var(--store-primary)] bg-[var(--store-primary)] text-white",
-    trustStrip: "border-slate-200 bg-[#f7faf8]",
-    signal: "bg-transparent",
+    productStage: "bg-[#f6faf8]",
+    categoryTile: "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-950",
+    categoryActive: "border-[var(--store-primary)] text-[var(--store-primary)]",
     stockBadge: "bg-emerald-50 text-emerald-700",
     outBadge: "bg-red-50 text-red-700",
     progressTrack: "bg-slate-100",
