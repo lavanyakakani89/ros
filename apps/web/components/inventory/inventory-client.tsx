@@ -694,6 +694,7 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
       godown: formString(form, "godown") || undefined,
       rack: formString(form, "rack") || undefined,
       defaultSaleQty: formString(form, "defaultSaleQty") ? Number(form.get("defaultSaleQty")) : undefined,
+      ecommerceDisabled: form.get("ecommerceDisabled") !== "on",
     });
     setEditing(false);
   }
@@ -760,6 +761,15 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
           <TextInput name="godown" label="Godown" defaultValue={product.godown ?? ""} />
           <TextInput name="rack" label="Rack" defaultValue={product.rack ?? ""} />
           <TextInput name="defaultSaleQty" label="Default sale qty" type="number" defaultValue={String(product.defaultSaleQty ?? "")} />
+          <label className="flex items-center gap-3 rounded-md border border-border bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+            <input
+              name="ecommerceDisabled"
+              type="checkbox"
+              className="size-4 accent-emerald-600"
+              defaultChecked={product.ecommerceDisabled !== true}
+            />
+            Sell this product online
+          </label>
           <div className="flex gap-2 md:col-span-2">
             <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white">Save changes</button>
             <button type="button" className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => setEditing(false)}>Cancel</button>
@@ -775,7 +785,12 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
         <div className="flex min-w-0 gap-3">
           <ProductImageThumb src={imageSrc} name={product.name} />
           <div className="min-w-0">
-            <div className="text-sm font-medium text-slate-950">{product.name}</div>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="truncate text-sm font-medium text-slate-950">{product.name}</div>
+              <span className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-semibold ${product.ecommerceDisabled === true ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"}`}>
+                {product.ecommerceDisabled === true ? "Offline" : "Online"}
+              </span>
+            </div>
             <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
             <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
           </div>

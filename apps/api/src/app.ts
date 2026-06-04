@@ -40,9 +40,11 @@ import { quotationsRoutes } from "./modules/quotations/quotations.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { restaurantRoutes } from "./modules/restaurant/restaurant.routes.js";
 import { settingsRoutes } from "./modules/settings/settings.routes.js";
+import { storefrontRoutes } from "./modules/storefront/storefront.routes.js";
 import { storesRoutes } from "./modules/settings/stores.routes.js";
 import { suppliersRoutes } from "./modules/suppliers/suppliers.routes.js";
 import { superAdminAuthRoutes } from "./modules/superadmin/superadmin-auth.routes.js";
+import { superAdminEcommerceRoutes } from "./modules/superadmin/superadmin-ecommerce.routes.js";
 import { superAdminImpersonationRoutes } from "./modules/superadmin/superadmin-impersonation.routes.js";
 import { superAdminShopsRoutes } from "./modules/superadmin/superadmin-shops.routes.js";
 import { superAdminTemplatesRoutes } from "./modules/superadmin/superadmin-templates.routes.js";
@@ -115,6 +117,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(authRoutes);
   await fastify.register(superAdminAuthRoutes);
   await fastify.register(superAdminShopsRoutes);
+  await fastify.register(superAdminEcommerceRoutes);
   await fastify.register(superAdminTemplatesRoutes);
   await fastify.register(superAdminImpersonationRoutes);
 
@@ -167,6 +170,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(couponsRoutes);
   await fastify.register(auditRoutes);
   await fastify.register(restaurantRoutes);
+  await fastify.register(storefrontRoutes);
   await fastify.register(whatsappRoutes);
   await fastify.register(whatsappCampaignsRoutes);
 

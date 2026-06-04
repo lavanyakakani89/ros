@@ -265,6 +265,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       ? [{ href: "/restaurant/kds", label: "KDS", icon: "utensils" }]
       : []),
     ...(verticalConfig.navigation.some((item) => item.href === "/whatsapp") ? [] : [{ href: "/whatsapp", label: "WhatsApp Orders", icon: "message-circle" }]),
+    ...(verticalConfig.navigation.some((item) => item.href === "/ecommerce") ? [] : [{ href: "/ecommerce", label: "Ecommerce", icon: "shopping-bag" }]),
     ...(verticalConfig.navigation.some((item) => item.href === "/customers/campaigns") ? [] : [{ href: "/customers/campaigns", label: "Campaigns", icon: "message-circle" }]),
     ...(verticalConfig.navigation.some((item) => item.href === "/settings/payment-methods") ? [] : [{ href: "/settings/payment-methods", label: "Payment Methods", icon: "card" }]),
     ...(verticalConfig.navigation.some((item) => item.href === "/payroll") ? [] : [{ href: "/payroll", label: "Payroll", icon: "wallet" }]),
@@ -756,6 +757,10 @@ function NavigationLink({
 function navigationIconClass(href: string): string {
   if (["/billing", "/quotations", "/coupons", "/loyalty", "/credit-notes"].includes(href)) {
     return "text-emerald-600";
+  }
+
+  if (href === "/ecommerce") {
+    return "text-teal-600";
   }
 
   if (["/inventory", "/inventory/expiry", "/inventory/warranty", "/categories", "/purchases", "/purchase-returns", "/delivery"].includes(href)) {

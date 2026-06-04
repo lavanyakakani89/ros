@@ -14,6 +14,7 @@ const groupByHref: Record<string, (typeof groupOrder)[number]> = {
   "/coupons": "Sales",
   "/loyalty": "Sales",
   "/credit-notes": "Sales",
+  "/ecommerce": "Sales",
   "/inventory": "Stock",
   "/inventory/expiry": "Stock",
   "/inventory/warranty": "Stock",

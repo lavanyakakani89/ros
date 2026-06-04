@@ -72,6 +72,7 @@ export interface ProductPayload {
   godown?: string;
   rack?: string;
   defaultSaleQty?: number;
+  ecommerceDisabled?: boolean;
   verticalData?: Record<string, unknown>;
 }
 

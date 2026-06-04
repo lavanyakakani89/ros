@@ -37,12 +37,16 @@ declare module "@fastify/jwt" {
       tenantId: string;
       role: UserRole;
       storeId?: string | null;
+      customerId?: string;
+      tokenType?: "tenant_user" | "storefront_customer";
     };
     user: {
       userId: string;
       tenantId: string;
       role: UserRole;
       storeId?: string | null;
+      customerId?: string;
+      tokenType?: "tenant_user" | "storefront_customer";
     };
   }
 }

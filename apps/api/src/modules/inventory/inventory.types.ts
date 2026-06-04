@@ -39,6 +39,7 @@ export interface CreateProductInput {
   godown?: string | undefined;
   rack?: string | undefined;
   defaultSaleQty?: number | undefined;
+  ecommerceDisabled?: boolean | undefined;
   supplierId?: string | undefined;
   verticalData?: Record<string, unknown> | undefined;
 }

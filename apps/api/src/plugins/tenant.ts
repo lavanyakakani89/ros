@@ -21,6 +21,7 @@ const publicRoutePrefixes = [
   "/api/superadmin/",
   "/api/payments/razorpay/webhook",
   "/api/whatsapp/webhook",
+  "/api/public/storefront/",
   "/api/public/whatsapp/",
 ];
 const impersonationRestrictedWritePrefixes = ["/api/settings/password", "/api/settings/users", "/api/settings/tenant"];

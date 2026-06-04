@@ -73,6 +73,10 @@ model Tenant {
   kotItems           KOTItem[]
   recipes            Recipe[]
   license            TenantLicense?
+  storefrontSettings StorefrontSettings?
+  storefrontDomains  StorefrontDomain[]
+  storefrontApprovals StorefrontApprovalRequest[]
+  moduleSubscriptions TenantModuleSubscription[]
   invoiceTemplates   InvoiceTemplate[]
   printerConfig      PrinterConfig?
   impersonationSessions ImpersonationSession[]
@@ -268,6 +272,7 @@ model Product {
   menuCategoryId     String?             @map("menu_category_id")
   menuCategory       MenuCategory?       @relation(fields: [menuCategoryId], references: [id])
   isActive           Boolean             @default(true) @map("is_active")
+  ecommerceDisabled  Boolean             @default(false) @map("ecommerce_disabled")
   imageUrl           String?             @map("image_url") @db.Text
   verticalData       Json?               @map("vertical_data")
   createdAt          DateTime            @default(now()) @map("created_at")
@@ -285,6 +290,7 @@ model Product {
   @@unique([tenantId, sku])
   @@index([tenantId, barcode])
   @@index([tenantId, categoryId])
+  @@index([tenantId, ecommerceDisabled])
   @@map("products")
 }
 
@@ -416,6 +422,8 @@ model Customer {
   itemDiscountPercent Decimal      @default(0) @map("item_discount_percent") @db.Decimal(5, 2)
   itemDiscountEnabled Boolean      @default(false) @map("item_discount_enabled")
   outstandingDue  Decimal          @default(0) @map("outstanding_due") @db.Decimal(10, 2)
+  ecommercePasswordHash String?     @map("ecommerce_password_hash")
+  ecommerceLastLoginAt DateTime?    @map("ecommerce_last_login_at")
   createdAt       DateTime         @default(now()) @map("created_at")
   invoices        Invoice[]
   deliveries      Delivery[]
@@ -1677,6 +1685,176 @@ model TenantLicense {
 
   @@index([expiryDate])
   @@map("tenant_licenses")
+}
+
+enum PlatformModule {
+  BILLING
+  INVENTORY
+  ECOMMERCE
+  WHATSAPP
+  DELIVERY
+  PAYROLL
+  RESTAURANT
+}
+
+enum ModuleSubscriptionStatus {
+  DISABLED
+  REQUESTED
+  ACTIVE
+  SUSPENDED
+}
+
+model ModulePricing {
+  id           String         @id @default(cuid())
+  module       PlatformModule @unique
+  displayName  String         @map("display_name")
+  description  String?
+  basePrice    Decimal        @default(0) @map("base_price") @db.Decimal(10, 2)
+  currency     String         @default("INR")
+  billingCycle BillingCycle   @default(MONTHLY) @map("billing_cycle")
+  isActive     Boolean        @default(true) @map("is_active")
+  metadata     Json           @default("{}")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  @@map("module_pricing")
+}
+
+model TenantModuleSubscription {
+  id             String                   @id @default(cuid())
+  tenantId       String                   @map("tenant_id")
+  tenant         Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  module         PlatformModule
+  status         ModuleSubscriptionStatus @default(DISABLED)
+  priceOverride  Decimal?                 @map("price_override") @db.Decimal(10, 2)
+  currency       String                   @default("INR")
+  billingCycle   BillingCycle             @default(MONTHLY) @map("billing_cycle")
+  requestedAt    DateTime?                @map("requested_at")
+  approvedAt     DateTime?                @map("approved_at")
+  startsAt       DateTime?                @map("starts_at")
+  expiresAt      DateTime?                @map("expires_at")
+  notes          String?
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([tenantId, module])
+  @@index([module, status])
+  @@map("tenant_module_subscriptions")
+}
+
+enum StorefrontStatus {
+  DISABLED
+  REQUESTED
+  ACTIVE
+  SUSPENDED
+}
+
+enum StorefrontTheme {
+  CLASSIC_RETAIL
+  PREMIUM_BRAND
+}
+
+enum StorefrontPaymentProvider {
+  PLATFORM_RAZORPAY
+  TENANT_RAZORPAY
+}
+
+enum StorefrontDomainType {
+  DEFAULT_SUBDOMAIN
+  CUSTOM
+}
+
+enum StorefrontDomainStatus {
+  REQUESTED
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum StorefrontApprovalType {
+  ENABLEMENT
+  DOMAIN
+  PAYMENT
+  THEME
+  SETTINGS
+}
+
+enum StorefrontApprovalStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model StorefrontSettings {
+  id                            String                     @id @default(cuid())
+  tenantId                      String                     @unique @map("tenant_id")
+  tenant                        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  status                        StorefrontStatus           @default(DISABLED)
+  theme                         StorefrontTheme            @default(CLASSIC_RETAIL)
+  subdomain                     String?                    @unique
+  displayName                   String?                    @map("display_name")
+  logoUrl                       String?                    @map("logo_url") @db.Text
+  heroTitle                     String?                    @map("hero_title")
+  heroSubtitle                  String?                    @map("hero_subtitle")
+  primaryColor                  String?                    @map("primary_color")
+  accentColor                   String?                    @map("accent_color")
+  allowGuestCheckout            Boolean                    @default(true) @map("allow_guest_checkout")
+  allowCustomerLogin            Boolean                    @default(true) @map("allow_customer_login")
+  allowCod                      Boolean                    @default(true) @map("allow_cod")
+  paymentProvider               StorefrontPaymentProvider? @map("payment_provider")
+  tenantRazorpayKeyId           String?                    @map("tenant_razorpay_key_id")
+  tenantRazorpayKeySecretCiphertext String?                @map("tenant_razorpay_key_secret_ciphertext") @db.Text
+  deliveryCharge                Decimal                    @default(0) @map("delivery_charge") @db.Decimal(10, 2)
+  freeDeliveryAbove             Decimal                    @default(0) @map("free_delivery_above") @db.Decimal(10, 2)
+  customizations                Json                       @default("{}")
+  createdAt                     DateTime                   @default(now()) @map("created_at")
+  updatedAt                     DateTime                   @updatedAt @map("updated_at")
+  domains                       StorefrontDomain[]
+
+  @@index([status])
+  @@map("storefront_settings")
+}
+
+model StorefrontDomain {
+  id              String                 @id @default(cuid())
+  tenantId        String                 @map("tenant_id")
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  storefrontId    String?                @map("storefront_id")
+  storefront      StorefrontSettings?    @relation(fields: [storefrontId], references: [id], onDelete: Cascade)
+  hostname        String                 @unique
+  type            StorefrontDomainType
+  status          StorefrontDomainStatus @default(REQUESTED)
+  requestedById   String?                @map("requested_by_id")
+  approvedById    String?                @map("approved_by_id")
+  requestedAt     DateTime               @default(now()) @map("requested_at")
+  approvedAt      DateTime?              @map("approved_at")
+  notes           String?
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+
+  @@index([tenantId, status])
+  @@index([hostname, status])
+  @@map("storefront_domains")
+}
+
+model StorefrontApprovalRequest {
+  id              String                   @id @default(cuid())
+  tenantId        String                   @map("tenant_id")
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type            StorefrontApprovalType
+  status          StorefrontApprovalStatus @default(REQUESTED)
+  requestedById   String?                  @map("requested_by_id")
+  approvedById    String?                  @map("approved_by_id")
+  payload         Json                     @default("{}")
+  notes           String?
+  rejectionReason String?                  @map("rejection_reason")
+  requestedAt     DateTime                 @default(now()) @map("requested_at")
+  resolvedAt      DateTime?                @map("resolved_at")
+
+  @@index([tenantId, status])
+  @@index([type, status])
+  @@map("storefront_approval_requests")
 }
 
 enum LicensePlan {

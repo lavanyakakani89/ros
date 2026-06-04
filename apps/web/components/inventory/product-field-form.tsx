@@ -268,6 +268,7 @@ const productKeys: Record<keyof ProductPayload, true> = {
   godown: true,
   rack: true,
   defaultSaleQty: true,
+  ecommerceDisabled: true,
   verticalData: true,
 };
 

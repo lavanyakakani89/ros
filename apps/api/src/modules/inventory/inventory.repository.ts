@@ -33,6 +33,7 @@ export class InventoryRepository {
       ...(input.godown ? { godown: input.godown } : {}),
       ...(input.rack ? { rack: input.rack } : {}),
       ...(input.defaultSaleQty !== undefined ? { defaultSaleQty: input.defaultSaleQty } : {}),
+      ...(input.ecommerceDisabled !== undefined ? { ecommerceDisabled: input.ecommerceDisabled } : {}),
       ...(input.supplierId ? { supplierId: input.supplierId } : {}),
       ...(input.verticalData ? { verticalData: input.verticalData as Prisma.InputJsonValue } : {}),
     };
@@ -315,6 +316,7 @@ function toProductUpdateInput(input: UpdateProductInput): Prisma.ProductUnchecke
     ...(input.godown !== undefined ? { godown: input.godown } : {}),
     ...(input.rack !== undefined ? { rack: input.rack } : {}),
     ...(input.defaultSaleQty !== undefined ? { defaultSaleQty: input.defaultSaleQty } : {}),
+    ...(input.ecommerceDisabled !== undefined ? { ecommerceDisabled: input.ecommerceDisabled } : {}),
     ...(input.supplierId !== undefined ? { supplierId: input.supplierId } : {}),
     ...(input.verticalData !== undefined ? { verticalData: input.verticalData as Prisma.InputJsonValue } : {}),
   };

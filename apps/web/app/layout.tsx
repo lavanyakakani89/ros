@@ -17,6 +17,9 @@ export const metadata: Metadata = {
     title: "BizBil",
     statusBarStyle: "default",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   icons: {
     icon: "/icons/icon-192.png",
     apple: "/icons/apple-touch-icon.png",

@@ -43,6 +43,7 @@ const productSchema = z.object({
   godown: z.string().trim().min(1).optional(),
   rack: z.string().trim().min(1).optional(),
   defaultSaleQty: decimalSchema.positive().optional(),
+  ecommerceDisabled: z.coerce.boolean().optional(),
   supplierId: z.string().min(1).optional(),
   verticalData: z.record(z.unknown()).optional(),
 });

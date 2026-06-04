@@ -2,7 +2,7 @@
 
 import type { SyntheticEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Eye, FileText, LogOut, PlusCircle, RefreshCw, Save, ShieldAlert, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, FileText, Globe, LogOut, PlusCircle, RefreshCw, Save, ShieldAlert, ShoppingBag, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 const apiBaseUrl =
@@ -99,6 +99,61 @@ interface ImpersonationSessionRecord {
   };
 }
 
+interface EcommerceOverview {
+  modulePricing: Array<{
+    module: string;
+    displayName: string;
+    basePrice: string;
+    currency: string;
+    billingCycle: string;
+    isActive: boolean;
+  }>;
+  shops: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    storefront: {
+      status: string;
+      theme: string;
+      defaultHostname: string;
+      paymentProvider: string | null;
+      deliveryCharge: string;
+      freeDeliveryAbove: string;
+    } | null;
+    domains: Array<{
+      hostname: string;
+      type: string;
+      status: string;
+    }>;
+    subscription: {
+      status: string;
+      priceOverride: string | null;
+      billingCycle: string;
+    } | null;
+    pendingApprovalCount: number;
+  }>;
+  approvals: Array<{
+    id: string;
+    type: string;
+    payload: unknown;
+    notes?: string | null;
+    requestedAt: string;
+    tenant: {
+      id: string;
+      name: string;
+      slug: string;
+    };
+  }>;
+  metrics: {
+    active: number;
+    requested: number;
+    activeDomains: number;
+    pendingApprovals: number;
+  };
+  rootDomain: string;
+}
+
 interface CreateShopForm {
   tenantName: string;
   tenantSlug: string;
@@ -182,6 +237,8 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   const [admins, setAdmins] = useState<AdminRecord[]>([]);
   const [templates, setTemplates] = useState<SystemTemplateRecord[]>([]);
   const [impersonationSessions, setImpersonationSessions] = useState<ImpersonationSessionRecord[]>([]);
+  const [ecommerce, setEcommerce] = useState<EcommerceOverview | null>(null);
+  const [ecommercePrice, setEcommercePrice] = useState("0");
   const [shopForm, setShopForm] = useState<CreateShopForm>(emptyShopForm);
   const [adminForm, setAdminForm] = useState<CreateAdminForm>(emptyAdminForm);
   const [templateForm, setTemplateForm] = useState<TemplateForm>(emptyTemplateForm);
@@ -197,12 +254,13 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
 
   const loadData = useCallback(async () => {
     setError(null);
-    const [dashboardBody, shopsBody, adminsBody, templatesBody, sessionsBody] = await Promise.all([
+    const [dashboardBody, shopsBody, adminsBody, templatesBody, sessionsBody, ecommerceBody] = await Promise.all([
       apiGet<{ metrics: DashboardMetrics }>("/superadmin/dashboard"),
       apiGet<{ shops: ShopRecord[] }>("/superadmin/shops?limit=100"),
       apiGet<{ admins: AdminRecord[] }>("/superadmin/admins"),
       apiGet<{ templates: SystemTemplateRecord[] }>("/superadmin/templates"),
       apiGet<{ sessions: ImpersonationSessionRecord[] }>("/superadmin/impersonate/sessions?active=true&limit=50"),
+      apiGet<EcommerceOverview>("/superadmin/ecommerce"),
     ]);
 
     setMetrics(dashboardBody.metrics);
@@ -210,6 +268,8 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     setAdmins(adminsBody.admins);
     setTemplates(templatesBody.templates);
     setImpersonationSessions(sessionsBody.sessions);
+    setEcommerce(ecommerceBody);
+    setEcommercePrice(ecommerceBody.modulePricing.find((item) => item.module === "ECOMMERCE")?.basePrice ?? "0");
     setLoading(false);
   }, []);
 
@@ -360,6 +420,46 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     await loadData();
   }
 
+  async function saveEcommercePricing() {
+    setError(null);
+    await apiPut("/superadmin/ecommerce/pricing/ECOMMERCE", {
+      basePrice: Number(ecommercePrice || 0),
+      displayName: "Ecommerce",
+      isActive: true,
+    });
+    setNotice("Ecommerce pricing updated");
+    await loadData();
+  }
+
+  async function updateEcommerceStatus(shopId: string, status: "ACTIVE" | "DISABLED" | "SUSPENDED") {
+    setError(null);
+    await apiPut(`/superadmin/ecommerce/shops/${shopId}`, {
+      status,
+      subscriptionStatus: status === "ACTIVE" ? "ACTIVE" : status,
+    });
+    setNotice(`Ecommerce ${status.toLowerCase()}`);
+    await loadData();
+  }
+
+  async function approveEcommerceRequest(approvalId: string) {
+    setError(null);
+    await apiPost(`/superadmin/ecommerce/approvals/${approvalId}/approve`, {});
+    setNotice("Ecommerce request approved");
+    await loadData();
+  }
+
+  async function rejectEcommerceRequest(approvalId: string) {
+    const reason = window.prompt("Reason for rejection");
+    if (!reason?.trim()) {
+      return;
+    }
+
+    setError(null);
+    await apiPost(`/superadmin/ecommerce/approvals/${approvalId}/reject`, { reason });
+    setNotice("Ecommerce request rejected");
+    await loadData();
+  }
+
   async function logout() {
     await apiPost("/superadmin/auth/logout", {});
     router.replace("/superadmin/login");
@@ -422,6 +522,143 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               <div className="mt-2 text-2xl font-semibold">{loading ? "-" : item.value}</div>
             </div>
           ))}
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
+          <div className="rounded-md border border-slate-800 bg-slate-900">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+              <div>
+                <div className="flex items-center gap-2 font-semibold">
+                  <ShoppingBag className="size-4 text-emerald-300" aria-hidden="true" />
+                  Ecommerce Platform
+                </div>
+                <div className="text-sm text-slate-400">
+                  {ecommerce?.metrics.active ?? 0} active storefronts / {ecommerce?.metrics.pendingApprovals ?? 0} pending approvals
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  className="h-9 w-28 rounded-md border border-slate-700 bg-slate-950 px-2 text-sm text-white"
+                  type="number"
+                  value={ecommercePrice}
+                  onChange={(event) => setEcommercePrice(event.target.value)}
+                  aria-label="Ecommerce module price"
+                />
+                <button
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-400 px-3 text-xs font-semibold text-slate-950 disabled:opacity-40"
+                  disabled={!canManage}
+                  onClick={() => void saveEcommercePricing().catch((err: unknown) => setError(readError(err)))}
+                >
+                  <Save className="size-3" aria-hidden="true" />
+                  Save price
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Shop</th>
+                    <th className="px-4 py-3">Storefront</th>
+                    <th className="px-4 py-3">Domain</th>
+                    <th className="px-4 py-3">Subscription</th>
+                    <th className="px-4 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {(ecommerce?.shops ?? []).slice(0, 12).map((shop) => (
+                    <tr key={shop.id}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{shop.name}</div>
+                        <div className="text-xs text-slate-500">{shop.slug}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={ecommerceStatusClass(shop.storefront?.status ?? "DISABLED")}>{shop.storefront?.status ?? "DISABLED"}</span>
+                        <div className="mt-1 text-xs text-slate-500">{shop.storefront?.theme ?? "No theme"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Globe className="size-3 text-slate-500" aria-hidden="true" />
+                          <span>{shop.storefront?.defaultHostname ?? `${shop.slug}.${ecommerce?.rootDomain ?? "bizbil.com"}`}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">{shop.domains.filter((domain) => domain.status === "ACTIVE").length} active domains</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>{shop.subscription?.status ?? "Not configured"}</div>
+                        <div className="text-xs text-slate-500">{shop.subscription?.priceOverride ? `Rs ${shop.subscription.priceOverride}` : "Default price"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className="h-8 rounded-md border border-emerald-700 px-2 text-xs text-emerald-200 disabled:opacity-40"
+                            disabled={!canManage}
+                            onClick={() => void updateEcommerceStatus(shop.id, "ACTIVE").catch((err: unknown) => setError(readError(err)))}
+                          >
+                            Activate
+                          </button>
+                          <button
+                            className="h-8 rounded-md border border-amber-700 px-2 text-xs text-amber-200 disabled:opacity-40"
+                            disabled={!canManage}
+                            onClick={() => void updateEcommerceStatus(shop.id, "SUSPENDED").catch((err: unknown) => setError(readError(err)))}
+                          >
+                            Suspend
+                          </button>
+                          <button
+                            className="h-8 rounded-md border border-slate-700 px-2 text-xs text-slate-200 disabled:opacity-40"
+                            disabled={!canManage}
+                            onClick={() => void updateEcommerceStatus(shop.id, "DISABLED").catch((err: unknown) => setError(readError(err)))}
+                          >
+                            Disable
+                          </button>
+                          {shop.pendingApprovalCount > 0 ? <span className="rounded bg-amber-950 px-2 py-1 text-xs text-amber-200">{shop.pendingApprovalCount} request(s)</span> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-slate-800 bg-slate-900">
+            <div className="border-b border-slate-800 px-4 py-3">
+              <div className="font-semibold">Ecommerce Approvals</div>
+              <div className="text-sm text-slate-400">Enablement, domains, payments, themes, and settings</div>
+            </div>
+            <div className="divide-y divide-slate-800">
+              {(ecommerce?.approvals ?? []).length === 0 ? (
+                <div className="px-4 py-5 text-sm text-slate-500">No pending ecommerce requests.</div>
+              ) : (
+                (ecommerce?.approvals ?? []).slice(0, 8).map((approval) => (
+                  <div className="px-4 py-3 text-sm" key={approval.id}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-white">{approval.tenant.name}</div>
+                        <div className="text-xs text-slate-500">{formatSelectOption(approval.type)} / {approval.tenant.slug}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          className="h-8 rounded-md bg-emerald-400 px-2 text-xs font-semibold text-slate-950 disabled:opacity-40"
+                          disabled={!canManage}
+                          onClick={() => void approveEcommerceRequest(approval.id).catch((err: unknown) => setError(readError(err)))}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="h-8 rounded-md border border-red-700 px-2 text-xs text-red-200 disabled:opacity-40"
+                          disabled={!canManage}
+                          onClick={() => void rejectEcommerceRequest(approval.id).catch((err: unknown) => setError(readError(err)))}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                    {approval.notes ? <div className="mt-2 text-xs text-slate-400">{approval.notes}</div> : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
@@ -734,6 +971,21 @@ function statusClass(status: ShopRecord["status"]): string {
   }
 
   return `${base} bg-red-950 text-red-200`;
+}
+
+function ecommerceStatusClass(status: string): string {
+  const base = "inline-flex rounded-md px-2 py-1 text-xs font-semibold";
+  if (status === "ACTIVE") {
+    return `${base} bg-emerald-950 text-emerald-200`;
+  }
+  if (status === "REQUESTED") {
+    return `${base} bg-amber-950 text-amber-200`;
+  }
+  if (status === "SUSPENDED") {
+    return `${base} bg-red-950 text-red-200`;
+  }
+
+  return `${base} bg-slate-800 text-slate-300`;
 }
 
 function validateShopForm(form: CreateShopForm): string | null {
