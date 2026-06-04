@@ -289,20 +289,19 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   function decrement(productId: string) {
     setCart((current) => {
       const nextQuantity = Math.max((current[productId] ?? 0) - 1, 0);
-      const next = { ...current };
       if (nextQuantity <= 0) {
-        delete next[productId];
-      } else {
-        next[productId] = nextQuantity;
+        const { [productId]: _removed, ...next } = current;
+        void _removed;
+        return next;
       }
-      return next;
+      return { ...current, [productId]: nextQuantity };
     });
   }
 
   function removeFromCart(productId: string) {
     setCart((current) => {
-      const next = { ...current };
-      delete next[productId];
+      const { [productId]: _removed, ...next } = current;
+      void _removed;
       return next;
     });
   }
@@ -654,7 +653,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               ) : null}
             </div>
             <div className="mt-6 grid max-w-2xl grid-cols-3 gap-3">
-              <HeroMetric label="Products" value={`${products.length || "Live"}`} />
+              <HeroMetric label="Products" value={products.length > 0 ? String(products.length) : "Live"} />
               <HeroMetric label={freeDeliveryAbove > 0 ? "Free delivery" : "Delivery"} value={freeDeliveryAbove > 0 ? `${money(freeDeliveryAbove)}+` : "Local"} />
               <HeroMetric label="Payment" value={canUseRazorpay ? "COD + Online" : canUseCod ? "COD" : "Online"} />
             </div>
@@ -668,7 +667,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
           <CategoryTile
             active={selectedCategory === ""}
             label="All products"
-            meta={`${products.length || 0} items`}
+            meta={`${String(products.length)} items`}
             theme={theme}
             onClick={() => setSelectedCategory("")}
           />
@@ -769,7 +768,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
                     <span>{money(subtotal)} / {money(freeDeliveryAbove)}</span>
                   </div>
                   <div className={`mt-2 h-2 overflow-hidden rounded-full ${theme.progressTrack}`}>
-                    <div className="h-full rounded-full bg-[var(--store-primary)] transition-all" style={{ width: `${freeDeliveryProgress}%` }} />
+                    <div className="h-full rounded-full bg-[var(--store-primary)] transition-all" style={{ width: `${String(freeDeliveryProgress)}%` }} />
                   </div>
                 </div>
               ) : null}
@@ -901,7 +900,7 @@ function HeroProductShowcase({
       <div className="absolute inset-x-6 bottom-7 h-8 rounded-full bg-black/25 blur-xl" />
       <div className="relative grid h-full grid-cols-[0.82fr_1fr_0.82fr] items-end gap-3">
         {showcaseProducts.slice(0, 3).map((product, index) => (
-          <div className={index === 1 ? "pb-2" : "pb-10"} key={product?.id ?? `hero-product-${index}`}>
+          <div className={index === 1 ? "pb-2" : "pb-10"} key={product?.id ?? `hero-product-${String(index)}`}>
             {product ? (
               <ProductVisual product={product} theme={theme} tenantName={tenantName} hero={index === 1} />
             ) : (
@@ -1138,7 +1137,7 @@ function ProductPlaceholderVisual({
   hero = false,
 }: Readonly<{ index: number; theme: StoreTheme; tenantName: string; hero?: boolean }>) {
   const product = {
-    id: `placeholder-${index}`,
+    id: `placeholder-${String(index)}`,
     name: index === 1 ? `${tenantName} Sunflower Oil` : index === 2 ? `${tenantName} Rice Bran Oil` : `${tenantName} Groundnut Oil`,
     sku: null,
     description: null,

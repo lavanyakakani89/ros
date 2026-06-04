@@ -2,7 +2,6 @@ import {
   BillingCycle,
   ModuleSubscriptionStatus,
   PlatformModule,
-  Prisma,
   StorefrontApprovalStatus,
   StorefrontDomainStatus,
   StorefrontDomainType,
@@ -10,6 +9,7 @@ import {
   StorefrontStatus,
   StorefrontTheme,
   SuperAdminRole,
+  type Prisma,
 } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -647,8 +647,8 @@ function defaultHostnameForSubdomain(subdomain: string): string {
   return `${subdomain}.${ecommerceRootDomain}`;
 }
 
-function cleanData<T extends Record<string, unknown>>(input: T): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Record<string, unknown>;
+function cleanData(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
 }
 
 function storefrontSettingsDataFromPayload(payload: Record<string, unknown>) {

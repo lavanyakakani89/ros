@@ -6,7 +6,6 @@ import {
   ModuleSubscriptionStatus,
   PaymentMode,
   PlatformModule,
-  Prisma,
   StorefrontApprovalType,
   StorefrontDomainStatus,
   StorefrontDomainType,
@@ -14,6 +13,7 @@ import {
   StorefrontStatus,
   TenantStatus,
   UserRole,
+  type Prisma,
   type StorefrontSettings,
   type Tenant,
 } from "@prisma/client";
@@ -1344,7 +1344,7 @@ async function recordStorefrontPayment(
   });
 }
 
-function resolveRazorpayConfig(settings: StorefrontSettings, forcedProvider?: string | undefined): RazorpayConfig | null {
+function resolveRazorpayConfig(settings: StorefrontSettings, forcedProvider?: string): RazorpayConfig | null {
   const provider = forcedProvider && forcedProvider in StorefrontPaymentProvider
     ? StorefrontPaymentProvider[forcedProvider as keyof typeof StorefrontPaymentProvider]
     : settings.paymentProvider;
@@ -1462,16 +1462,17 @@ function readStorefrontCustomerId(fastify: FastifyInstance, request: FastifyRequ
   }
 
   try {
-    const payload = fastify.jwt.verify(token) as {
+    const payload = fastify.jwt.verify<{
       customerId?: string;
       tenantId?: string;
       tokenType?: string;
-    };
-    if (payload.tokenType !== "storefront_customer" || payload.tenantId !== tenantId || !payload.customerId) {
+    }>(token);
+    const customerId = typeof payload.customerId === "string" ? payload.customerId : null;
+    if (payload.tokenType !== "storefront_customer" || payload.tenantId !== tenantId || !customerId) {
       return null;
     }
 
-    return payload.customerId;
+    return customerId;
   } catch {
     return null;
   }
@@ -1567,7 +1568,7 @@ function normalizePhone(phone: string): string {
 
 function couponLabel(coupon: { discountType: string; discountValue: number; discount: number }): string {
   if (coupon.discountType === "PERCENTAGE") {
-    return `${coupon.discountValue}% off`;
+    return `${String(coupon.discountValue)}% off`;
   }
 
   return `Rs ${coupon.discount.toFixed(2)} off`;

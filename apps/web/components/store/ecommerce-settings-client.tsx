@@ -117,7 +117,6 @@ export function EcommerceSettingsClient() {
       setError(readError(loadError));
       setLoading(false);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function updateField<Key extends keyof SettingsForm>(field: Key, value: SettingsForm[Key]) {
@@ -331,8 +330,8 @@ function formFromSettings(response: EcommerceSettingsResponse): SettingsForm {
     heroSubtitle: settings.heroSubtitle ?? "",
     primaryColor: settings.primaryColor ?? "#166534",
     accentColor: settings.accentColor ?? "#0f766e",
-    deliveryCharge: settings.deliveryCharge ?? "0",
-    freeDeliveryAbove: settings.freeDeliveryAbove ?? "0",
+    deliveryCharge: settings.deliveryCharge,
+    freeDeliveryAbove: settings.freeDeliveryAbove,
     allowGuestCheckout: settings.allowGuestCheckout,
     allowCustomerLogin: settings.allowCustomerLogin,
     allowCod: settings.allowCod,
