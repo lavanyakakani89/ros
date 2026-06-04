@@ -851,14 +851,12 @@ function SellOnlineSwitch({ checked, disabled, onChange }: Readonly<{ checked: b
       title={checked ? "Sell online on" : "Sell online off"}
       disabled={disabled}
       onClick={onChange}
-      className={`inline-flex h-9 w-14 items-center rounded-full border p-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-slate-200"
-      }`}
+      className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-950 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <span
-        className={`size-6 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-5" : "translate-x-0"}`}
-        aria-hidden="true"
-      />
+      <span>Sell Online</span>
+      <span className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ${checked ? "bg-emerald-500" : "bg-slate-300"}`} aria-hidden="true">
+        <span className={`size-4 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
+      </span>
     </button>
   );
 }
@@ -1062,6 +1060,11 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
         </div>
         {canManageProducts ? (
           <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-center">
+            <SellOnlineSwitch
+              checked={product.ecommerceDisabled !== true}
+              disabled={false}
+              onChange={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
+            />
             <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
               {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
               <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
@@ -1083,11 +1086,6 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
                 Remove image
               </button>
             ) : null}
-            <SellOnlineSwitch
-              checked={product.ecommerceDisabled !== true}
-              disabled={false}
-              onChange={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
-            />
             <button
               className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
               onClick={() => setShowHistory((value) => !value)}
