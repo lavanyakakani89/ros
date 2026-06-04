@@ -2,8 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, XCircle } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
@@ -54,6 +53,28 @@ export interface InvoiceRecord {
     gstRate: string | number;
     total: string | number;
   }>;
+  payments?: Array<{
+    id: string;
+    amount: string | number;
+    mode?: string | null;
+    referenceNumber?: string | null;
+    voidedAt?: string | null;
+    paymentMethod?: {
+      id: string;
+      name: string;
+      shortCode?: string | null;
+      short_code?: string | null;
+      color?: string | null;
+      type?: string | null;
+    } | null;
+  }>;
+  creditNotes?: Array<{
+    id: string;
+    creditNoteNumber: string;
+    status: string;
+    grandTotal: string | number;
+    createdAt: string;
+  }>;
 }
 
 interface InvoiceListResponse {
@@ -70,7 +91,6 @@ export function InvoiceHistory({
   surface?: "embedded" | "drawer";
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
 }>) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [from, setFrom] = useState(today);
@@ -82,6 +102,9 @@ export function InvoiceHistory({
   const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
   const [returnReason, setReturnReason] = useState("");
   const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
+  const [returnCustomerName, setReturnCustomerName] = useState("");
+  const [returnCustomerPhone, setReturnCustomerPhone] = useState("");
+  const [returnError, setReturnError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const isDrawer = surface === "drawer";
@@ -121,13 +144,30 @@ export function InvoiceHistory({
       setReturnInvoice(null);
       setReturnReason("");
       setReturnQuantities({});
-      router.push("/credit-notes");
+      setReturnCustomerName("");
+      setReturnCustomerPhone("");
+      setReturnError(null);
+      setActionNotice("Return processed and credit note created.");
+    },
+    onError: (error) => {
+      setReturnError(error instanceof Error ? error.message : "Unable to process return.");
     },
   });
   const invoices = invoicesQuery.data?.data ?? [];
   const total = invoicesQuery.data?.total ?? 0;
   const totalPages = Math.max(Math.ceil(total / 10), 1);
-  const error = invoicesQuery.error ?? cancelInvoice.error ?? createReturn.error;
+  const error = invoicesQuery.error ?? cancelInvoice.error;
+
+  useEffect(() => {
+    if (!selectedInvoice) {
+      return;
+    }
+
+    const refreshedInvoice = invoices.find((invoice) => invoice.id === selectedInvoice.id);
+    if (refreshedInvoice && refreshedInvoice !== selectedInvoice) {
+      setSelectedInvoice(refreshedInvoice);
+    }
+  }, [invoices, selectedInvoice]);
 
   function resetPage(action: () => void) {
     action();
@@ -194,8 +234,11 @@ export function InvoiceHistory({
   function openReturnDialog(invoice: InvoiceRecord) {
     setActionError(null);
     setActionNotice(null);
+    setReturnError(null);
     setReturnInvoice(invoice);
     setReturnReason("");
+    setReturnCustomerName(invoice.customer?.name ?? "");
+    setReturnCustomerPhone(invoice.customer?.phone ?? "");
     setReturnQuantities(Object.fromEntries((invoice.items ?? []).map((item) => [item.productId, String(Number(item.quantity))])));
   }
 
@@ -209,20 +252,30 @@ export function InvoiceHistory({
       return Number.isFinite(quantity) && quantity > 0 ? [{ productId, quantity }] : [];
     });
     if (!returnReason.trim()) {
-      setActionError("Return reason is required.");
+      setReturnError("Return reason is required.");
       return;
     }
     if (items.length === 0) {
-      setActionError("Select at least one return quantity.");
+      setReturnError("Select at least one return quantity.");
+      return;
+    }
+    if (!returnInvoice.customer?.name.trim() && !returnCustomerName.trim()) {
+      setReturnError("Customer name is required for returns.");
+      return;
+    }
+    if (!returnInvoice.customer?.phone?.trim() && !returnCustomerPhone.trim()) {
+      setReturnError("Customer mobile number is required for returns.");
       return;
     }
 
-    setActionError(null);
+    setReturnError(null);
     createReturn.mutate({
       invoiceId: returnInvoice.id,
       payload: {
         reason: returnReason.trim(),
         items,
+        ...(returnCustomerName.trim() ? { customerName: returnCustomerName.trim() } : {}),
+        ...(returnCustomerPhone.trim() ? { customerPhone: returnCustomerPhone.trim() } : {}),
       },
     });
   }
@@ -290,7 +343,7 @@ export function InvoiceHistory({
                       <div className="truncate">{invoice.customer?.name ?? "Walk-in"}</div>
                       <div className="truncate text-xs text-slate-400">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</div>
                     </td>
-                    <td className="px-3 py-3"><StatusBadge status={invoice.status} /></td>
+                    <td className="px-3 py-3"><StatusBadge status={invoiceDisplayStatus(invoice)} /></td>
                     <td className="whitespace-nowrap px-3 py-3 text-right font-semibold">₹{Number(invoice.grandTotal).toFixed(2)}</td>
                     <td className="px-3 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                         {onEdit ? (
@@ -328,10 +381,18 @@ export function InvoiceHistory({
         invoice={returnInvoice}
         quantities={returnQuantities}
         reason={returnReason}
+        customerName={returnCustomerName}
+        customerPhone={returnCustomerPhone}
+        error={returnError}
         isPending={createReturn.isPending}
         onQuantityChange={(productId, value) => setReturnQuantities((current) => ({ ...current, [productId]: value }))}
         onReasonChange={setReturnReason}
-        onClose={() => setReturnInvoice(null)}
+        onCustomerNameChange={setReturnCustomerName}
+        onCustomerPhoneChange={setReturnCustomerPhone}
+        onClose={() => {
+          setReturnInvoice(null);
+          setReturnError(null);
+        }}
         onSubmit={submitReturn}
       />
     ) : null}
@@ -343,21 +404,34 @@ function InvoiceReturnDialog({
   invoice,
   quantities,
   reason,
+  customerName,
+  customerPhone,
+  error,
   isPending,
   onQuantityChange,
   onReasonChange,
+  onCustomerNameChange,
+  onCustomerPhoneChange,
   onClose,
   onSubmit,
 }: Readonly<{
   invoice: InvoiceRecord;
   quantities: Record<string, string>;
   reason: string;
+  customerName: string;
+  customerPhone: string;
+  error: string | null;
   isPending: boolean;
   onQuantityChange: (productId: string, value: string) => void;
   onReasonChange: (value: string) => void;
+  onCustomerNameChange: (value: string) => void;
+  onCustomerPhoneChange: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
 }>) {
+  const needsCustomerName = !invoice.customer?.name.trim();
+  const needsCustomerPhone = !invoice.customer?.phone?.trim();
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
       <div className="w-full max-w-2xl rounded-md border border-border bg-white shadow-xl">
@@ -366,6 +440,23 @@ function InvoiceReturnDialog({
           <div className="text-xs text-slate-500">{invoice.invoiceNumber}</div>
         </div>
         <div className="max-h-[70vh] space-y-3 overflow-auto p-4">
+          {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+          {needsCustomerName || needsCustomerPhone ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {needsCustomerName ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Customer name
+                  <input value={customerName} onChange={(event) => onCustomerNameChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Customer name" />
+                </label>
+              ) : null}
+              {needsCustomerPhone ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Mobile number
+                  <input type="tel" value={customerPhone} onChange={(event) => onCustomerPhoneChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Mobile number" />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <label className="block text-sm font-medium text-slate-700">
             Reason
             <input value={reason} onChange={(event) => onReasonChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Return reason" />
@@ -390,7 +481,7 @@ function InvoiceReturnDialog({
                         type="number"
                         min="0"
                         max={Number(item.quantity)}
-                        step="0.001"
+                        step="1"
                         value={quantities[item.productId] ?? "0"}
                         onChange={(event) => onQuantityChange(item.productId, event.target.value)}
                         className="h-9 w-24 rounded-md border border-border px-2 text-right text-sm"
@@ -406,7 +497,7 @@ function InvoiceReturnDialog({
         <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
           <button type="button" onClick={onClose} className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700">Cancel</button>
           <button type="button" onClick={onSubmit} disabled={isPending} className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white disabled:opacity-50">
-            {isPending ? "Creating..." : "Create draft credit note"}
+            {isPending ? "Processing..." : "Process return"}
           </button>
         </div>
       </div>
@@ -446,6 +537,8 @@ function InvoiceDetailPanel({
   }
 
   const showPdfAction = process.env.NEXT_PUBLIC_ENABLE_INVOICE_HISTORY_PDF === "true" || Boolean(invoice.pdfUrl);
+  const displayStatus = invoiceDisplayStatus(invoice);
+  const returnTotal = returnedTotal(invoice);
 
   return (
     <aside className="min-h-0 border-l border-border bg-slate-50">
@@ -456,14 +549,15 @@ function InvoiceDetailPanel({
               <div className="font-mono text-xs text-slate-500">{invoice.invoiceNumber}</div>
               <div className="mt-1 text-lg font-bold text-slate-950">₹{Number(invoice.grandTotal).toFixed(2)}</div>
             </div>
-            <StatusBadge status={invoice.status} />
+            <StatusBadge status={displayStatus} />
           </div>
           <div className="mt-3 grid gap-1 text-xs text-slate-500">
             <div>{invoice.customer?.name ?? "Walk-in customer"}</div>
             {invoice.customer?.phone ? <div>{invoice.customer.phone}</div> : null}
             <div>{new Date(invoice.invoiceDate).toLocaleString("en-IN")}</div>
-            <div>Payment: {invoice.paymentMode}</div>
-            <div>Delivery: {invoice.delivery?.status ?? "Not required"}</div>
+            <div>Payment: {formatPaymentSummary(invoice)}</div>
+            <div>Delivery: {formatDeliveryStatus(invoice)}</div>
+            {returnTotal > 0 ? <div className="font-medium text-amber-700">Return: ₹{returnTotal.toFixed(2)} {formatCreditNoteNumbers(invoice)}</div> : null}
             {isWhatsappInvoice(invoice) ? <div className="font-medium text-emerald-700">Source: WhatsApp order</div> : null}
           </div>
         </div>
@@ -510,7 +604,7 @@ function InvoiceDetailPanel({
               Send payment link
             </button>
           ) : null}
-          {["CONFIRMED", "PAID", "PARTIAL"].includes(invoice.status) ? (
+          {canProcessReturn(invoice) ? (
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-800" onClick={() => onReturn(invoice)}>
               <RotateCcw className="size-4" aria-hidden="true" />
               Process return
@@ -535,9 +629,65 @@ function StatusBadge({ status }: Readonly<{ status: string }>) {
 
 function statusClass(status: string): string {
   if (status === "PAID") return "bg-emerald-50 text-emerald-700";
-  if (status === "PARTIAL" || status === "CONFIRMED") return "bg-amber-50 text-amber-800";
+  if (status === "RETURNED") return "bg-purple-50 text-purple-700";
+  if (status === "PARTIAL RETURN" || status === "PARTIAL" || status === "CONFIRMED") return "bg-amber-50 text-amber-800";
   if (status === "CANCELLED") return "bg-red-50 text-red-700";
   return "bg-slate-100 text-slate-600";
+}
+
+function invoiceDisplayStatus(invoice: InvoiceRecord): string {
+  const totalReturned = returnedTotal(invoice);
+  if (invoice.status === "PAID" && totalReturned > 0) {
+    return totalReturned >= Number(invoice.grandTotal) - 0.01 ? "RETURNED" : "PARTIAL RETURN";
+  }
+
+  return invoice.status;
+}
+
+function canProcessReturn(invoice: InvoiceRecord): boolean {
+  return invoice.status === "PAID" && returnedTotal(invoice) < Number(invoice.grandTotal) - 0.01;
+}
+
+function returnedTotal(invoice: InvoiceRecord): number {
+  return (invoice.creditNotes ?? [])
+    .filter((note) => note.status !== "CANCELLED")
+    .reduce((sum, note) => sum + Number(note.grandTotal), 0);
+}
+
+function formatCreditNoteNumbers(invoice: InvoiceRecord): string {
+  const numbers = (invoice.creditNotes ?? [])
+    .filter((note) => note.status !== "CANCELLED")
+    .map((note) => note.creditNoteNumber);
+  return numbers.length > 0 ? `(${numbers.join(", ")})` : "";
+}
+
+function formatPaymentSummary(invoice: InvoiceRecord): string {
+  const payments = (invoice.payments ?? []).filter((payment) => !payment.voidedAt);
+  if (payments.length === 0) {
+    return invoice.paymentMode;
+  }
+
+  return payments
+    .map((payment) => {
+      const label = payment.paymentMethod?.name ?? payment.mode ?? invoice.paymentMode;
+      const amount = Number(payment.amount);
+      return payments.length > 1 && Number.isFinite(amount)
+        ? `${label} ₹${amount.toFixed(2)}`
+        : label;
+    })
+    .join(" + ");
+}
+
+function formatDeliveryStatus(invoice: InvoiceRecord): string {
+  if (!invoice.delivery) {
+    return "Not required";
+  }
+
+  const label = invoice.delivery.status
+    .split("_")
+    .map((part) => part.slice(0, 1) + part.slice(1).toLowerCase())
+    .join(" ");
+  return `Required - ${label}`;
 }
 
 function isWhatsappInvoice(invoice: InvoiceRecord): boolean {

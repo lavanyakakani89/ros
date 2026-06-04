@@ -66,13 +66,16 @@ export class PaymentsRepository {
       if (!paymentMethod) {
         throw new Error("Payment method not found");
       }
+      if (paymentMethod.type === PaymentMethodType.CREDIT) {
+        throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+      }
       if (paymentMethod.requiresReference && !input.referenceNumber) {
         throw new Error(`Reference required for ${paymentMethod.name}`);
       }
 
       const nextAmountPaid = invoice.amountPaid.toNumber() + input.amount;
       const nextAmountDue = Math.max(invoice.grandTotal.toNumber() - nextAmountPaid, 0);
-      const nextStatus = nextAmountDue === 0 ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
+      const nextStatus = nextAmountDue <= 0.01 ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL;
 
       const payment = await tx.payment.create({
         data: {

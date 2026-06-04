@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CreditNoteStatus, InvoiceStatus } from "@prisma/client";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
 import { BillingError, BillingService } from "./billing.service.js";
@@ -17,6 +18,8 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   const service = new BillingService(fastify);
   const returnInvoiceSchema = z.object({
     reason: z.string().trim().min(1),
+    customerName: z.string().trim().min(1).max(128).optional(),
+    customerPhone: z.string().trim().min(5).max(20).optional(),
     items: z.array(z.object({
       productId: z.string().min(1),
       quantity: z.coerce.number().positive(),
@@ -68,8 +71,17 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     return handleBilling(reply, async () => {
       const input = returnInvoiceSchema.parse(request.body);
       const invoice = await service.getInvoice(request.tenant, params.id);
-      if (!["CONFIRMED", "PAID", "PARTIAL"].includes(invoice.status)) {
-        throw new BillingError("Only confirmed invoices can be returned", 409);
+      if (invoice.status !== InvoiceStatus.PAID) {
+        throw new BillingError("Only paid invoices can be returned", 409);
+      }
+
+      const customerName = input.customerName?.trim();
+      const customerPhone = normalizeCustomerPhone(input.customerPhone);
+      if (!invoice.customer?.name.trim() && !customerName) {
+        throw new BillingError("Customer name is required for returns", 400);
+      }
+      if (!invoice.customer?.phone.trim() && !customerPhone) {
+        throw new BillingError("Customer mobile number is required for returns", 400);
       }
 
       const requestedByProduct = new Map<string, number>();
@@ -142,18 +154,79 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       const datePart = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
       const creditNote = await fastify.prisma.$transaction(async (tx) => {
+        let customerId = invoice.customerId ?? null;
+        if (customerName || customerPhone) {
+          const existingByPhone = customerPhone
+            ? await tx.customer.findUnique({
+                where: {
+                  tenantId_phone: {
+                    tenantId: request.tenant.id,
+                    phone: customerPhone,
+                  },
+                },
+              })
+            : null;
+
+          if (existingByPhone) {
+            customerId = existingByPhone.id;
+            if (customerName && !existingByPhone.name.trim()) {
+              await tx.customer.update({
+                where: { id: existingByPhone.id },
+                data: { name: customerName },
+              });
+            }
+          } else if (customerId) {
+            const currentCustomer = await tx.customer.findFirst({
+              where: {
+                id: customerId,
+                tenantId: request.tenant.id,
+              },
+            });
+            if (currentCustomer) {
+              await tx.customer.update({
+                where: { id: currentCustomer.id },
+                data: {
+                  ...(customerName && !currentCustomer.name.trim() ? { name: customerName } : {}),
+                  ...(customerPhone && !currentCustomer.phone.trim() ? { phone: customerPhone } : {}),
+                },
+              });
+            } else {
+              customerId = null;
+            }
+          }
+
+          if (!customerId && customerName && customerPhone) {
+            const createdCustomer = await tx.customer.create({
+              data: {
+                tenantId: request.tenant.id,
+                name: customerName,
+                phone: customerPhone,
+              },
+            });
+            customerId = createdCustomer.id;
+          }
+
+          if (customerId && customerId !== invoice.customerId) {
+            await tx.invoice.update({
+              where: { id: invoice.id },
+              data: { customerId },
+            });
+          }
+        }
+
         const counter = await tx.invoiceCounter.upsert({
           where: { tenantId_date: { tenantId: request.tenant.id, date: `CN-${datePart}` } },
           create: { tenantId: request.tenant.id, date: `CN-${datePart}`, nextSeq: 2 },
           update: { nextSeq: { increment: 1 } },
         });
 
-        return tx.creditNote.create({
+        const note = await tx.creditNote.create({
           data: {
             tenantId: request.tenant.id,
             creditNoteNumber: `CN-${datePart}-${String(counter.nextSeq - 1).padStart(4, "0")}`,
             originalInvoiceId: invoice.id,
-            ...(invoice.customerId ? { customerId: invoice.customerId } : {}),
+            ...(customerId ? { customerId } : {}),
+            status: CreditNoteStatus.CONFIRMED,
             reason: input.reason,
             subtotal,
             totalDiscount,
@@ -164,6 +237,19 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
           },
           include: { items: true, customer: true, originalInvoice: true },
         });
+
+        for (const item of creditNoteItems) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              currentStock: {
+                increment: item.quantity,
+              },
+            },
+          });
+        }
+
+        return note;
       });
 
       await fastify.prisma.auditLog.create({
@@ -177,6 +263,8 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
             invoiceId: invoice.id,
             items: input.items,
             reason: input.reason,
+            ...(customerName ? { customerName } : {}),
+            ...(customerPhone ? { customerPhone } : {}),
           },
           ip: request.ip,
         },
@@ -405,6 +493,15 @@ function roundMoney(value: number): number {
 
 function roundReturnQuantity(value: number): number {
   return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+function normalizeCustomerPhone(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/[^\d+]/g, "");
 }
 
 function formatInvoiceItemsForWhatsapp(items: Array<{ productName: string; quantity: { toNumber(): number }; total: { toNumber(): number } }>): string {

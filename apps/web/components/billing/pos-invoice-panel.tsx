@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listAllProducts, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
@@ -21,6 +21,8 @@ const PRODUCT_SEARCH_MODES = [
   { value: "SKU", label: "SKU" },
 ] as const;
 const BILLING_SEARCH_RESULT_LIMIT = 100;
+const BILLING_PRODUCT_CACHE_VERSION = 1;
+const BILLING_PRODUCT_CACHE_LIMIT = 5000;
 type PaymentMode = (typeof PAYMENT_MODES)[number];
 type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH" | "LOCAL_AGENT";
@@ -194,7 +196,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [lastBill, setLastBill] = useState<LastBill | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
-  const [knownProducts, setKnownProducts] = useState<ProductRecord[]>([]);
+  const [knownProducts, setKnownProducts] = useState<ProductRecord[]>(() => readCachedBillingProducts());
 
   function focusBarcodeSoon() {
     window.setTimeout(() => barcodeRef.current?.focus(), 0);
@@ -204,14 +206,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const productExactQuery = useQuery({
     queryKey: ["products", "billing-lookup", productSearch.value],
     queryFn: () => lookupProductByCode(productSearch.value),
-    enabled: Boolean(productSearch.value),
+    enabled: online && Boolean(productSearch.value),
     staleTime: 15_000,
   });
   const productSearchQuery = useQuery({
     queryKey: ["products", "billing-search", productSearchMode, productSearch.value, productSearch.trailingSpace],
     queryFn: () => listProducts({ search: productSearch.value, limit: BILLING_SEARCH_RESULT_LIMIT }),
-    enabled: Boolean(productSearch.value),
+    enabled: online && Boolean(productSearch.value),
     staleTime: 15_000,
+  });
+  const productCatalogQuery = useQuery({
+    queryKey: ["products", "billing-catalog"],
+    queryFn: () => listAllProducts({ pageSize: 200 }),
+    enabled: online,
+    staleTime: 5 * 60_000,
   });
   const customersQuery = useQuery({
     queryKey: ["customers", "billing", customerSearch],
@@ -248,8 +256,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const searchProducts = (productSearchQuery.data?.data ?? [])
       .filter((product) => matchesProductSearch(product, productSearch, productSearchMode))
       .sort((left, right) => productMatchRank(left, productSearch) - productMatchRank(right, productSearch) || left.name.localeCompare(right.name));
-    return mergeProducts(exactProducts, searchProducts);
-  }, [productExactQuery.data, productSearch.value, productSearch.trailingSpace, productSearchMode, productSearchQuery.data?.data]);
+    const cachedProducts = knownProducts
+      .filter((product) => matchesProductSearch(product, productSearch, productSearchMode))
+      .sort((left, right) => productMatchRank(left, productSearch) - productMatchRank(right, productSearch) || left.name.localeCompare(right.name));
+    return mergeProducts(exactProducts, searchProducts, cachedProducts).slice(0, BILLING_SEARCH_RESULT_LIMIT);
+  }, [knownProducts, productExactQuery.data, productSearch, productSearchMode, productSearchQuery.data?.data]);
 
   const totals = useMemo(() => {
     const itemTotals = lines.map((line) => {
@@ -409,22 +420,65 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }, [productExactQuery.data]);
 
   useEffect(() => {
+    const catalogProducts = productCatalogQuery.data?.data ?? [];
+    if (catalogProducts.length === 0) return;
+    setKnownProducts((current) => mergeProducts(current, catalogProducts));
+  }, [productCatalogQuery.data?.data]);
+
+  useEffect(() => {
+    if (knownProducts.length === 0) return;
+    writeCachedBillingProducts(knownProducts);
+  }, [knownProducts]);
+
+  useEffect(() => {
+    let disposed = false;
+
     async function refreshCounts() {
       setQueueCounts(await getPendingInvoiceCounts());
     }
+    async function refreshConnectivity() {
+      if (!navigator.onLine) {
+        if (!disposed) setOnline(false);
+        return false;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 4000);
+      try {
+        const response = await fetch(apiUrl("/health"), {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const reachable = response.ok;
+        if (!disposed) setOnline(reachable);
+        return reachable;
+      } catch {
+        if (!disposed) setOnline(false);
+        return false;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
     function handleOnline() {
-      setOnline(true);
-      void syncNow();
+      void refreshConnectivity().then((reachable) => {
+        if (reachable) void syncNow();
+      });
     }
     function handleOffline() {
       setOnline(false);
     }
+    function refreshStatus() {
+      void refreshConnectivity();
+    }
 
-    setOnline(navigator.onLine);
+    void refreshConnectivity();
     void refreshCounts();
+    const statusInterval = window.setInterval(refreshStatus, 15_000);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     return () => {
+      disposed = true;
+      window.clearInterval(statusInterval);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
@@ -854,6 +908,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       ...(appliedCoupon ? { couponCode: appliedCoupon } : {}),
       deliveryCharge: deliveryPayload ? totals.deliveryCharge : 0,
       scheduledDeliveryTime: deliveryPayload && scheduledDeliveryAt ? scheduledDeliveryAt : null,
+      ...(useSplit ? { splitPayments: splitPaymentEntries } : {}),
     };
     const invoicePayload = {
       paymentMode,
@@ -879,7 +934,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           notify("Invoice edits need internet because stock and payments must be reconciled immediately.", "red");
           return;
         }
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, referenceNumber);
         clearBill();
         return;
       }
@@ -927,19 +982,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices", invoicePayload);
       const confirmed = await createAuthenticatedApiClient().post<InvoiceMutationResult>(`/billing/invoices/${created.id}/confirm`, {});
 
-      await createAuthenticatedApiClient().post(`/invoices/${created.id}/payments`, {
-        payments: useSplit
-          ? splitPaymentEntries.map((entry) => ({
-              payment_method_id: entry.paymentMethodId,
-              amount: entry.amount,
-              ...(entry.referenceNumber ? { reference_number: entry.referenceNumber } : {}),
-            }))
-          : [{
-              payment_method_id: paymentMethodId,
-              amount: Number(confirmed.grandTotal),
-              ...(referenceNumber.trim() ? { reference_number: referenceNumber.trim() } : {}),
-            }],
-      });
+      if (!useSplit && paymentMode !== "CREDIT") {
+        await createAuthenticatedApiClient().post("/payments", {
+          invoiceId: created.id,
+          amount: Number(confirmed.grandTotal),
+          mode: paymentMode,
+          ...(paymentMethodId ? { payment_method_id: paymentMethodId } : {}),
+          ...(referenceNumber.trim() ? { referenceNumber: referenceNumber.trim() } : {}),
+        });
+      }
 
       if (loyaltyRedeem > 0 && customerId) {
         await createAuthenticatedApiClient().post("/loyalty/redeem", {
@@ -978,9 +1029,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
       }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      clearBill({ preserveLastBill: true });
     } catch (error) {
       if (!isEditMode && isNetworkError(error)) {
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, referenceNumber);
         clearBill();
         return;
       }
@@ -997,12 +1049,22 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     deliveryPayload: { customerId: string; deliveryAddress: string; scheduledAt?: string; notes?: string } | undefined,
     paymentMode: PaymentMode,
     splitPayments: SplitEntry[] = [],
+    paymentMethodId?: string | null,
+    paymentReferenceNumber?: string,
   ) {
     await queueInvoice(
       {
         invoice: invoicePayload,
         ...(deliveryPayload ? { delivery: deliveryPayload } : {}),
-        ...(splitPayments.length > 0 ? { splitPayments } : { autoPay: { mode: paymentMode } }),
+        ...(splitPayments.length > 0
+          ? { splitPayments }
+          : {
+              autoPay: {
+                mode: paymentMode,
+                ...(paymentMethodId ? { paymentMethodId } : {}),
+                ...(paymentReferenceNumber?.trim() ? { referenceNumber: paymentReferenceNumber.trim() } : {}),
+              },
+            }),
       },
       getStoredTenant()?.slug ?? "local-tenant",
     );
@@ -1103,7 +1165,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     window.open(bill.pdfViewUrl, "_blank", "noopener,noreferrer");
   }
 
-  function clearBill() {
+  function clearBill(options: { preserveLastBill?: boolean } = {}) {
     reset();
     setQuantityDrafts({});
     setSelectedCustomer(null);
@@ -1136,7 +1198,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       setSelectedPaymentMode("CASH");
     }
     setReferenceNumber("");
-    setLastBill(null);
+    if (!options.preserveLastBill) {
+      setLastBill(null);
+    }
     onEditComplete?.();
     focusBarcodeSoon();
   }
@@ -1267,7 +1331,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
             </button>
             {isEditMode ? (
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700" onClick={clearBill}>
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700" onClick={() => clearBill()}>
                 Cancel edit
               </button>
             ) : null}
@@ -2018,6 +2082,51 @@ function mergeProducts(...groups: ProductRecord[][]): ProductRecord[] {
     }
   }
   return [...byId.values()];
+}
+
+function readCachedBillingProducts(): ProductRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(billingProductCacheKey());
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(isCachedProductRecord).slice(0, BILLING_PRODUCT_CACHE_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedBillingProducts(products: ProductRecord[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(billingProductCacheKey(), JSON.stringify(products.slice(0, BILLING_PRODUCT_CACHE_LIMIT)));
+  } catch {
+    // Offline billing should continue even if the browser storage quota is full.
+  }
+}
+
+function billingProductCacheKey(): string {
+  const tenant = getStoredTenant();
+  const tenantKey = tenant?.slug ?? tenant?.id ?? "default";
+  return `bizbil:billing-products:v${String(BILLING_PRODUCT_CACHE_VERSION)}:${tenantKey}`;
+}
+
+function isCachedProductRecord(value: unknown): value is ProductRecord {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string" && typeof record.name === "string";
 }
 
 function withoutRecordKey<T>(record: Record<string, T>, keyToRemove: string): Record<string, T> {

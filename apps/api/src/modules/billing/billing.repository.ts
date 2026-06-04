@@ -1,4 +1,4 @@
-import { InvoiceStatus, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
+import { CreditNoteStatus, InvoiceStatus, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateInvoiceInput, InvoiceListQuery } from "./billing.types.js";
 
@@ -13,6 +13,8 @@ export interface StockWarning {
 interface SplitPaymentInput {
   mode: PaymentMode;
   amount: number;
+  paymentMethodId?: string | undefined;
+  referenceNumber?: string | undefined;
 }
 
 interface ExistingPaymentInput {
@@ -138,11 +140,7 @@ export class BillingRepository {
       this.prisma.invoice.count({ where }),
       this.prisma.invoice.findMany({
         where,
-        include: {
-          customer: true,
-          items: true,
-          delivery: true,
-        },
+        include: invoiceListInclude,
         orderBy: {
           invoiceDate: "desc",
         },
@@ -383,8 +381,11 @@ export class BillingRepository {
       if (payableSplitPayments.length > 0) {
         const paymentRows = [];
         for (const payment of payableSplitPayments) {
-          const paymentMethod = await findDefaultMethodForMode(tx, tenantId, invoice.storeId, payment.mode);
+          const paymentMethod = await findMethodForPayment(tx, tenantId, invoice.storeId, payment);
           if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
+            throw new Error(`Reference required for ${paymentMethod.name}`);
+          }
           paymentRows.push({
             tenantId,
             invoiceId,
@@ -392,6 +393,7 @@ export class BillingRepository {
             paymentMethodId: paymentMethod.id,
             mode: payment.mode,
             cashierId: confirmedBy,
+            ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
           });
         }
         await tx.payment.createMany({ data: paymentRows });
@@ -518,6 +520,16 @@ function readSplitPayments(verticalData: unknown): SplitPaymentInput[] {
     return [{
       mode,
       amount: roundMoney(amount),
+      ...(typeof record?.paymentMethodId === "string" && record.paymentMethodId.trim()
+        ? { paymentMethodId: record.paymentMethodId.trim() }
+        : typeof record?.payment_method_id === "string" && record.payment_method_id.trim()
+          ? { paymentMethodId: record.payment_method_id.trim() }
+          : {}),
+      ...(typeof record?.referenceNumber === "string" && record.referenceNumber.trim()
+        ? { referenceNumber: record.referenceNumber.trim() }
+        : typeof record?.reference_number === "string" && record.reference_number.trim()
+          ? { referenceNumber: record.reference_number.trim() }
+          : {}),
     }];
   });
 }
@@ -564,8 +576,11 @@ async function reconcileEditedInvoicePayments(
     if (payableSplitPayments.length > 0) {
       await tx.payment.createMany({
         data: await Promise.all(payableSplitPayments.map(async (payment) => {
-          const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, payment.mode);
+          const paymentMethod = await findMethodForPayment(tx, input.tenantId, null, payment);
           if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
+            throw new Error(`Reference required for ${paymentMethod.name}`);
+          }
           return {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
@@ -573,6 +588,7 @@ async function reconcileEditedInvoicePayments(
           paymentMethodId: paymentMethod.id,
           mode: payment.mode,
           cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
+          ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
         };
         })),
       });
@@ -663,6 +679,26 @@ function parsePaymentMode(value: unknown): PaymentMode | undefined {
     : undefined;
 }
 
+async function findMethodForPayment(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  storeId: string | null,
+  payment: SplitPaymentInput,
+) {
+  if (payment.paymentMethodId) {
+    return tx.paymentMethod.findFirst({
+      where: {
+        id: payment.paymentMethodId,
+        tenantId,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+  }
+
+  return findDefaultMethodForMode(tx, tenantId, storeId, payment.mode);
+}
+
 async function findDefaultMethodForMode(
   tx: Prisma.TransactionClient,
   tenantId: string,
@@ -693,9 +729,35 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 const invoiceInclude = {
   customer: true,
   items: true,
-  payments: true,
+  payments: {
+    include: {
+      paymentMethod: true,
+    },
+    orderBy: {
+      recordedAt: "asc",
+    },
+  },
   delivery: true,
+  creditNotes: {
+    where: {
+      status: {
+        not: CreditNoteStatus.CANCELLED,
+      },
+    },
+    select: {
+      id: true,
+      creditNoteNumber: true,
+      status: true,
+      grandTotal: true,
+      createdAt: true,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  },
 } satisfies Prisma.InvoiceInclude;
+
+const invoiceListInclude = invoiceInclude satisfies Prisma.InvoiceInclude;
 
 function stockAffectsInvoice(status: InvoiceStatus): boolean {
   return status !== InvoiceStatus.DRAFT && status !== InvoiceStatus.PENDING_WHATSAPP && status !== InvoiceStatus.CANCELLED;

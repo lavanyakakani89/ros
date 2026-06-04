@@ -260,7 +260,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     });
     const methodById = new Map(methods.map((method) => [method.id, method]));
     const total = roundMoney(input.payments.reduce((sum, payment) => sum + payment.amount, 0));
-    if (Math.abs(total - invoice.grandTotal.toNumber()) > 0.01) throw statusError("Payment total must match invoice total", 400);
+    const grandTotal = invoice.grandTotal.toNumber();
+    if (Math.abs(total - grandTotal) > 0.01) throw statusError("Payment total must match invoice total", 400);
     for (const leg of input.payments) {
       const method = methodById.get(leg.payment_method_id);
       if (!method) throw statusError("Payment method not found or inactive", 400);
@@ -269,35 +270,36 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     }
     const firstPayment = input.payments[0];
     if (!firstPayment) throw statusError("At least one payment is required", 400);
+    const receivedPayments = input.payments.filter((leg) => methodById.get(leg.payment_method_id)?.type !== PaymentMethodType.CREDIT);
+    const receivedTotal = roundMoney(receivedPayments.reduce((sum, leg) => sum + leg.amount, 0));
+    const firstReceivedPayment = receivedPayments[0];
+    const firstInvoiceMethod = methodById.get((firstReceivedPayment ?? firstPayment).payment_method_id);
+    const amountDue = Math.max(roundMoney(grandTotal - receivedTotal), 0);
     const result = await fastify.prisma.$transaction(async (tx) => {
-      await tx.payment.createMany({
-        data: input.payments.map((leg) => {
-          const mode = legacyMode(methodById.get(leg.payment_method_id)?.type);
-          return {
-            tenantId: request.tenant.id,
-            invoiceId: id,
-            paymentMethodId: leg.payment_method_id,
-            amount: leg.amount,
-            cashierId: request.user.userId,
-            ...(mode ? { mode } : {}),
-            ...(leg.reference_number ? { referenceNumber: leg.reference_number } : {}),
-          };
-        }),
-      });
-      const creditTotal = input.payments
-        .filter((leg) => methodById.get(leg.payment_method_id)?.type === PaymentMethodType.CREDIT)
-        .reduce((sum, leg) => sum + leg.amount, 0);
-      if (creditTotal > 0 && invoice.customerId) {
-        await tx.customer.update({ where: { id: invoice.customerId }, data: { outstandingDue: { increment: creditTotal } } });
+      if (receivedPayments.length > 0) {
+        await tx.payment.createMany({
+          data: receivedPayments.map((leg) => {
+            const mode = legacyMode(methodById.get(leg.payment_method_id)?.type);
+            return {
+              tenantId: request.tenant.id,
+              invoiceId: id,
+              paymentMethodId: leg.payment_method_id,
+              amount: leg.amount,
+              cashierId: request.user.userId,
+              ...(mode ? { mode } : {}),
+              ...(leg.reference_number ? { referenceNumber: leg.reference_number } : {}),
+            };
+          }),
+        });
       }
       return tx.invoice.update({
         where: { id },
         data: {
-          amountPaid: total,
-          amountDue: 0,
-          status: InvoiceStatus.PAID,
-          paymentMethodId: firstPayment.payment_method_id,
-          paymentMode: legacyMode(methodById.get(firstPayment.payment_method_id)?.type) ?? PaymentMode.CASH,
+          amountPaid: receivedTotal,
+          amountDue,
+          status: amountDue <= 0.01 ? InvoiceStatus.PAID : receivedTotal > 0 ? InvoiceStatus.PARTIAL : InvoiceStatus.CONFIRMED,
+          paymentMethodId: firstReceivedPayment?.payment_method_id ?? firstPayment.payment_method_id,
+          paymentMode: legacyMode(firstInvoiceMethod?.type) ?? PaymentMode.CASH,
         },
         include: { payments: { include: { paymentMethod: true } } },
       });

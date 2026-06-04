@@ -38,10 +38,14 @@ interface OfflineInvoiceEnvelope {
   };
   autoPay?: {
     mode: string;
+    paymentMethodId?: string;
+    referenceNumber?: string;
   };
   splitPayments?: Array<{
     mode: string;
+    paymentMethodId?: string;
     amount: number;
+    referenceNumber?: string;
   }>;
 }
 
@@ -94,6 +98,8 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
           invoiceId: created.id,
           amount: Number(created.grandTotal ?? 0),
           mode: envelope.autoPay.mode,
+          ...(envelope.autoPay.paymentMethodId ? { payment_method_id: envelope.autoPay.paymentMethodId } : {}),
+          ...(envelope.autoPay.referenceNumber ? { referenceNumber: envelope.autoPay.referenceNumber } : {}),
         });
       }
       if (envelope.delivery) {

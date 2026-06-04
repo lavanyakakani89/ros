@@ -271,8 +271,8 @@ export class PaymentsService {
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
-    if (!keyId || !keySecret) {
-      throw new PaymentsError("Razorpay credentials are not configured", 501);
+    if (!isConfiguredRazorpaySecret(keyId) || !isConfiguredRazorpaySecret(keySecret)) {
+      throw new PaymentsError("Razorpay credentials are not configured. Configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in the API server environment (.env.testing on test, .env.production on production).", 501);
     }
 
     return new Razorpay({
@@ -330,7 +330,20 @@ function razorpayErrorMessage(error: unknown): string {
   const record = asRecord(error);
   const nested = asRecord(record?.error);
   const description = readString(nested, "description") ?? readString(record, "description") ?? readString(record, "message");
-  return description ? `Razorpay payment link failed: ${description}` : "Razorpay payment link failed";
+  const configHint = "Configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in the API server environment (.env.testing on test, .env.production on production).";
+  if (description && /authentication failed/i.test(description)) {
+    return `Razorpay payment link failed: ${description}. ${configHint}`;
+  }
+
+  return description ? `Razorpay payment link failed: ${description}` : `Razorpay payment link failed. ${configHint}`;
+}
+
+function isConfiguredRazorpaySecret(value: string | undefined): value is string {
+  if (!value?.trim()) {
+    return false;
+  }
+
+  return !/^(replace-me|changeme|change-me|test-key|test-secret|xxxx|dummy)$/i.test(value.trim());
 }
 
 function normalizeRazorpayCustomerName(value: string): string {
