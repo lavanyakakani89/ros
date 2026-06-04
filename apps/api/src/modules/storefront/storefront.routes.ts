@@ -38,6 +38,15 @@ import {
 } from "./storefront.schema.js";
 
 const storefrontCustomerCookie = "storefront_customer_token";
+const storefrontMediaParamsSchema = storefrontTenantParamsSchema.extend({
+  asset: z.enum(["logo", "banner-1", "banner-2"]),
+});
+const tenantStorefrontMediaParamsSchema = z.object({
+  asset: z.enum(["logo", "banner-1", "banner-2"]),
+});
+const allowedStorefrontMediaTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const storefrontLogoMaxBytes = 256 * 1024;
+const storefrontBannerMaxBytes = 700 * 1024;
 
 export class StorefrontError extends Error {
   constructor(
@@ -108,6 +117,23 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
       const stream = await fastify.minio.getObject(fastify.minioBucket, product.imageUrl);
       reply.header("Cache-Control", "public, max-age=900");
       reply.type(contentTypeForImageObject(product.imageUrl));
+      return reply.send(stream);
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/media/:asset", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontMediaParamsSchema.parse(request.params);
+      const { tenant, settings } = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug });
+      const objectName = storefrontMediaObjectForAsset(settings, tenant, params.asset);
+
+      if (!objectName) {
+        throw new StorefrontError("Storefront media not found", 404);
+      }
+
+      const stream = await fastify.minio.getObject(fastify.minioBucket, objectName);
+      reply.header("Cache-Control", "public, max-age=900");
+      reply.type(contentTypeForImageObject(objectName));
       return reply.send(stream);
     });
   });
@@ -317,36 +343,41 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
         scheduledAt: input.delivery?.scheduledAt,
       }, fastify);
 
-      if (input.paymentMethod === "RAZORPAY" && razorpayConfig) {
-        const razorpay = await createRazorpayOrder(fastify, tenant, razorpayConfig, invoice.id, invoice.invoiceNumber, invoice.grandTotal.toNumber());
-        await updateInvoiceMetadata(fastify, tenant.id, invoice.id, {
-          ...sourceMetadata,
-          paymentProvider: "RAZORPAY",
-          razorpayKeySource: razorpayConfig.provider,
-          razorpayOrderId: razorpay.id,
-        });
-
+      if (input.paymentMethod === "COD") {
+        const confirmedInvoice = await billing.confirmInvoice(tenant, invoice.id, "storefront");
         return {
-          order: orderResponse(invoice, deliveryRecord?.id ?? null, deliveryAddress),
-          razorpay: {
-            keyId: razorpayConfig.keyId,
-            orderId: razorpay.id,
-            amount: razorpay.amount,
-            currency: "INR",
-            name: settings.displayName ?? tenant.name,
-            description: `Order ${invoice.invoiceNumber}`,
-            prefill: {
-              name: input.customer.name,
-              contact: normalizePhone(input.customer.phone),
-              ...(input.customer.email ? { email: input.customer.email } : {}),
-            },
-          },
+          order: orderResponse(confirmedInvoice, deliveryRecord?.id ?? null, deliveryAddress),
+          razorpay: null,
         };
       }
 
+      if (!razorpayConfig) {
+        throw new StorefrontError("Online payment is not configured", 501);
+      }
+
+      const razorpay = await createRazorpayOrder(fastify, tenant, razorpayConfig, invoice.id, invoice.invoiceNumber, invoice.grandTotal.toNumber());
+      await updateInvoiceMetadata(fastify, tenant.id, invoice.id, {
+        ...sourceMetadata,
+        paymentProvider: "RAZORPAY",
+        razorpayKeySource: razorpayConfig.provider,
+        razorpayOrderId: razorpay.id,
+      });
+
       return {
         order: orderResponse(invoice, deliveryRecord?.id ?? null, deliveryAddress),
-        razorpay: null,
+        razorpay: {
+          keyId: razorpayConfig.keyId,
+          orderId: razorpay.id,
+          amount: razorpay.amount,
+          currency: "INR",
+          name: settings.displayName ?? tenant.name,
+          description: `Order ${invoice.invoiceNumber}`,
+          prefill: {
+            name: input.customer.name,
+            contact: normalizePhone(input.customer.phone),
+            ...(input.customer.email ? { email: input.customer.email } : {}),
+          },
+        },
       };
     });
   });
@@ -595,6 +626,94 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
     return { domain, approval };
   });
 
+  fastify.get("/api/storefront/media/:asset/view", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = tenantStorefrontMediaParamsSchema.parse(request.params);
+      const settings = await ensureTenantStorefrontSettings(fastify, request.tenant);
+      const objectName = storefrontMediaObjectForAsset(settings, request.tenant, params.asset);
+      if (!objectName) {
+        throw new StorefrontError("Storefront media not found", 404);
+      }
+
+      const stream = await fastify.minio.getObject(fastify.minioBucket, objectName);
+      reply.header("Cache-Control", "private, max-age=300");
+      reply.type(contentTypeForImageObject(objectName));
+      return reply.send(stream);
+    });
+  });
+
+  fastify.post("/api/storefront/media/:asset", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = tenantStorefrontMediaParamsSchema.parse(request.params);
+      const settings = await ensureTenantStorefrontSettings(fastify, request.tenant);
+      const file = await request.file();
+      if (!file) {
+        throw new StorefrontError("Image file is required", 400);
+      }
+
+      const contentType = file.mimetype.toLowerCase();
+      if (!allowedStorefrontMediaTypes.has(contentType)) {
+        throw new StorefrontError("Upload a JPG, PNG, or WEBP image", 400);
+      }
+
+      const buffer = await file.toBuffer();
+      const maxBytes = storefrontMediaMaxBytes(params.asset);
+      if (buffer.length > maxBytes) {
+        throw new StorefrontError(`${storefrontMediaLabel(params.asset)} must be ${formatKilobytes(maxBytes)} KB or smaller`, 400);
+      }
+
+      const extension = extensionForContentType(contentType);
+      const objectName = `storefront/${request.tenant.id}/${params.asset}.${extension}`;
+      await fastify.minio.putObject(fastify.minioBucket, objectName, buffer, buffer.length, {
+        "Content-Type": contentType,
+      });
+
+      const previousObject = storefrontOwnedMediaObjectForAsset(settings, params.asset);
+      if (previousObject && previousObject !== objectName) {
+        await fastify.minio.removeObject(fastify.minioBucket, previousObject).catch(() => undefined);
+      }
+
+      const nextCustomizations = updateStorefrontMediaCustomization(settings.customizations, params.asset, objectName);
+      const data: Prisma.StorefrontSettingsUpdateInput = params.asset === "logo"
+        ? { logoUrl: objectName, customizations: nextCustomizations as Prisma.InputJsonValue }
+        : { customizations: nextCustomizations as Prisma.InputJsonValue };
+      const updated = await fastify.prisma.storefrontSettings.update({
+        where: {
+          tenantId: request.tenant.id,
+        },
+        data,
+      });
+
+      return { settings: formatSettings(updated, request.tenant) };
+    });
+  });
+
+  fastify.delete("/api/storefront/media/:asset", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = tenantStorefrontMediaParamsSchema.parse(request.params);
+      const settings = await ensureTenantStorefrontSettings(fastify, request.tenant);
+      const previousObject = storefrontOwnedMediaObjectForAsset(settings, params.asset);
+      if (previousObject) {
+        await fastify.minio.removeObject(fastify.minioBucket, previousObject).catch(() => undefined);
+      }
+
+      const nextCustomizations = removeStorefrontMediaCustomization(settings.customizations, params.asset);
+      const data: Prisma.StorefrontSettingsUpdateInput = params.asset === "logo"
+        ? { logoUrl: null, customizations: nextCustomizations as Prisma.InputJsonValue }
+        : { customizations: nextCustomizations as Prisma.InputJsonValue };
+      const updated = await fastify.prisma.storefrontSettings.update({
+        where: {
+          tenantId: request.tenant.id,
+        },
+        data,
+      });
+
+      return { settings: formatSettings(updated, request.tenant) };
+    });
+  });
+
   done();
 };
 
@@ -625,7 +744,7 @@ async function buildStorefrontBootstrap(
       gstEnabled: tenant.gstEnabled,
       gstNumber: tenant.gstNumber,
       currency: tenant.currency,
-      logoUrl: settings.logoUrl ?? tenant.logoUrl,
+      logoUrl: storefrontMediaObjectForAsset(settings, tenant, "logo") ? `/api/public/storefront/${tenant.slug}/media/logo` : null,
     },
     storefront: {
       status: settings.status,
@@ -640,6 +759,7 @@ async function buildStorefrontBootstrap(
       allowCustomerLogin: settings.allowCustomerLogin,
       allowCod: settings.allowCod,
       paymentProvider: settings.paymentProvider,
+      banners: storefrontBannerUrls(settings, tenant.slug),
     },
     categories,
     products,
@@ -787,13 +907,38 @@ async function listCategories(fastify: FastifyInstance, tenantId: string) {
     where: {
       tenantId,
       isActive: true,
-      products: {
-        some: {
-          tenantId,
-          isActive: true,
-          ecommerceDisabled: false,
+      parentId: null,
+      OR: [
+        {
+          products: {
+            some: {
+              tenantId,
+              isActive: true,
+              ecommerceDisabled: false,
+              currentStock: {
+                gt: 0,
+              },
+            },
+          },
         },
-      },
+        {
+          children: {
+            some: {
+              isActive: true,
+              products: {
+                some: {
+                  tenantId,
+                  isActive: true,
+                  ecommerceDisabled: false,
+                  currentStock: {
+                    gt: 0,
+                  },
+                },
+              },
+            },
+          },
+        },
+      ],
     },
     orderBy: [
       { sortOrder: "asc" },
@@ -813,12 +958,16 @@ async function listProducts(
   tenantId: string,
   query: z.infer<typeof storefrontCatalogQuerySchema>,
 ) {
+  const categoryIds = query.categoryId ? await storefrontCategoryScope(fastify, tenantId, query.categoryId) : null;
   const products = await fastify.prisma.product.findMany({
     where: {
       tenantId,
       isActive: true,
       ecommerceDisabled: false,
-      ...(query.categoryId ? { categoryId: query.categoryId } : {}),
+      currentStock: {
+        gt: 0,
+      },
+      ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
       ...(query.search
         ? {
             OR: [
@@ -859,6 +1008,33 @@ async function listProducts(
     currentStock: product.currentStock.toNumber(),
     imageUrl: product.imageUrl ? `/api/public/storefront/${tenantSlug}/products/${product.id}/image` : null,
   }));
+}
+
+async function storefrontCategoryScope(fastify: FastifyInstance, tenantId: string, categoryId: string): Promise<string[]> {
+  const category = await fastify.prisma.category.findFirst({
+    where: {
+      id: categoryId,
+      tenantId,
+      isActive: true,
+      parentId: null,
+    },
+    include: {
+      children: {
+        where: {
+          isActive: true,
+        },
+        select: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  if (!category) {
+    return [categoryId];
+  }
+
+  return [category.id, ...category.children.map((child) => child.id)];
 }
 
 async function buildCart(
@@ -1574,6 +1750,106 @@ function contentTypeForImageObject(objectName: string): string {
   return "image/jpeg";
 }
 
+function extensionForContentType(contentType: string): "jpg" | "png" | "webp" {
+  if (contentType === "image/png") return "png";
+  if (contentType === "image/webp") return "webp";
+  return "jpg";
+}
+
+function storefrontMediaMaxBytes(asset: "logo" | "banner-1" | "banner-2"): number {
+  return asset === "logo" ? storefrontLogoMaxBytes : storefrontBannerMaxBytes;
+}
+
+function storefrontMediaLabel(asset: "logo" | "banner-1" | "banner-2"): string {
+  return asset === "logo" ? "Logo" : asset === "banner-1" ? "Banner 1" : "Banner 2";
+}
+
+function formatKilobytes(bytes: number): string {
+  return String(Math.floor(bytes / 1024));
+}
+
+function ensureStorefrontMediaManager(role: UserRole): void {
+  if (role !== UserRole.OWNER && role !== UserRole.MANAGER) {
+    throw new StorefrontError("Only owners and managers can manage ecommerce media", 403);
+  }
+}
+
+function storefrontMediaObjectForAsset(settings: StorefrontSettings, tenant: Pick<Tenant, "logoUrl">, asset: "logo" | "banner-1" | "banner-2"): string | null {
+  if (asset === "logo") {
+    return settings.logoUrl ?? tenant.logoUrl ?? null;
+  }
+
+  return storefrontCustomizations(settings.customizations).banners[asset] ?? null;
+}
+
+function storefrontOwnedMediaObjectForAsset(settings: StorefrontSettings, asset: "logo" | "banner-1" | "banner-2"): string | null {
+  if (asset === "logo") {
+    return settings.logoUrl ?? null;
+  }
+
+  return storefrontCustomizations(settings.customizations).banners[asset] ?? null;
+}
+
+function storefrontBannerUrls(settings: StorefrontSettings, tenantSlug: string): Array<{ slot: "banner-1" | "banner-2"; imageUrl: string }> {
+  const banners = storefrontCustomizations(settings.customizations).banners;
+  return (["banner-1", "banner-2"] as const)
+    .filter((slot) => Boolean(banners[slot]))
+    .map((slot) => ({
+      slot,
+      imageUrl: `/api/public/storefront/${tenantSlug}/media/${slot}`,
+    }));
+}
+
+function updateStorefrontMediaCustomization(value: unknown, asset: "logo" | "banner-1" | "banner-2", objectName: string): Record<string, unknown> {
+  const current = storefrontCustomizations(value);
+  return {
+    ...current.raw,
+    media: {
+      ...current.mediaRaw,
+      banners: {
+        ...current.banners,
+        ...(asset === "logo" ? {} : { [asset]: objectName }),
+      },
+    },
+  };
+}
+
+function removeStorefrontMediaCustomization(value: unknown, asset: "logo" | "banner-1" | "banner-2"): Record<string, unknown> {
+  const current = storefrontCustomizations(value);
+  const nextBanners = asset === "banner-1"
+    ? { ...(current.banners["banner-2"] ? { "banner-2": current.banners["banner-2"] } : {}) }
+    : asset === "banner-2"
+      ? { ...(current.banners["banner-1"] ? { "banner-1": current.banners["banner-1"] } : {}) }
+      : current.banners;
+
+  return {
+    ...current.raw,
+    media: {
+      ...current.mediaRaw,
+      banners: nextBanners,
+    },
+  };
+}
+
+function storefrontCustomizations(value: unknown): {
+  raw: Record<string, unknown>;
+  mediaRaw: Record<string, unknown>;
+  banners: Partial<Record<"banner-1" | "banner-2", string>>;
+} {
+  const raw = asRecord(value);
+  const mediaRaw = asRecord(raw.media);
+  const bannerRaw = asRecord(mediaRaw.banners);
+  const banners: Partial<Record<"banner-1" | "banner-2", string>> = {};
+  for (const slot of ["banner-1", "banner-2"] as const) {
+    const banner = bannerRaw[slot];
+    if (typeof banner === "string" && banner.trim()) {
+      banners[slot] = banner;
+    }
+  }
+
+  return { raw, mediaRaw, banners };
+}
+
 function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
@@ -1652,7 +1928,7 @@ function formatSettings(settings: StorefrontSettings, tenant: Tenant) {
     subdomain: settings.subdomain,
     defaultHostname: defaultHostnameForTenant(tenant, settings),
     displayName: settings.displayName,
-    logoUrl: settings.logoUrl,
+    logoUrl: storefrontMediaObjectForAsset(settings, tenant, "logo") ? "/api/storefront/media/logo/view" : null,
     heroTitle: settings.heroTitle,
     heroSubtitle: settings.heroSubtitle,
     primaryColor: settings.primaryColor,
@@ -1665,6 +1941,10 @@ function formatSettings(settings: StorefrontSettings, tenant: Tenant) {
     hasTenantRazorpaySecret: Boolean(settings.tenantRazorpayKeySecretCiphertext),
     deliveryCharge: settings.deliveryCharge.toString(),
     freeDeliveryAbove: settings.freeDeliveryAbove.toString(),
+    banners: storefrontBannerUrls(settings, tenant.slug).map((banner) => ({
+      ...banner,
+      imageUrl: banner.imageUrl.replace(`/api/public/storefront/${tenant.slug}`, "/api/storefront"),
+    })),
     customizations: settings.customizations,
     createdAt: settings.createdAt,
     updatedAt: settings.updatedAt,

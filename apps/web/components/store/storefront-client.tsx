@@ -270,6 +270,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   const heroTitle = storefront?.heroTitle ?? displayName;
   const heroSubtitle = storefront?.heroSubtitle ?? "Browse live stock, place your order, and choose delivery with cash or online payment where available.";
   const heroHeadingClass = heroTitle.length > 34 ? "text-4xl md:text-5xl" : "text-5xl md:text-7xl";
+  const heroBanner = storefront?.banners[0]?.imageUrl ? storefrontImageUrl(storefront.banners[0].imageUrl) : null;
   const freeDeliveryAbove = bootstrap?.checkout.freeDeliveryAbove ?? 0;
   const freeDeliveryBalance = Math.max(freeDeliveryAbove - subtotal, 0);
   const freeDeliveryProgress = freeDeliveryAbove > 0 ? Math.min((subtotal / freeDeliveryAbove) * 100, 100) : 0;
@@ -658,7 +659,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               <HeroMetric label="Payment" value={canUseRazorpay ? "COD + Online" : canUseCod ? "COD" : "Online"} />
             </div>
           </div>
-          <HeroProductShowcase products={products.slice(0, 4)} theme={theme} tenantName={displayName} />
+          {heroBanner ? <HeroBannerShowcase imageUrl={heroBanner} theme={theme} tenantName={displayName} /> : <HeroProductShowcase products={products.slice(0, 4)} theme={theme} tenantName={displayName} />}
         </div>
       </section>
 
@@ -912,6 +913,18 @@ function HeroProductShowcase({
       <div className={`relative mt-3 rounded-md border px-4 py-3 ${theme.heroShelf}`}>
         <div className="text-sm font-bold text-white">Ready for online orders</div>
         <div className="mt-1 text-xs text-white/70">Catalog, cart, login, and checkout connected to BizBil.</div>
+      </div>
+    </div>
+  );
+}
+
+function HeroBannerShowcase({ imageUrl, theme, tenantName }: Readonly<{ imageUrl: string; theme: StoreTheme; tenantName: string }>) {
+  return (
+    <div className={`relative hidden min-h-[292px] overflow-hidden rounded-md border shadow-2xl md:block ${theme.heroShowcase}`}>
+      <img className="absolute inset-0 h-full w-full object-cover" src={imageUrl} alt={`${tenantName} ecommerce banner`} />
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5">
+        <div className="text-sm font-bold text-white">Ready for online orders</div>
+        <div className="mt-1 text-xs text-white/75">Catalog, cart, login, and checkout connected to BizBil.</div>
       </div>
     </div>
   );
@@ -1431,42 +1444,42 @@ interface StoreTheme {
 function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): StoreTheme {
   if (storefront?.theme === "PREMIUM_BRAND") {
     return {
-      page: "bg-white",
+      page: "bg-[#f8fafc]",
       ink: "text-slate-950",
-      header: "border-slate-200 bg-white",
-      topBar: "border-[#053f24] bg-[#053f24] text-white",
+      header: "border-slate-800 bg-slate-950 text-white",
+      topBar: "border-amber-400/20 bg-slate-900 text-amber-100",
       panel: "border-slate-200 bg-white",
       panelDivider: "border-slate-200",
-      hero: "bg-[#053f24] text-white",
-      heroMuted: "text-white/78",
-      heroButton: "border-white/25 bg-white/10 text-white hover:bg-white/15",
-      heroShowcase: "border-white/15 bg-white/10 backdrop-blur-sm",
-      heroShelf: "border-white/15 bg-white/10",
+      hero: "bg-slate-950 text-white",
+      heroMuted: "text-slate-300",
+      heroButton: "border-amber-300/35 bg-white/5 text-white hover:bg-white/10",
+      heroShowcase: "border-amber-300/25 bg-slate-900",
+      heroShelf: "border-amber-300/20 bg-slate-800",
       muted: "text-slate-500",
-      iconMuted: "text-slate-400",
-      primary: "#05603a",
+      iconMuted: "text-slate-300",
+      primary: "#0f172a",
       accent: "#f59e0b",
-      primaryBg: "bg-[var(--store-primary)]",
+      primaryBg: "bg-slate-950",
       accentBg: "bg-[var(--store-accent)]",
-      ctaBg: "bg-[#ff4b3e] hover:bg-[#e83d31]",
+      ctaBg: "bg-amber-500 hover:bg-amber-400 text-slate-950",
       accentText: "text-[var(--store-accent)]",
-      softBg: "bg-emerald-50 text-[var(--store-primary)]",
-      customerBadge: "border-white/20 bg-white/10 text-white",
+      softBg: "bg-amber-50 text-amber-700",
+      customerBadge: "border-amber-300/30 bg-white/10 text-white",
       outline: "border-slate-200 bg-white text-slate-700",
       summary: "border-slate-200 bg-slate-50 text-slate-700",
       line: "border-slate-100 bg-white",
       empty: "border-slate-300 bg-slate-50 text-slate-500",
       imageBg: "bg-slate-100",
-      productStage: "bg-[#f6faf7]",
+      productStage: "bg-white",
       categoryTile: "border-slate-200 bg-white text-slate-900",
-      categoryActive: "border-[var(--store-primary)] bg-[var(--store-primary)] text-white",
-      trustStrip: "border-slate-200 bg-[#f6faf7]",
+      categoryActive: "border-slate-950 bg-slate-950 text-white",
+      trustStrip: "border-slate-200 bg-white",
       signal: "bg-transparent",
-      stockBadge: "bg-emerald-50 text-emerald-700",
+      stockBadge: "bg-amber-50 text-amber-700",
       outBadge: "bg-red-50 text-red-700",
       progressTrack: "bg-slate-100",
-      quantity: "border-[var(--store-primary)] bg-white",
-      activePayment: "border-[var(--store-primary)] bg-emerald-50 text-[var(--store-primary)]",
+      quantity: "border-slate-950 bg-white",
+      activePayment: "border-slate-950 bg-slate-100 text-slate-950",
       inactivePayment: "border-slate-200 bg-white text-slate-600",
       errorBg: "bg-red-50",
       skeleton: "bg-slate-200",

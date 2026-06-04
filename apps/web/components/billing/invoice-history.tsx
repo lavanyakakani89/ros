@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, XCircle } from "lucide-react";
+import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, ShoppingBag, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
@@ -342,12 +342,7 @@ export function InvoiceHistory({
                   >
                     <td className="break-words px-3 py-3 font-mono text-xs leading-5">
                       <div>{invoice.invoiceNumber}</div>
-                      {isWhatsappInvoice(invoice) ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                          <MessageCircle className="size-3" aria-hidden="true" />
-                          WhatsApp
-                        </div>
-                      ) : null}
+                      <InvoiceSourceBadge invoice={invoice} />
                     </td>
                     <td className="px-3 py-3">
                       <div className="truncate">{invoice.customer?.name ?? "Walk-in"}</div>
@@ -570,7 +565,7 @@ function InvoiceDetailPanel({
             <div>Payment: {formatPaymentSummary(invoice)}</div>
             <div>Delivery: {formatDeliveryStatus(invoice)}</div>
             {returnTotal > 0 ? <div className="font-medium text-amber-700">Return: ₹{returnTotal.toFixed(2)} {formatCreditNoteNumbers(invoice)}</div> : null}
-            {isWhatsappInvoice(invoice) ? <div className="font-medium text-emerald-700">Source: WhatsApp order</div> : null}
+            {invoiceSourceLabel(invoice) !== "POS" ? <div className="font-medium text-emerald-700">Source: {invoiceSourceLabel(invoice)} order</div> : null}
           </div>
         </div>
 
@@ -704,4 +699,36 @@ function formatDeliveryStatus(invoice: InvoiceRecord): string {
 
 function isWhatsappInvoice(invoice: InvoiceRecord): boolean {
   return invoice.verticalData?.source === "WHATSAPP" || typeof invoice.verticalData?.whatsappOrderId === "string";
+}
+
+function isEcommerceInvoice(invoice: InvoiceRecord): boolean {
+  return invoice.verticalData?.source === "ECOMMERCE";
+}
+
+function invoiceSourceLabel(invoice: InvoiceRecord): "Ecommerce" | "POS" | "WhatsApp" {
+  if (isEcommerceInvoice(invoice)) return "Ecommerce";
+  if (isWhatsappInvoice(invoice)) return "WhatsApp";
+  return "POS";
+}
+
+function InvoiceSourceBadge({ invoice }: Readonly<{ invoice: InvoiceRecord }>) {
+  if (isEcommerceInvoice(invoice)) {
+    return (
+      <div className="mt-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+        <ShoppingBag className="size-3" aria-hidden="true" />
+        Ecommerce
+      </div>
+    );
+  }
+
+  if (isWhatsappInvoice(invoice)) {
+    return (
+      <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+        <MessageCircle className="size-3" aria-hidden="true" />
+        WhatsApp
+      </div>
+    );
+  }
+
+  return null;
 }

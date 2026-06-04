@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Globe, Loader2, Palette, RefreshCw, Save, ShieldCheck, ShoppingBag } from "lucide-react";
+import { CheckCircle2, Globe, Image, Loader2, Palette, RefreshCw, Save, ShieldCheck, ShoppingBag, Trash2, Upload } from "lucide-react";
 
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 
 type StorefrontStatus = "DISABLED" | "REQUESTED" | "ACTIVE" | "SUSPENDED";
 type StorefrontTheme = "CLASSIC_RETAIL" | "PREMIUM_BRAND";
@@ -16,6 +16,8 @@ interface EcommerceSettingsResponse {
     subdomain: string | null;
     defaultHostname: string;
     displayName: string | null;
+    logoUrl: string | null;
+    banners: Array<{ slot: "banner-1" | "banner-2"; imageUrl: string }>;
     heroTitle: string | null;
     heroSubtitle: string | null;
     primaryColor: string | null;
@@ -103,6 +105,7 @@ export function EcommerceSettingsClient() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState<string | null>(null);
 
   async function loadSettings() {
     setError("");
@@ -183,6 +186,45 @@ export function EcommerceSettingsClient() {
       setError(readError(requestError));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadMedia(asset: "logo" | "banner-1" | "banner-2", file: File | undefined) {
+    if (!file) return;
+    const limit = mediaLimit(asset);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Upload a JPG, PNG, or WEBP image.");
+      return;
+    }
+    if (file.size > limit.bytes) {
+      setError(`${limit.label} must be ${String(Math.floor(limit.bytes / 1024))} KB or smaller.`);
+      return;
+    }
+
+    setMediaBusy(asset);
+    setError("");
+    try {
+      await api.upload(`/storefront/media/${asset}`, file);
+      setNotice(`${limit.label} uploaded.`);
+      await loadSettings();
+    } catch (uploadError) {
+      setError(readError(uploadError));
+    } finally {
+      setMediaBusy(null);
+    }
+  }
+
+  async function deleteMedia(asset: "logo" | "banner-1" | "banner-2") {
+    setMediaBusy(asset);
+    setError("");
+    try {
+      await api.delete(`/storefront/media/${asset}`);
+      setNotice(`${mediaLimit(asset).label} removed.`);
+      await loadSettings();
+    } catch (deleteError) {
+      setError(readError(deleteError));
+    } finally {
+      setMediaBusy(null);
     }
   }
 
@@ -267,6 +309,44 @@ export function EcommerceSettingsClient() {
         </form>
 
         <div className="space-y-5">
+          <section className="rounded-md border border-border bg-white p-4">
+            <div className="mb-4 flex items-center gap-2 font-semibold text-slate-950">
+              <Image className="size-4 text-emerald-600" aria-hidden="true" />
+              Storefront media
+            </div>
+            <div className="grid gap-3">
+              <MediaUpload
+                asset="logo"
+                busy={mediaBusy === "logo"}
+                imageUrl={settings?.logoUrl ?? null}
+                label="Logo"
+                recommendation="512 x 512, max 256 KB"
+                onDelete={() => void deleteMedia("logo")}
+                onUpload={(file) => void uploadMedia("logo", file)}
+              />
+              <MediaUpload
+                asset="banner-1"
+                busy={mediaBusy === "banner-1"}
+                imageUrl={settings?.banners.find((banner) => banner.slot === "banner-1")?.imageUrl ?? null}
+                label="Banner 1"
+                recommendation="1600 x 500, max 700 KB"
+                wide
+                onDelete={() => void deleteMedia("banner-1")}
+                onUpload={(file) => void uploadMedia("banner-1", file)}
+              />
+              <MediaUpload
+                asset="banner-2"
+                busy={mediaBusy === "banner-2"}
+                imageUrl={settings?.banners.find((banner) => banner.slot === "banner-2")?.imageUrl ?? null}
+                label="Banner 2"
+                recommendation="1600 x 500, max 700 KB"
+                wide
+                onDelete={() => void deleteMedia("banner-2")}
+                onUpload={(file) => void uploadMedia("banner-2", file)}
+              />
+            </div>
+          </section>
+
           <form className="rounded-md border border-border bg-white p-4" onSubmit={requestDomain}>
             <div className="mb-4 flex items-center gap-2 font-semibold text-slate-950">
               <Globe className="size-4 text-blue-600" aria-hidden="true" />
@@ -412,6 +492,65 @@ function CheckboxField({ label, checked, onChange }: Readonly<{ label: string; c
   );
 }
 
+function MediaUpload({
+  asset,
+  busy,
+  imageUrl,
+  label,
+  recommendation,
+  wide = false,
+  onDelete,
+  onUpload,
+}: Readonly<{
+  asset: string;
+  busy: boolean;
+  imageUrl: string | null;
+  label: string;
+  recommendation: string;
+  wide?: boolean;
+  onDelete: () => void;
+  onUpload: (file: File | undefined) => void;
+}>) {
+  return (
+    <div className="rounded-md border border-border bg-slate-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-950">{label}</div>
+          <div className="mt-1 text-xs text-slate-500">{recommendation}</div>
+        </div>
+        {imageUrl ? (
+          <button className="inline-flex size-8 items-center justify-center rounded-md border border-red-100 bg-white text-red-600 disabled:opacity-50" disabled={busy} type="button" onClick={onDelete} aria-label={`Remove ${label}`}>
+            <Trash2 className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
+      </div>
+      <div className={`mt-3 overflow-hidden rounded-md border border-dashed border-slate-300 bg-white ${wide ? "aspect-[16/5]" : "size-24"}`}>
+        {imageUrl ? (
+          <img className="h-full w-full object-cover" src={versionedMediaUrl(imageUrl)} alt={`${label} preview`} />
+        ) : (
+          <div className="grid h-full place-items-center text-xs font-semibold uppercase text-slate-400">{wide ? "Banner" : "Logo"}</div>
+        )}
+      </div>
+      <label className="mt-3 inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-700">
+        {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Upload className="size-4" aria-hidden="true" />}
+        {busy ? "Uploading" : "Upload"}
+        <input
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          disabled={busy}
+          type="file"
+          onChange={(event) => {
+            onUpload(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+      </label>
+      <div className="mt-2 text-xs text-slate-500">Large images are rejected before upload to keep storage usage low.</div>
+      <span className="sr-only">{asset}</span>
+    </div>
+  );
+}
+
 function statusClass(status: string): string {
   const base = "inline-flex rounded px-2 py-1 text-xs font-semibold";
   if (status === "ACTIVE" || status === "APPROVED") {
@@ -446,6 +585,16 @@ function formatDate(value: string): string {
 
 function cleanPayload(input: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== "" && value !== undefined));
+}
+
+function mediaLimit(asset: "logo" | "banner-1" | "banner-2"): { label: string; bytes: number } {
+  return asset === "logo"
+    ? { label: "Logo", bytes: 256 * 1024 }
+    : { label: asset === "banner-1" ? "Banner 1" : "Banner 2", bytes: 700 * 1024 };
+}
+
+function versionedMediaUrl(path: string): string {
+  return `${apiUrl(path)}?v=${String(Date.now())}`;
 }
 
 function readError(error: unknown): string {

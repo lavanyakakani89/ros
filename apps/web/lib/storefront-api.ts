@@ -25,6 +25,7 @@ export interface StorefrontInfo {
   allowCustomerLogin: boolean;
   allowCod: boolean;
   paymentProvider: "PLATFORM_RAZORPAY" | "TENANT_RAZORPAY" | null;
+  banners: Array<{ slot: "banner-1" | "banner-2"; imageUrl: string }>;
 }
 
 export interface StorefrontCategory {

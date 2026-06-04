@@ -1442,9 +1442,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             </div>
             {barcodeInput.trim() ? (
               <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto pr-1">
-                {productResults.length > 0 ? productResults.map((product, index) => {
-                  const imageSrc = productSearchImageSrc(product);
-                  return (
+                {productResults.length > 0 ? productResults.map((product, index) => (
                     <button
                       key={product.id}
                       className={`rounded-md border px-2 py-1 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
@@ -1454,23 +1452,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                       }}
                     >
                       <span className="flex items-center justify-between gap-2">
-                        <span className="flex min-w-0 items-center gap-2">
-                          {imageSrc ? (
-                            <img src={imageSrc} alt="" className="size-8 shrink-0 rounded border border-slate-200 object-cover" />
-                          ) : (
-                            <span className="flex size-8 shrink-0 items-center justify-center rounded border border-dashed border-slate-300 bg-white text-[9px] font-bold uppercase text-slate-400">Img</span>
-                          )}
-                          <span className="min-w-0 truncate">
-                            {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
-                          </span>
+                        <span className="min-w-0 truncate">
+                          {product.name} <span className="text-slate-400">| {productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
                         </span>
                         <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
                           {productMatchLabel(product, barcodeInput, productSearchMode)}
                         </span>
                       </span>
                     </button>
-                  );
-                }) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
+                )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs text-red-700">No matching product</div>}
               </div>
             ) : (
               <div className="mt-2 text-xs text-slate-500">Scan or search to add products.</div>
@@ -2057,14 +2047,6 @@ function productSearchIdentifier(product: ProductRecord): string {
   if (sku) return `SKU ${sku}`;
 
   return "No barcode";
-}
-
-function productSearchImageSrc(product: ProductRecord): string | null {
-  if (!product.imageUrl) {
-    return null;
-  }
-
-  return `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}`;
 }
 
 function productSearchPlaceholder(mode: ProductSearchMode): string {

@@ -615,24 +615,24 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   ];
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-950">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-slate-200">
+            <div className="flex size-10 items-center justify-center overflow-hidden rounded-md bg-white ring-1 ring-emerald-400/30">
               <img src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" className="h-full w-full object-contain" />
             </div>
             <div>
               <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-5 w-auto object-contain" />
-              <div className="text-xs text-slate-500">Super Admin / {admin.name} / {admin.role}</div>
+              <div className="text-xs text-slate-400">Super Admin / {admin.name} / {admin.role}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" onClick={() => void loadData()}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm font-medium text-slate-200 hover:bg-slate-800" onClick={() => void loadData()}>
               <RefreshCw className="size-4" aria-hidden="true" />
               Refresh
             </button>
-            <button className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white" onClick={() => void logout()}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-500 px-3 text-sm font-medium text-slate-950 hover:bg-emerald-400" onClick={() => void logout()}>
               <LogOut className="size-4" aria-hidden="true" />
               Logout
             </button>
@@ -641,7 +641,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
       </header>
 
       <div className="grid min-h-[calc(100vh-65px)] lg:grid-cols-[240px_1fr]">
-        <aside className="border-b border-slate-200 bg-white p-3 lg:border-b-0 lg:border-r">
+        <aside className="border-b border-slate-800 bg-slate-900 p-3 lg:border-b-0 lg:border-r">
           <nav className="grid gap-1">
             {tabs.map((item) => {
               const Icon = item.icon;
@@ -649,7 +649,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               return (
                 <button
                   key={item.id}
-                  className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${active ? "bg-emerald-50 text-emerald-800" : "text-slate-600 hover:bg-slate-50"}`}
+                  className={`flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${active ? "bg-emerald-400/15 text-emerald-200" : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"}`}
                   onClick={() => setActiveTab(item.id)}
                 >
                   <Icon className="size-4" aria-hidden="true" />
@@ -742,7 +742,7 @@ function Overview({ metrics, ecommerce, platform, sessions, logs, loading }: Rea
   return (
     <div className="space-y-5">
       <SectionHeader title="Control Center" subtitle="Operational status, pending approvals, and platform readiness." />
-      <div className="rounded-md border border-slate-200 bg-white p-4">
+      <div className="rounded-md border border-slate-800 bg-slate-900 p-4">
         <div className="grid gap-4 md:grid-cols-4">
           <SummaryStat label="Shops" value={loading ? "-" : `${String(metrics?.activeShops ?? 0)}/${String(metrics?.totalShops ?? 0)}`} detail={`${String(metrics?.warningShops ?? 0)} warning / ${String(metrics?.suspendedShops ?? 0)} suspended`} />
           <SummaryStat label="Revenue" value={`Rs ${metrics?.revenue ?? "0"}`} detail={`${String(metrics?.expiringLicenses ?? 0)} expiring licenses`} />
@@ -787,7 +787,7 @@ function ShopsPanel(props: Readonly<{
             {props.shops.map((shop) => (
               <tr key={shop.id} className="border-t border-slate-100">
                 <td className="px-3 py-3">
-                  <button className="text-left font-semibold text-slate-950 hover:text-emerald-700" onClick={() => props.openShop(shop)}>{shop.name}</button>
+                  <button className="text-left font-semibold text-white hover:text-emerald-200" onClick={() => props.openShop(shop)}>{shop.name}</button>
                   <div className="text-xs text-slate-500">{shop.slug} / {shop.vertical} / {shop.phone}</div>
                 </td>
                 <td className="px-3 py-3"><StatusPill status={shop.status} /></td>
@@ -795,7 +795,7 @@ function ShopsPanel(props: Readonly<{
                   <div>{shop.license?.plan ?? "No license"}</div>
                   <div className="text-xs text-slate-500">{shop.license ? formatDate(shop.license.expiryDate) : "-"}</div>
                 </td>
-                <td className="px-3 py-3 text-sm text-slate-600">{shop._count?.products ?? 0} products / {shop._count?.invoices ?? 0} bills</td>
+                <td className="px-3 py-3 text-sm text-slate-400">{shop._count?.products ?? 0} products / {shop._count?.invoices ?? 0} bills</td>
                 <td className="px-3 py-3">
                   <div className="flex flex-wrap gap-2">
                     <SmallButton onClick={() => props.openShop(shop)}>Manage</SmallButton>
@@ -840,9 +840,9 @@ function ModulesPanel({ platform, modulePrices, setModulePrices, saveModulePrici
           {(platform?.modules ?? modules.map((module) => ({ module, displayName: formatSelectOption(module), basePrice: "0", billingCycle: "MONTHLY", isActive: true, currency: "INR", counts: { active: 0, requested: 0, suspended: 0 } }))).map((item) => {
             const draft = modulePrices[item.module] ?? { basePrice: item.basePrice, billingCycle: item.billingCycle, isActive: item.isActive, displayName: item.displayName };
             return (
-              <div key={item.module} className="grid gap-3 rounded-md border border-slate-200 p-3 lg:grid-cols-[1fr_160px_180px_120px_auto]">
+              <div key={item.module} className="grid gap-3 rounded-md border border-slate-800 p-3 lg:grid-cols-[1fr_160px_180px_120px_auto]">
                 <div>
-                  <input className="h-9 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold" value={draft.displayName} onChange={(event) => setModulePrices({ ...modulePrices, [item.module]: { ...draft, displayName: event.target.value } })} />
+                  <input className="h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-semibold text-slate-100" value={draft.displayName} onChange={(event) => setModulePrices({ ...modulePrices, [item.module]: { ...draft, displayName: event.target.value } })} />
                   <div className="mt-1 text-xs text-slate-500">{item.counts?.active ?? 0} active / {item.counts?.requested ?? 0} requested / {item.counts?.suspended ?? 0} suspended</div>
                 </div>
                 <TextInput compact label="Price" type="number" value={draft.basePrice} onChange={(value) => setModulePrices({ ...modulePrices, [item.module]: { ...draft, basePrice: value } })} />
@@ -867,12 +867,12 @@ function EcommercePanel({ ecommerce, canManage, onApprove, onReject, openShop }:
           {(ecommerce?.approvals ?? []).length === 0 ? <EmptyState text="No pending ecommerce approvals." /> : (
             <div className="grid gap-3">
               {(ecommerce?.approvals ?? []).map((approval) => (
-                <div key={approval.id} className="rounded-md border border-slate-200 p-3">
+                <div key={approval.id} className="rounded-md border border-slate-800 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="font-semibold">{approval.tenant.name}</div>
                       <div className="text-xs text-slate-500">{formatSelectOption(approval.type)} / {approval.tenant.slug} / {formatDateTime(approval.requestedAt)}</div>
-                      {approval.notes ? <div className="mt-2 text-sm text-slate-600">{approval.notes}</div> : null}
+                      {approval.notes ? <div className="mt-2 text-sm text-slate-400">{approval.notes}</div> : null}
                     </div>
                     <div className="flex gap-2">
                       <SmallButton tone="success" disabled={!canManage} onClick={() => onApprove(approval.id)}>Approve</SmallButton>
@@ -985,7 +985,7 @@ function AuditPanel({ logs, sessions, forceEnd, canManage }: Readonly<{ logs: Au
           {sessions.length === 0 ? <EmptyState text="No active support sessions." /> : (
             <div className="grid gap-3">
               {sessions.map((session) => (
-                <div key={session.id} className="rounded-md border border-slate-200 p-3 text-sm">
+                <div key={session.id} className="rounded-md border border-slate-800 p-3 text-sm">
                   <div className="font-semibold">{session.tenant.name}</div>
                   <div className="text-xs text-slate-500">{session.superAdmin.email} / {session.accessLevel} / expires {formatDateTime(session.expiresAt)}</div>
                   <div className="mt-3 flex items-center justify-between"><span className="text-xs text-slate-500">{session.actionsCount} writes</span><SmallButton tone="danger" disabled={!canManage} onClick={() => forceEnd(session)}>Force end</SmallButton></div>
@@ -1020,11 +1020,11 @@ function ShopDrawer(props: Readonly<{
   const storefrontForm = props.storefrontForm;
 
   return (
-    <div className="fixed inset-0 z-30 bg-slate-950/40">
-      <div className="ml-auto flex h-full w-full max-w-5xl flex-col overflow-hidden bg-white shadow-xl">
-        <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
-          <div><div className="text-xl font-bold">{props.shop.name}</div><div className="text-sm text-slate-500">{props.shop.slug} / {props.shop.vertical} / {props.shop.phone}</div></div>
-          <button className="inline-flex size-9 items-center justify-center rounded-md border border-slate-200" onClick={props.close} aria-label="Close shop drawer"><X className="size-4" aria-hidden="true" /></button>
+      <div className="fixed inset-0 z-30 bg-black/60">
+      <div className="ml-auto flex h-full w-full max-w-5xl flex-col overflow-hidden bg-slate-950 text-slate-100 shadow-xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-800 p-4">
+          <div><div className="text-xl font-bold">{props.shop.name}</div><div className="text-sm text-slate-400">{props.shop.slug} / {props.shop.vertical} / {props.shop.phone}</div></div>
+          <button className="inline-flex size-9 items-center justify-center rounded-md border border-slate-700 bg-slate-900" onClick={props.close} aria-label="Close shop drawer"><X className="size-4" aria-hidden="true" /></button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid gap-5 xl:grid-cols-2">
@@ -1062,7 +1062,7 @@ function ShopDrawer(props: Readonly<{
                 {modules.map((module) => {
                   const draft = props.moduleDrafts[module] ?? { status: "DISABLED", priceOverride: "", billingCycle: "MONTHLY", notes: "" };
                   return (
-                    <div key={module} className="rounded-md border border-slate-200 p-3">
+                    <div key={module} className="rounded-md border border-slate-800 p-3">
                       <div className="mb-2 font-semibold">{formatSelectOption(module)}</div>
                       <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
                         <SelectInput compact label="Status" value={draft.status} options={subscriptionStatuses} onChange={(value) => props.setModuleDrafts({ ...props.moduleDrafts, [module]: { ...draft, status: value } })} />
@@ -1124,10 +1124,10 @@ function ShopDrawer(props: Readonly<{
 function ImpersonationDialog(props: Readonly<{ shop: ShopRecord; canManage: boolean; accessLevel: "READ_ONLY" | "WRITE"; setAccessLevel: (value: "READ_ONLY" | "WRITE") => void; reason: string; setReason: (value: string) => void; close: () => void; start: () => void }>) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/50 p-4">
-      <div className="w-full max-w-lg rounded-md border border-slate-200 bg-white p-5 shadow-xl">
+      <div className="w-full max-w-lg rounded-md border border-slate-800 bg-slate-950 p-5 text-slate-100 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <div><div className="text-lg font-semibold">View as shop</div><div className="text-sm text-slate-500">Start a two-hour support session for {props.shop.name}.</div></div>
-          <button className="rounded-md border border-slate-200 px-2 py-1 text-xs" onClick={props.close}>Close</button>
+          <button className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs" onClick={props.close}>Close</button>
         </div>
         <div className="mt-4 grid gap-3">
           <SelectInput label="Access level" value={props.accessLevel} options={props.canManage ? ["READ_ONLY", "WRITE"] : ["READ_ONLY"]} onChange={(value) => props.setAccessLevel(value as "READ_ONLY" | "WRITE")} />
@@ -1144,15 +1144,15 @@ function ImpersonationDialog(props: Readonly<{ shop: ShopRecord; canManage: bool
 }
 
 function SectionHeader({ title, subtitle }: Readonly<{ title: string; subtitle: string }>) {
-  return <div><h1 className="text-2xl font-bold tracking-normal text-slate-950">{title}</h1><p className="mt-1 text-sm text-slate-600">{subtitle}</p></div>;
+  return <div><h1 className="text-2xl font-bold tracking-normal text-white">{title}</h1><p className="mt-1 text-sm text-slate-400">{subtitle}</p></div>;
 }
 
 function Panel({ title, action, children }: Readonly<{ title: string; action?: React.ReactNode; children: React.ReactNode }>) {
-  return <section className="rounded-md border border-slate-200 bg-white"><div className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3"><h2 className="font-semibold">{title}</h2>{action}</div><div className="p-4">{children}</div></section>;
+  return <section className="rounded-md border border-slate-800 bg-slate-900"><div className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-800 px-4 py-3"><h2 className="font-semibold text-white">{title}</h2>{action}</div><div className="p-4">{children}</div></section>;
 }
 
 function SummaryStat({ label, value, detail }: Readonly<{ label: string; value: string; detail?: string }>) {
-  return <div><div className="text-xs font-semibold uppercase text-slate-500">{label}</div><div className="mt-1 text-2xl font-bold text-slate-950">{value}</div>{detail ? <div className="mt-1 text-xs text-slate-500">{detail}</div> : null}</div>;
+  return <div><div className="text-xs font-semibold uppercase text-slate-400">{label}</div><div className="mt-1 text-2xl font-bold text-white">{value}</div>{detail ? <div className="mt-1 text-xs text-slate-400">{detail}</div> : null}</div>;
 }
 
 function Notice({ tone, text }: Readonly<{ tone: "success" | "error"; text: string }>) {
@@ -1161,7 +1161,7 @@ function Notice({ tone, text }: Readonly<{ tone: "success" | "error"; text: stri
 }
 
 function DataTable({ headers, children }: Readonly<{ headers: string[]; children: React.ReactNode }>) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr>{headers.map((header) => <th key={header} className="px-3 py-2 font-semibold">{header}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-slate-950 text-xs uppercase text-slate-400"><tr>{headers.map((header) => <th key={header} className="px-3 py-2 font-semibold">{header}</th>)}</tr></thead><tbody className="divide-y divide-slate-800">{children}</tbody></table></div>;
 }
 
 function StatusPill({ status }: Readonly<{ status: string }>) {
@@ -1169,16 +1169,16 @@ function StatusPill({ status }: Readonly<{ status: string }>) {
   if (status === "ACTIVE") return <span className={`${base} bg-emerald-50 text-emerald-700`}>{status}</span>;
   if (status === "REQUESTED" || status === "WARNING") return <span className={`${base} bg-amber-50 text-amber-700`}>{status}</span>;
   if (status === "SUSPENDED") return <span className={`${base} bg-red-50 text-red-700`}>{status}</span>;
-  return <span className={`${base} bg-slate-100 text-slate-700`}>{status}</span>;
+  return <span className={`${base} bg-slate-800 text-slate-300`}>{status}</span>;
 }
 
 function SearchBox({ value, onChange }: Readonly<{ value: string; onChange: (value: string) => void }>) {
-  return <label className="relative block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" /><input className="h-9 w-72 rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-emerald-500" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Search shops" /></label>;
+  return <label className="relative block"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" aria-hidden="true" /><input className="h-9 w-72 rounded-md border border-slate-700 bg-slate-950 pl-9 pr-3 text-sm text-slate-100 outline-none focus:border-emerald-500" value={value} onChange={(event) => onChange(event.target.value)} placeholder="Search shops" /></label>;
 }
 
 function SmallButton({ children, onClick, disabled, tone = "neutral" }: Readonly<{ children: React.ReactNode; onClick?: () => void; disabled?: boolean; tone?: "neutral" | "success" | "danger" }>) {
-  const cls = tone === "success" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : tone === "danger" ? "border-red-200 text-red-700 hover:bg-red-50" : "border-slate-200 text-slate-700 hover:bg-slate-50";
-  return <button type="button" className={`inline-flex h-8 items-center justify-center rounded-md border bg-white px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${cls}`} disabled={disabled} onClick={onClick}>{children}</button>;
+  const cls = tone === "success" ? "border-emerald-400/40 text-emerald-200 hover:bg-emerald-400/10" : tone === "danger" ? "border-red-400/40 text-red-200 hover:bg-red-400/10" : "border-slate-700 text-slate-200 hover:bg-slate-800";
+  return <button type="button" className={`inline-flex h-8 items-center justify-center rounded-md border bg-slate-950 px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${cls}`} disabled={disabled} onClick={onClick}>{children}</button>;
 }
 
 function PrimaryButton({ children, onClick, disabled }: Readonly<{ children: React.ReactNode; onClick?: () => void; disabled?: boolean }>) {
@@ -1186,32 +1186,32 @@ function PrimaryButton({ children, onClick, disabled }: Readonly<{ children: Rea
 }
 
 function TextInput({ label, value, onChange, required, minLength, type = "text", compact }: Readonly<{ label: string; value: string; onChange: (value: string) => void; required?: boolean; minLength?: number; type?: "date" | "email" | "number" | "password" | "text"; compact?: boolean }>) {
-  return <label className={`block font-medium text-slate-700 ${compact ? "text-xs" : "text-sm"}`}>{label}<input className={`${compact ? "mt-1 h-8" : "mt-1 h-10"} w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-emerald-500`} type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} minLength={minLength} /></label>;
+  return <label className={`block font-medium text-slate-300 ${compact ? "text-xs" : "text-sm"}`}>{label}<input className={`${compact ? "mt-1 h-8" : "mt-1 h-10"} w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-emerald-500`} type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} minLength={minLength} /></label>;
 }
 
 function SelectInput({ label, value, options, onChange, compact }: Readonly<{ label: string; value: string; options: readonly string[]; onChange: (value: string) => void; compact?: boolean }>) {
-  return <label className={`block font-medium text-slate-700 ${compact ? "text-xs" : "text-sm"}`}>{label}<select className={`${compact ? "mt-1 h-8" : "mt-1 h-10"} w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-emerald-500`} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{formatSelectOption(option)}</option>)}</select></label>;
+  return <label className={`block font-medium text-slate-300 ${compact ? "text-xs" : "text-sm"}`}>{label}<select className={`${compact ? "mt-1 h-8" : "mt-1 h-10"} w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none focus:border-emerald-500`} value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option} value={option}>{formatSelectOption(option)}</option>)}</select></label>;
 }
 
 function TextAreaInput({ label, value, onChange, tall }: Readonly<{ label: string; value: string; onChange: (value: string) => void; tall?: boolean }>) {
-  return <label className="block text-sm font-medium text-slate-700">{label}<textarea className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-950 outline-none focus:border-emerald-500" value={value} rows={tall ? 8 : 4} onChange={(event) => onChange(event.target.value)} /></label>;
+  return <label className="block text-sm font-medium text-slate-300">{label}<textarea className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100 outline-none focus:border-emerald-500" value={value} rows={tall ? 8 : 4} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function Toggle({ label, checked, onChange }: Readonly<{ label: string; checked: boolean; onChange: (checked: boolean) => void }>) {
-  return <button type="button" role="switch" aria-checked={checked} className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700" onClick={() => onChange(!checked)}><span>{label}</span><span className={`relative inline-flex h-5 w-9 items-center rounded-full ${checked ? "bg-emerald-500" : "bg-slate-300"}`}><span className={`size-4 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-4" : "translate-x-0.5"}`} /></span></button>;
+  return <button type="button" role="switch" aria-checked={checked} className="flex h-10 items-center justify-between gap-3 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-200" onClick={() => onChange(!checked)}><span>{label}</span><span className={`relative inline-flex h-5 w-9 items-center rounded-full ${checked ? "bg-emerald-500" : "bg-slate-600"}`}><span className={`size-4 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-4" : "translate-x-0.5"}`} /></span></button>;
 }
 
 function ConfigRow({ name, item }: Readonly<{ name: string; item: { configured: boolean; required?: string[]; value?: string } }>) {
-  return <div className="rounded-md border border-slate-200 p-3"><div className="flex items-center justify-between gap-3"><div className="font-semibold">{name}</div><StatusPill status={item.configured ? "ACTIVE" : "DISABLED"} /></div>{item.value ? <div className="mt-2 text-sm text-slate-600">{item.value}</div> : null}{item.required?.length ? <div className="mt-2 text-xs text-slate-500">Required: {item.required.join(", ")}</div> : null}</div>;
+  return <div className="rounded-md border border-slate-800 p-3"><div className="flex items-center justify-between gap-3"><div className="font-semibold">{name}</div><StatusPill status={item.configured ? "ACTIVE" : "DISABLED"} /></div>{item.value ? <div className="mt-2 text-sm text-slate-400">{item.value}</div> : null}{item.required?.length ? <div className="mt-2 text-xs text-slate-500">Required: {item.required.join(", ")}</div> : null}</div>;
 }
 
 function LogList({ logs }: Readonly<{ logs: AuditLogRecord[] }>) {
   if (logs.length === 0) return <EmptyState text="No audit logs found." />;
-  return <div className="divide-y divide-slate-100">{logs.map((log) => <div key={log.id} className="py-3 text-sm"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold">{formatSelectOption(log.action)}</div><div className="text-xs text-slate-500">{log.superAdmin.email} / {log.targetType ?? "system"} / {log.targetId ?? "-"}</div>{log.notes ? <div className="mt-1 text-slate-600">{log.notes}</div> : null}</div><div className="whitespace-nowrap text-xs text-slate-500">{formatDateTime(log.createdAt)}</div></div></div>)}</div>;
+  return <div className="divide-y divide-slate-800">{logs.map((log) => <div key={log.id} className="py-3 text-sm"><div className="flex items-start justify-between gap-3"><div><div className="font-semibold text-slate-100">{formatSelectOption(log.action)}</div><div className="text-xs text-slate-500">{log.superAdmin.email} / {log.targetType ?? "system"} / {log.targetId ?? "-"}</div>{log.notes ? <div className="mt-1 text-slate-400">{log.notes}</div> : null}</div><div className="whitespace-nowrap text-xs text-slate-500">{formatDateTime(log.createdAt)}</div></div></div>)}</div>;
 }
 
 function EmptyState({ text }: Readonly<{ text: string }>) {
-  return <div className="rounded-md border border-dashed border-slate-200 p-5 text-sm text-slate-500">{text}</div>;
+  return <div className="rounded-md border border-dashed border-slate-800 p-5 text-sm text-slate-500">{text}</div>;
 }
 
 function licenseFormFromShop(shop: ShopRecord): LicenseForm {

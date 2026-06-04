@@ -162,7 +162,7 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
 
       const buffer = await file.toBuffer();
       if (buffer.length > maxProductImageBytes) {
-        throw new InventoryError("Product image must be 5 MB or smaller", 400);
+        throw new InventoryError("Product image must be 350 KB or smaller. Recommended size is 800 x 800 JPG or WEBP.", 400);
       }
 
       const extension = extensionForContentType(contentType);
@@ -347,7 +347,7 @@ async function handleInventory<T>(reply: FastifyReply, handler: () => Promise<T>
   }
 }
 
-const maxProductImageBytes = 5 * 1024 * 1024;
+const maxProductImageBytes = 350 * 1024;
 const allowedProductImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function ensureProductImageManager(role: UserRole): void {

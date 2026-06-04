@@ -398,7 +398,7 @@ async function downloadSuggestedImage(sourceImageUrl: string): Promise<{ buffer:
 
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.length > maxSuggestedImageBytes) {
-    throw new InventoryError("Suggested image must be 5 MB or smaller", 400);
+    throw new InventoryError("Suggested image must be 350 KB or smaller", 400);
   }
 
   return { buffer, contentType };
@@ -431,4 +431,4 @@ function productImageViewUrl(productId: string): string {
   return `/api/inventory/products/${productId}/image`;
 }
 
-const maxSuggestedImageBytes = 5 * 1024 * 1024;
+const maxSuggestedImageBytes = 350 * 1024;

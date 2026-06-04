@@ -869,6 +869,9 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
   const [showSuggestions, setShowSuggestions] = useState(false);
   const gstEnabled = getStoredTenant()?.gstEnabled !== false;
   const imageSrc = product.imageUrl ? `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}` : null;
+  const stockQuantity = Number(product.currentStock);
+  const canSellOnline = product.ecommerceDisabled !== true && stockQuantity > 0;
+  const onlineStatus = product.ecommerceDisabled === true ? "Offline" : stockQuantity <= 0 ? "Out of stock" : "Online";
   const batchesQuery = useQuery({
     queryKey: ["product-batches", product.id],
     queryFn: () => createAuthenticatedApiClient().get<ProductBatch[]>(`/inventory/products/${product.id}/batches`),
@@ -1050,8 +1053,8 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <div className="truncate text-sm font-medium text-slate-950">{product.name}</div>
-              <span className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-semibold ${product.ecommerceDisabled === true ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"}`}>
-                {product.ecommerceDisabled === true ? "Offline" : "Online"}
+              <span className={`inline-flex h-5 items-center rounded px-1.5 text-[10px] font-semibold ${canSellOnline ? "bg-emerald-50 text-emerald-700" : stockQuantity <= 0 ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-500"}`}>
+                {onlineStatus}
               </span>
             </div>
             <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
@@ -1061,8 +1064,8 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
         {canManageProducts ? (
           <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-center">
             <SellOnlineSwitch
-              checked={product.ecommerceDisabled !== true}
-              disabled={false}
+              checked={canSellOnline}
+              disabled={stockQuantity <= 0}
               onChange={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
             />
             <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
