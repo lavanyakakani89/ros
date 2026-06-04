@@ -4,13 +4,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient, downloadApiFile, listAllProducts, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile, getCurrentVerticalConfig, listAllProducts, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
 import { useBillingStore } from "@/lib/billing-store";
 import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
-import { getStoredTenant, hasStoredAuthSession, storeAuthSession } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant, storeAuthSession, storeTenant, storeVerticalConfig } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatInvoiceWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 const PAYMENT_MODES = ["CASH", "UPI", "CARD", "CREDIT", "NETBANKING"] as const;
@@ -536,13 +536,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }
 
   async function ensureAuthenticatedSession(): Promise<boolean> {
-    if (hasStoredAuthSession()) {
+    if (getStoredAuthSession()?.user) {
       return true;
     }
 
     try {
-      const auth = await refreshAuthSession();
-      storeAuthSession(auth);
+      const current = await getCurrentVerticalConfig();
+      storeTenant(current.tenant);
+      storeVerticalConfig(current.config);
+      if (current.user) {
+        storeAuthSession({ user: current.user });
+      } else {
+        const auth = await refreshAuthSession();
+        storeAuthSession(auth);
+      }
       await queryClient.invalidateQueries({ queryKey: ["printer", "billing"] });
       return true;
     } catch {
@@ -941,12 +948,6 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         return;
       }
 
-      const hasSession = await ensureAuthenticatedSession();
-      if (!hasSession) {
-        notify("Session expired. Please sign in again before confirming this bill.", "red");
-        return;
-      }
-
       if (editingInvoice) {
         const updated = await createAuthenticatedApiClient().put<InvoiceMutationResult>(
           `/billing/invoices/${editingInvoice.id}`,
@@ -1250,12 +1251,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   function normalizedSplitEntries(): SplitEntry[] {
     return splitEntries
-      .map((entry) => ({
-        mode: entry.mode,
-        paymentMethodId: entry.paymentMethodId,
-        amount: roundMoney(entry.amount || 0),
-        referenceNumber: entry.referenceNumber,
-      }))
+      .map((entry) => {
+        const referenceNumber = entry.referenceNumber?.trim();
+        return {
+          mode: entry.mode,
+          paymentMethodId: entry.paymentMethodId,
+          amount: roundMoney(entry.amount || 0),
+          ...(referenceNumber ? { referenceNumber } : {}),
+        };
+      })
       .filter((entry) => entry.amount > 0);
   }
 
