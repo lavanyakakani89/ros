@@ -245,6 +245,13 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
       ensureProductImageManager(request.user.role);
       const params = productIdParamsSchema.parse(request.params);
       const input = imageSuggestionSearchSchema.parse(request.body ?? {});
+      if (!imageDiscovery.isConfigured()) {
+        const suggestions = await imageDiscovery.listSuggestions(request.tenant.id, params.id);
+        return {
+          configured: false,
+          suggestions,
+        };
+      }
       const suggestions = await imageDiscovery.searchSuggestions(request.tenant, params.id, input.limit);
       return {
         configured: true,

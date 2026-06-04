@@ -118,6 +118,8 @@ interface EcommerceOverview {
       theme: string;
       defaultHostname: string;
       paymentProvider: string | null;
+      tenantRazorpayKeyId?: string | null;
+      hasTenantRazorpaySecret?: boolean;
       deliveryCharge: string;
       freeDeliveryAbove: string;
     } | null;
@@ -441,6 +443,28 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
     await loadData();
   }
 
+  async function configureTenantRazorpay(shop: EcommerceOverview["shops"][number]) {
+    const keyId = window.prompt("Tenant Razorpay Key ID", shop.storefront?.tenantRazorpayKeyId ?? "");
+    if (!keyId?.trim()) {
+      return;
+    }
+
+    const existingSecret = shop.storefront?.hasTenantRazorpaySecret ? " Leave blank to keep existing secret." : "";
+    const keySecret = window.prompt(`Tenant Razorpay Key Secret.${existingSecret}`, "");
+    if (keySecret === null) {
+      return;
+    }
+
+    setError(null);
+    await apiPut(`/superadmin/ecommerce/shops/${shop.id}`, cleanPayload({
+      paymentProvider: "TENANT_RAZORPAY",
+      tenantRazorpayKeyId: keyId.trim(),
+      ...(keySecret.trim() ? { tenantRazorpayKeySecret: keySecret.trim() } : {}),
+    }));
+    setNotice(`Tenant Razorpay configured for ${shop.name}`);
+    await loadData();
+  }
+
   async function approveEcommerceRequest(approvalId: string) {
     setError(null);
     await apiPost(`/superadmin/ecommerce/approvals/${approvalId}/approve`, {});
@@ -575,6 +599,9 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                       <td className="px-4 py-3">
                         <span className={ecommerceStatusClass(shop.storefront?.status ?? "DISABLED")}>{shop.storefront?.status ?? "DISABLED"}</span>
                         <div className="mt-1 text-xs text-slate-500">{shop.storefront?.theme ?? "No theme"}</div>
+                        {shop.storefront?.paymentProvider === "TENANT_RAZORPAY" ? (
+                          <div className="mt-1 text-xs text-slate-500">{shop.storefront.hasTenantRazorpaySecret ? "Tenant Razorpay set" : "Tenant Razorpay missing secret"}</div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -611,6 +638,13 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             Disable
                           </button>
                           {shop.pendingApprovalCount > 0 ? <span className="rounded bg-amber-950 px-2 py-1 text-xs text-amber-200">{shop.pendingApprovalCount} request(s)</span> : null}
+                          <button
+                            className="h-8 rounded-md border border-blue-700 px-2 text-xs text-blue-200 disabled:opacity-40"
+                            disabled={!canManage}
+                            onClick={() => void configureTenantRazorpay(shop).catch((err: unknown) => setError(readError(err)))}
+                          >
+                            Tenant Razorpay
+                          </button>
                         </div>
                       </td>
                     </tr>

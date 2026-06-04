@@ -84,6 +84,11 @@ interface InvoiceListResponse {
   total: number;
 }
 
+interface RazorpayStatusResponse {
+  configured: boolean;
+  source: "tenant" | "platform" | null;
+}
+
 export function InvoiceHistory({
   surface = "embedded",
   onEdit,
@@ -128,6 +133,11 @@ export function InvoiceHistory({
   const whatsappTemplatesQuery = useQuery({
     queryKey: ["whatsapp-message-templates"],
     queryFn: fetchWhatsappMessageTemplates,
+    staleTime: 60_000,
+  });
+  const razorpayStatusQuery = useQuery({
+    queryKey: ["payments", "razorpay-status"],
+    queryFn: () => createAuthenticatedApiClient().get<RazorpayStatusResponse>("/payments/razorpay/status"),
     staleTime: 60_000,
   });
   const cancelInvoice = useMutation({
@@ -372,7 +382,7 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} canSendPaymentLinks={razorpayStatusQuery.data?.configured === true} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
@@ -513,6 +523,7 @@ function InvoiceDetailPanel({
   onEdit,
   onReturn,
   canCancel,
+  canSendPaymentLinks,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
@@ -522,6 +533,7 @@ function InvoiceDetailPanel({
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
   onReturn: (invoice: InvoiceRecord) => void;
   canCancel: boolean;
+  canSendPaymentLinks: boolean;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
   if (!invoice) {
@@ -598,7 +610,7 @@ function InvoiceDetailPanel({
               Send WhatsApp
             </button>
           ) : null}
-          {invoice.customer?.phone && Number(invoice.amountDue) > 0 && ["CONFIRMED", "PARTIAL"].includes(invoice.status) ? (
+          {canSendPaymentLinks && invoice.customer?.phone && Number(invoice.amountDue) > 0 && ["CONFIRMED", "PARTIAL"].includes(invoice.status) ? (
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-800" onClick={() => void onSendPaymentLink(invoice)}>
               <MessageCircle className="size-4" aria-hidden="true" />
               Send payment link

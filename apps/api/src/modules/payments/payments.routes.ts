@@ -16,6 +16,10 @@ export const paymentsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return handlePayments(reply, () => Promise.resolve(service.listPayments(request.tenant, query)));
   });
 
+  fastify.get("/api/payments/razorpay/status", async (request, reply) => {
+    return handlePayments(reply, () => service.getRazorpayStatus(request.tenant));
+  });
+
   fastify.post("/api/payments/razorpay/order", async (request, reply) => {
     const input = razorpayOrderSchema.parse(request.body);
     return handlePayments(reply, () => service.createRazorpayOrder(request.tenant, input));

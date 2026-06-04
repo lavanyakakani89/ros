@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
+import { StorefrontClient } from "@/components/store/storefront-client";
+
 export default async function HomePage() {
   const requestHeaders = headers();
   const host = requestHeaders.get("host")?.toLowerCase() ?? "";
   if (await isActiveStorefrontHost(host, requestHeaders)) {
-    redirect("/store");
+    return <StorefrontClient host={host} />;
   }
 
   redirect("/dashboard");
@@ -28,7 +30,7 @@ async function isActiveStorefrontHost(host: string, requestHeaders: ReturnType<t
 }
 
 function storefrontBootstrapUrl(host: string, requestHeaders: ReturnType<typeof headers>): string {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL;
+  const apiBase = process.env.SERVER_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
   const path = `/public/storefront/bootstrap?host=${encodeURIComponent(host)}`;
   if (apiBase?.startsWith("http://") || apiBase?.startsWith("https://")) {
     return `${apiBase}${path}`;

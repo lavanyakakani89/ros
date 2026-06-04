@@ -711,7 +711,7 @@ function ProductImageControls({
           {suggestionsQuery.isLoading ? <div className="mt-3 text-sm text-slate-500">Loading image suggestions...</div> : null}
           {suggestionsData && !suggestionsData.configured ? (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Google image search is not configured yet. Add the Custom Search API key and Search Engine ID in the API environment.
+              BizBil image discovery is not enabled on this server yet. This is platform setup, not a shop license.
             </div>
           ) : null}
           {!suggestionsQuery.isLoading && suggestionsData?.configured && suggestions.length === 0 ? (
@@ -846,6 +846,7 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
   const [editing, setEditing] = useState(false);
   const [showBatches, setShowBatches] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const gstEnabled = getStoredTenant()?.gstEnabled !== false;
   const imageSrc = product.imageUrl ? `${apiUrl(`/inventory/products/${product.id}/image`)}?v=${encodeURIComponent(product.imageUrl)}` : null;
   const batchesQuery = useQuery({
@@ -867,11 +868,44 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
     mutationFn: () => createAuthenticatedApiClient().delete<{ imageUrl: null }>(`/inventory/products/${product.id}/image`),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["products"] }),
   });
+  const suggestionsQueryKey = ["product-image-suggestions", product.id];
+  const suggestionsQuery = useQuery({
+    queryKey: suggestionsQueryKey,
+    queryFn: () => createAuthenticatedApiClient().get<ProductImageSuggestionsResponse>(`/inventory/products/${product.id}/image-suggestions`),
+    enabled: canManageProducts && showSuggestions,
+  });
+  const searchSuggestions = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post<ProductImageSuggestionsResponse>(`/inventory/products/${product.id}/image-suggestions/search`, { limit: 6 }),
+    onSuccess: (data) => {
+      setShowSuggestions(true);
+      queryClient.setQueryData(suggestionsQueryKey, data);
+    },
+  });
+  const applySuggestion = useMutation({
+    mutationFn: (suggestionId: string) => createAuthenticatedApiClient().post(`/inventory/products/${product.id}/image-suggestions/${suggestionId}/apply`, {}),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["products"] }),
+        queryClient.invalidateQueries({ queryKey: suggestionsQueryKey }),
+      ]);
+    },
+  });
+  const rejectSuggestion = useMutation({
+    mutationFn: (suggestionId: string) => createAuthenticatedApiClient().post(`/inventory/products/${product.id}/image-suggestions/${suggestionId}/reject`, {}),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: suggestionsQueryKey }),
+  });
+  const suggestionsData = suggestionsQuery.data ?? searchSuggestions.data;
+  const suggestions = suggestionsData?.suggestions ?? [];
 
   function handleImageInput(file: File | undefined) {
     if (file) {
       uploadImage.mutate(file);
     }
+  }
+
+  function findImages() {
+    setShowSuggestions(true);
+    searchSuggestions.mutate();
   }
 
   function handleEdit(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -991,7 +1025,7 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
   return (
     <article className="p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 gap-3">
+        <div className="flex min-w-0 flex-1 gap-3">
           <ProductImageThumb src={imageSrc} name={product.name} />
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1002,6 +1036,49 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
             </div>
             <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
             <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
+            {canManageProducts ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-border px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
+                    handleImageInput(event.target.files?.[0]);
+                    event.currentTarget.value = "";
+                  }} />
+                </label>
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                  disabled={searchSuggestions.isPending}
+                  onClick={findImages}
+                >
+                  <Sparkles className="size-3.5" aria-hidden="true" />
+                  {searchSuggestions.isPending ? "Finding..." : "Find images"}
+                </button>
+                {imageSrc ? (
+                  <button type="button" className="h-8 rounded-md border border-red-200 px-3 text-xs font-medium text-red-700 hover:bg-red-50" disabled={removeImage.isPending} onClick={() => removeImage.mutate()}>
+                    Remove image
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-pressed={product.ecommerceDisabled !== true}
+                  className={`h-8 rounded-md border px-3 text-xs font-semibold ${product.ecommerceDisabled === true ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+                  onClick={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
+                >
+                  {product.ecommerceDisabled === true ? "Sell online off" : "Sell online on"}
+                </button>
+                <button
+                  className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
+                  onClick={() => setShowHistory((value) => !value)}
+                >
+                  <History className="size-3.5" aria-hidden="true" />
+                  {showHistory ? "Hide history" : "Stock history"}
+                </button>
+                {uploadImage.error ?? removeImage.error ? <span className="text-xs text-red-700">{(uploadImage.error ?? removeImage.error)?.message}</span> : null}
+                {searchSuggestions.error ? <span className="text-xs text-red-700">{searchSuggestions.error.message}</span> : null}
+                {applySuggestion.error ? <span className="text-xs text-red-700">{applySuggestion.error.message}</span> : null}
+              </div>
+            ) : null}
           </div>
         </div>
         {canManageProducts ? (
@@ -1014,32 +1091,56 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
           </div>
         ) : null}
       </div>
-      {canManageProducts ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-border px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
-            {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
-              handleImageInput(event.target.files?.[0]);
-              event.currentTarget.value = "";
-            }} />
-          </label>
-          {imageSrc ? (
-            <button type="button" className="h-8 rounded-md border border-red-200 px-3 text-xs font-medium text-red-700 hover:bg-red-50" disabled={removeImage.isPending} onClick={() => removeImage.mutate()}>
-              Remove image
-            </button>
-          ) : null}
-          {uploadImage.error ?? removeImage.error ? <span className="text-xs text-red-700">{(uploadImage.error ?? removeImage.error)?.message}</span> : null}
+      {!canManageProducts ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
+            onClick={() => setShowHistory((value) => !value)}
+          >
+            <History className="size-3.5" aria-hidden="true" />
+            {showHistory ? "Hide stock history" : "Stock history"}
+          </button>
         </div>
       ) : null}
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
-          onClick={() => setShowHistory((value) => !value)}
-        >
-          <History className="size-3.5" aria-hidden="true" />
-          {showHistory ? "Hide stock history" : "Stock history"}
-        </button>
-      </div>
+      {showSuggestions ? (
+        <div className="mt-3 rounded-md border border-border bg-slate-50 p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                <ImageIcon className="size-4 text-emerald-700" aria-hidden="true" />
+                Image suggestions
+              </div>
+              <div className="mt-1 text-xs text-slate-500">Review the source before using a suggested product image.</div>
+            </div>
+            <button type="button" className="h-8 rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700" disabled={searchSuggestions.isPending} onClick={findImages}>
+              Refresh
+            </button>
+          </div>
+          {suggestionsQuery.isLoading ? <div className="mt-3 text-sm text-slate-500">Loading image suggestions...</div> : null}
+          {suggestionsData && !suggestionsData.configured ? (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              BizBil image discovery is not enabled on this server yet. This is platform setup, not a shop license.
+            </div>
+          ) : null}
+          {!suggestionsQuery.isLoading && suggestionsData?.configured && suggestions.length === 0 ? (
+            <div className="mt-3 text-sm text-slate-500">No image suggestions found for {product.name}.</div>
+          ) : null}
+          {suggestions.length > 0 ? (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {suggestions.map((suggestion) => (
+                <ProductImageSuggestionCard
+                  key={suggestion.id}
+                  suggestion={suggestion}
+                  applying={applySuggestion.isPending}
+                  rejecting={rejectSuggestion.isPending}
+                  onApply={() => applySuggestion.mutate(suggestion.id)}
+                  onReject={() => rejectSuggestion.mutate(suggestion.id)}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {showBatchTools ? (
         <div className="mt-3 space-y-3 rounded-md bg-slate-50 p-3">
           <button className="text-sm font-medium text-emerald-700" onClick={() => setShowBatches((value) => !value)}>{showBatches ? "Hide batches" : "View batches"}</button>

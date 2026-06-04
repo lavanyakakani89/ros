@@ -1,11 +1,12 @@
 import { createHmac } from "node:crypto";
 
-import { InvoiceStatus, PaymentMode, type Tenant, type UserRole } from "@prisma/client";
+import { InvoiceStatus, PaymentMode, StorefrontPaymentProvider, type Tenant, type UserRole } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import Razorpay from "razorpay";
 
 import { PaymentsRepository } from "./payments.repository.js";
 import type { PaymentListQuery, RazorpayOrderInput, RazorpayPaymentLinkInput, RazorpayVerifyInput, RecordPaymentInput } from "./payments.types.js";
+import { decryptStorefrontSecret } from "../storefront/storefront.credentials.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
 
@@ -42,6 +43,12 @@ interface RazorpayPaymentLinkResult {
   short_url: string;
   amount: number | string;
   expire_by?: number | string | undefined;
+}
+
+interface RazorpayConfig {
+  keyId: string;
+  keySecret: string;
+  source: "tenant" | "platform";
 }
 
 export class PaymentsError extends Error {
@@ -81,8 +88,16 @@ export class PaymentsService {
     return this.repository.listPayments(tenant.id, query);
   }
 
+  async getRazorpayStatus(tenant: Tenant) {
+    const config = await this.resolveRazorpayConfig(tenant);
+    return {
+      configured: Boolean(config),
+      source: config?.source ?? null,
+    };
+  }
+
   async createRazorpayOrder(tenant: Tenant, input: RazorpayOrderInput) {
-    const razorpay = this.createRazorpayClient();
+    const razorpay = await this.createRazorpayClient(tenant);
 
     return razorpay.orders.create({
       amount: Math.round(input.amount * 100),
@@ -120,7 +135,7 @@ export class PaymentsService {
     }
 
     const customer = requestedCustomer ?? invoice.customer;
-    const razorpay = this.createRazorpayClient();
+    const razorpay = await this.createRazorpayClient(tenant);
     const linkCustomer: RazorpayPaymentLinkPayload["customer"] = {
       name: normalizeRazorpayCustomerName(customer?.name ?? tenant.name),
     };
@@ -166,7 +181,7 @@ export class PaymentsService {
       throw new PaymentsError("Invoice customer phone number is required for WhatsApp sharing", 400);
     }
 
-    const link = await fetchPaymentLink(this.createRazorpayClient(), linkId);
+    const link = await fetchPaymentLink(await this.createRazorpayClient(tenant), linkId);
     const amount = Number(link.amount) / 100;
     const message = await renderWhatsappMessageTemplate(this.fastify, tenant.id, "paymentLink", {
       customerName: invoice.customer.name,
@@ -267,19 +282,54 @@ export class PaymentsService {
     };
   }
 
-  private createRazorpayClient() {
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
-    if (!isConfiguredRazorpaySecret(keyId) || !isConfiguredRazorpaySecret(keySecret)) {
+  private async createRazorpayClient(tenant?: Tenant) {
+    const config = tenant ? await this.resolveRazorpayConfig(tenant) : platformRazorpayConfig();
+    if (!config) {
       throw new PaymentsError("Razorpay credentials are not configured. Configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in the API server environment (.env.testing on test, .env.production on production).", 501);
     }
 
     return new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
+      key_id: config.keyId,
+      key_secret: config.keySecret,
     });
   }
+
+  private async resolveRazorpayConfig(tenant: Tenant): Promise<RazorpayConfig | null> {
+    const settings = await this.fastify.prisma.storefrontSettings.findUnique({
+      where: {
+        tenantId: tenant.id,
+      },
+    });
+
+    if (settings?.paymentProvider === StorefrontPaymentProvider.TENANT_RAZORPAY) {
+      const keyId = settings.tenantRazorpayKeyId;
+      const keySecret = decryptStorefrontSecret(settings.tenantRazorpayKeySecretCiphertext);
+      if (keyId && keySecret && isConfiguredRazorpaySecret(keyId) && isConfiguredRazorpaySecret(keySecret)) {
+        return {
+          keyId,
+          keySecret,
+          source: "tenant",
+        };
+      }
+    }
+
+    return platformRazorpayConfig();
+  }
+}
+
+function platformRazorpayConfig(): RazorpayConfig | null {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!isConfiguredRazorpaySecret(keyId) || !isConfiguredRazorpaySecret(keySecret)) {
+    return null;
+  }
+
+  return {
+    keyId,
+    keySecret,
+    source: "platform",
+  };
 }
 
 function createPaymentLink(client: RazorpayClient, payload: RazorpayPaymentLinkPayload): Promise<RazorpayPaymentLinkResult> {
