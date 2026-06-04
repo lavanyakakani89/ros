@@ -684,7 +684,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               <p className={`mt-1 text-sm ${theme.muted}`}>Try a different search or category.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-3">
               {products.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -1013,7 +1013,7 @@ function ProductCard({
   const saving = product.mrp > product.sellingPrice ? product.mrp - product.sellingPrice : 0;
 
   return (
-    <article className={`group overflow-hidden rounded-md border transition hover:border-emerald-200 hover:shadow-lg hover:shadow-slate-200/70 ${theme.panel}`}>
+    <article className={`group min-w-0 overflow-hidden rounded-md border transition hover:border-emerald-200 hover:shadow-lg hover:shadow-slate-200/70 ${theme.panel}`}>
       <ProductVisual product={product} theme={theme} tenantName={tenantName} />
       <div className="p-3 sm:p-4">
         <div className={`truncate text-[11px] font-bold uppercase ${theme.accentText}`}>{product.categoryName}</div>
@@ -1309,7 +1309,7 @@ function OrderComplete({ order, theme }: Readonly<{ order: StorefrontOrder; them
 
 function ProductSkeleton({ theme }: Readonly<{ theme: StoreTheme }>) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-3">
       {Array.from({ length: 6 }).map((_, index) => (
         <div className={`overflow-hidden rounded-md border ${theme.panel}`} key={index}>
           <div className={`aspect-square animate-pulse ${theme.skeleton}`} />
@@ -1498,7 +1498,7 @@ function inputClass(theme: StoreTheme, extra: string): string {
 }
 
 function categoryClass(active: boolean, theme: StoreTheme): string {
-  return `h-10 shrink-0 rounded-md border px-3 text-sm font-semibold ${
+  return `h-10 shrink-0 self-start rounded-md border px-3 text-sm font-semibold ${
     active ? `border-[var(--store-primary)] ${theme.primaryBg} text-white` : theme.outline
   }`;
 }
