@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { SyntheticEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
@@ -508,26 +508,26 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
   const shopSlugExists = normalizedShopSlug !== "" && shops.some((shop) => shop.slug === normalizedShopSlug);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6">
+    <main className="min-h-screen bg-slate-50 text-slate-950">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="flex size-9 items-center justify-center overflow-hidden rounded-md bg-white">
               <img src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" className="h-full w-full object-contain" />
             </div>
-            <div className="text-sm text-slate-400">
+            <div className="text-sm text-slate-500">
               <img src="/bizbil-landing/icons/bizbil-wordmark.png" alt="BizBil" className="h-5 w-auto object-contain" />
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-slate-500">
                 {admin.name} | {admin.role}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm" onClick={() => void loadData()}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm" onClick={() => void loadData()}>
               <RefreshCw className="size-4" aria-hidden="true" />
               Refresh
             </button>
-            <button className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-800 px-3 text-sm" onClick={() => void logout()}>
+            <button className="inline-flex h-9 items-center gap-2 rounded-md bg-slate-100 px-3 text-sm" onClick={() => void logout()}>
               <LogOut className="size-4" aria-hidden="true" />
               Logout
             </button>
@@ -536,12 +536,12 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
       </header>
 
       <div className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:px-6">
-        {notice ? <div className="rounded-md border border-emerald-800 bg-emerald-950 px-4 py-3 text-sm text-emerald-100">{notice}</div> : null}
-        {error ? <div className="rounded-md border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-100">{error}</div> : null}
+        {notice ? <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div> : null}
+        {error ? <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           {metricItems(metrics).map((item) => (
-            <div key={item.label} className="rounded-md border border-slate-800 bg-slate-900 p-4">
+            <div key={item.label} className="rounded-md border border-slate-200 bg-white p-4">
               <div className="text-xs font-medium uppercase text-slate-500">{item.label}</div>
               <div className="mt-2 text-2xl font-semibold">{loading ? "-" : item.value}</div>
             </div>
@@ -549,20 +549,20 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
-          <div className="rounded-md border border-slate-800 bg-slate-900">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+          <div className="rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
               <div>
                 <div className="flex items-center gap-2 font-semibold">
                   <ShoppingBag className="size-4 text-emerald-300" aria-hidden="true" />
                   Ecommerce Platform
                 </div>
-                <div className="text-sm text-slate-400">
+                <div className="text-sm text-slate-500">
                   {ecommerce?.metrics.active ?? 0} active storefronts / {ecommerce?.metrics.pendingApprovals ?? 0} pending approvals
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <input
-                  className="h-9 w-28 rounded-md border border-slate-700 bg-slate-950 px-2 text-sm text-white"
+                  className="h-9 w-28 rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-950"
                   type="number"
                   value={ecommercePrice}
                   onChange={(event) => setEcommercePrice(event.target.value)}
@@ -589,11 +589,11 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-slate-100">
                   {(ecommerce?.shops ?? []).slice(0, 12).map((shop) => (
                     <tr key={shop.id}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-white">{shop.name}</div>
+                        <div className="font-medium text-slate-950">{shop.name}</div>
                         <div className="text-xs text-slate-500">{shop.slug}</div>
                       </td>
                       <td className="px-4 py-3">
@@ -617,29 +617,29 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button
-                            className="h-8 rounded-md border border-emerald-700 px-2 text-xs text-emerald-200 disabled:opacity-40"
+                            className="h-8 rounded-md border border-emerald-200 px-2 text-xs text-emerald-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void updateEcommerceStatus(shop.id, "ACTIVE").catch((err: unknown) => setError(readError(err)))}
                           >
                             Activate
                           </button>
                           <button
-                            className="h-8 rounded-md border border-amber-700 px-2 text-xs text-amber-200 disabled:opacity-40"
+                            className="h-8 rounded-md border border-amber-200 px-2 text-xs text-amber-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void updateEcommerceStatus(shop.id, "SUSPENDED").catch((err: unknown) => setError(readError(err)))}
                           >
                             Suspend
                           </button>
                           <button
-                            className="h-8 rounded-md border border-slate-700 px-2 text-xs text-slate-200 disabled:opacity-40"
+                            className="h-8 rounded-md border border-slate-200 px-2 text-xs text-slate-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void updateEcommerceStatus(shop.id, "DISABLED").catch((err: unknown) => setError(readError(err)))}
                           >
                             Disable
                           </button>
-                          {shop.pendingApprovalCount > 0 ? <span className="rounded bg-amber-950 px-2 py-1 text-xs text-amber-200">{shop.pendingApprovalCount} request(s)</span> : null}
+                          {shop.pendingApprovalCount > 0 ? <span className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">{shop.pendingApprovalCount} request(s)</span> : null}
                           <button
-                            className="h-8 rounded-md border border-blue-700 px-2 text-xs text-blue-200 disabled:opacity-40"
+                            className="h-8 rounded-md border border-blue-200 px-2 text-xs text-blue-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void configureTenantRazorpay(shop).catch((err: unknown) => setError(readError(err)))}
                           >
@@ -654,12 +654,12 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
             </div>
           </div>
 
-          <div className="rounded-md border border-slate-800 bg-slate-900">
-            <div className="border-b border-slate-800 px-4 py-3">
+          <div className="rounded-md border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3">
               <div className="font-semibold">Ecommerce Approvals</div>
-              <div className="text-sm text-slate-400">Enablement, domains, payments, themes, and settings</div>
+              <div className="text-sm text-slate-500">Enablement, domains, payments, themes, and settings</div>
             </div>
-            <div className="divide-y divide-slate-800">
+            <div className="divide-y divide-slate-100">
               {(ecommerce?.approvals ?? []).length === 0 ? (
                 <div className="px-4 py-5 text-sm text-slate-500">No pending ecommerce requests.</div>
               ) : (
@@ -667,7 +667,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                   <div className="px-4 py-3 text-sm" key={approval.id}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="font-medium text-white">{approval.tenant.name}</div>
+                        <div className="font-medium text-slate-950">{approval.tenant.name}</div>
                         <div className="text-xs text-slate-500">{formatSelectOption(approval.type)} / {approval.tenant.slug}</div>
                       </div>
                       <div className="flex gap-2">
@@ -679,7 +679,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                           Approve
                         </button>
                         <button
-                          className="h-8 rounded-md border border-red-700 px-2 text-xs text-red-200 disabled:opacity-40"
+                          className="h-8 rounded-md border border-red-200 px-2 text-xs text-red-700 disabled:opacity-40"
                           disabled={!canManage}
                           onClick={() => void rejectEcommerceRequest(approval.id).catch((err: unknown) => setError(readError(err)))}
                         >
@@ -687,7 +687,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                         </button>
                       </div>
                     </div>
-                    {approval.notes ? <div className="mt-2 text-xs text-slate-400">{approval.notes}</div> : null}
+                    {approval.notes ? <div className="mt-2 text-xs text-slate-500">{approval.notes}</div> : null}
                   </div>
                 ))
               )}
@@ -696,11 +696,11 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-md border border-slate-800 bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+          <div className="rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
                 <div className="font-semibold">Shops</div>
-                <div className="text-sm text-slate-400">License and access status</div>
+                <div className="text-sm text-slate-500">License and access status</div>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -715,11 +715,11 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800">
+                <tbody className="divide-y divide-slate-100">
                   {shops.map((shop) => (
                     <tr key={shop.id}>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-white">{shop.name}</div>
+                        <div className="font-medium text-slate-950">{shop.name}</div>
                         <div className="text-xs text-slate-500">{shop.slug}</div>
                       </td>
                       <td className="px-4 py-3">{shop.vertical}</td>
@@ -730,13 +730,13 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                         <div>{shop.license?.plan ?? "No license"}</div>
                         <div className="text-xs text-slate-500">{shop.license ? formatDate(shop.license.expiryDate) : "-"}</div>
                       </td>
-                      <td className="px-4 py-3 text-slate-300">
+                      <td className="px-4 py-3 text-slate-700">
                         {(shop._count?.products ?? 0).toString()} products / {(shop._count?.invoices ?? 0).toString()} bills
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-md border border-violet-700 px-2 text-xs text-violet-200 disabled:opacity-40"
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-violet-200 px-2 text-xs text-violet-700 disabled:opacity-40"
                             disabled={shop.status === "SUSPENDED"}
                             onClick={() => openImpersonationDialog(shop)}
                           >
@@ -744,7 +744,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             View as shop
                           </button>
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-700 px-2 text-xs text-amber-200 disabled:opacity-40"
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-200 px-2 text-xs text-amber-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void changeShopStatus(shop, "warning").catch((err: unknown) => setError(readError(err)))}
                           >
@@ -752,7 +752,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             Warn
                           </button>
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-md border border-red-700 px-2 text-xs text-red-200 disabled:opacity-40"
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-red-200 px-2 text-xs text-red-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void changeShopStatus(shop, "suspend").catch((err: unknown) => setError(readError(err)))}
                           >
@@ -760,7 +760,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             Suspend
                           </button>
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-700 px-2 text-xs text-emerald-200 disabled:opacity-40"
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 px-2 text-xs text-emerald-700 disabled:opacity-40"
                             disabled={!canManage}
                             onClick={() => void changeShopStatus(shop, "reactivate").catch((err: unknown) => setError(readError(err)))}
                           >
@@ -768,7 +768,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                             Active
                           </button>
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-md border border-sky-700 px-2 text-xs text-sky-200 disabled:opacity-40"
+                            className="inline-flex h-8 items-center gap-1 rounded-md border border-sky-200 px-2 text-xs text-sky-700 disabled:opacity-40"
                             disabled={!canManage || !templateForm.id}
                             onClick={() => void pushSelectedTemplate(shop).catch((err: unknown) => setError(readError(err)))}
                           >
@@ -784,7 +784,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
             </div>
           </div>
 
-          <form className="rounded-md border border-slate-800 bg-slate-900 p-4" onSubmit={onCreateShop}>
+          <form className="rounded-md border border-slate-200 bg-white p-4" onSubmit={onCreateShop}>
             <div className="mb-4 flex items-center gap-2 font-semibold">
               <PlusCircle className="size-4" aria-hidden="true" />
               Create Shop
@@ -809,33 +809,33 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
           </form>
         </section>
 
-        <section className="rounded-md border border-slate-800 bg-slate-900">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+        <section className="rounded-md border border-slate-200 bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <div>
               <div className="font-semibold">Active Support Sessions</div>
-              <div className="text-sm text-slate-400">Who is currently viewing a shop through support impersonation</div>
+              <div className="text-sm text-slate-500">Who is currently viewing a shop through support impersonation</div>
             </div>
-            <button className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-700 px-3 text-xs" onClick={() => void loadData()}>
+            <button className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs" onClick={() => void loadData()}>
               <RefreshCw className="size-3" aria-hidden="true" />
               Refresh
             </button>
           </div>
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-slate-100">
             {impersonationSessions.length === 0 ? (
               <div className="px-4 py-5 text-sm text-slate-500">No active support sessions.</div>
             ) : (
               impersonationSessions.map((session) => (
                 <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
                   <div>
-                    <div className="font-medium text-white">{session.tenant.name}</div>
+                    <div className="font-medium text-slate-950">{session.tenant.name}</div>
                     <div className="text-xs text-slate-500">
                       {session.superAdmin.email} | {session.accessLevel} | expires {formatDateTime(session.expiresAt)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-slate-400">{session.actionsCount} writes</span>
+                    <span className="text-xs text-slate-500">{session.actionsCount} writes</span>
                     <button
-                      className="inline-flex h-8 items-center gap-1 rounded-md border border-red-700 px-2 text-xs text-red-200 disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-md border border-red-200 px-2 text-xs text-red-700 disabled:opacity-40"
                       disabled={!canManage}
                       onClick={() => void forceEndImpersonation(session).catch((err: unknown) => setError(readError(err)))}
                     >
@@ -850,16 +850,16 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1fr_0.8fr]">
-          <div className="rounded-md border border-slate-800 bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+          <div className="rounded-md border border-slate-200 bg-white">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
                 <div className="font-semibold">Invoice Templates</div>
-                <div className="text-sm text-slate-400">System defaults for shop cloning and fallback selection</div>
+                <div className="text-sm text-slate-500">System defaults for shop cloning and fallback selection</div>
               </div>
             </div>
-            <div className="divide-y divide-slate-800">
+            <div className="divide-y divide-slate-100">
               {templates.map((template) => (
-                <button key={template.id} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-slate-800" onClick={() => selectTemplate(template)}>
+                <button key={template.id} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-slate-100" onClick={() => selectTemplate(template)}>
                   <div>
                     <div className="flex items-center gap-2 font-medium">
                       <FileText className="size-4 text-sky-300" aria-hidden="true" />
@@ -867,7 +867,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                     </div>
                     <div className="text-slate-500">{template.description ?? "No description"}</div>
                   </div>
-                  <div className="text-right text-xs text-slate-400">
+                  <div className="text-right text-xs text-slate-500">
                     <div>{template.paperSize}</div>
                     <div>{template.renderType} | v{template.version}</div>
                   </div>
@@ -876,7 +876,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
             </div>
           </div>
 
-          <form className="rounded-md border border-slate-800 bg-slate-900 p-4" onSubmit={onSaveTemplate}>
+          <form className="rounded-md border border-slate-200 bg-white p-4" onSubmit={onSaveTemplate}>
             <div className="mb-4 flex items-center gap-2 font-semibold">
               <Save className="size-4" aria-hidden="true" />
               {templateForm.id ? "Edit System Template" : "Create System Template"}
@@ -894,7 +894,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
               <button className="h-10 flex-1 rounded-md bg-sky-400 text-sm font-semibold text-slate-950 disabled:opacity-40" type="submit" disabled={!canManage}>
                 Save template
               </button>
-              <button className="h-10 rounded-md border border-slate-700 px-3 text-sm" type="button" onClick={() => setTemplateForm(emptyTemplateForm)}>
+              <button className="h-10 rounded-md border border-slate-200 px-3 text-sm" type="button" onClick={() => setTemplateForm(emptyTemplateForm)}>
                 Clear
               </button>
             </div>
@@ -902,9 +902,9 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
         </section>
 
         <section className="grid gap-5 lg:grid-cols-[1fr_0.7fr]">
-          <div className="rounded-md border border-slate-800 bg-slate-900">
-            <div className="border-b border-slate-800 px-4 py-3 font-semibold">Super Admins</div>
-            <div className="divide-y divide-slate-800">
+          <div className="rounded-md border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-4 py-3 font-semibold">Super Admins</div>
+            <div className="divide-y divide-slate-100">
               {admins.map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
                   <div>
@@ -920,7 +920,7 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
             </div>
           </div>
 
-          <form className="rounded-md border border-slate-800 bg-slate-900 p-4" onSubmit={onCreateAdmin}>
+          <form className="rounded-md border border-slate-200 bg-white p-4" onSubmit={onCreateAdmin}>
             <div className="mb-4 font-semibold">Create Super Admin</div>
             <div className="grid gap-3">
               <TextInput label="Name" value={adminForm.name} onChange={(value) => updateAdminField("name", value)} required />
@@ -935,16 +935,16 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
         </section>
       </div>
       {impersonationTarget ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/80 p-4">
-          <div className="w-full max-w-lg rounded-md border border-slate-700 bg-slate-900 p-5 shadow-xl">
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-lg rounded-md border border-slate-200 bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-lg font-semibold">View as shop</div>
-                <div className="text-sm text-slate-400">
+                <div className="text-sm text-slate-500">
                   Start a two-hour support session for {impersonationTarget.name}. No shop password is used.
                 </div>
               </div>
-              <button className="rounded-md border border-slate-700 px-2 py-1 text-xs" onClick={() => setImpersonationTarget(null)}>
+              <button className="rounded-md border border-slate-200 px-2 py-1 text-xs" onClick={() => setImpersonationTarget(null)}>
                 Close
               </button>
             </div>
@@ -960,12 +960,12 @@ export function SuperAdminPanel({ admin }: Readonly<{ admin: SuperAdminIdentity 
                 value={impersonationReason}
                 onChange={setImpersonationReason}
               />
-              <div className="rounded-md border border-amber-800 bg-amber-950 px-3 py-2 text-xs text-amber-100">
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 Read-only mode blocks all shop write actions. Write mode still blocks passwords, users, tenant GST/vertical, and lifecycle settings.
               </div>
             </div>
             <div className="mt-5 flex justify-end gap-2">
-              <button className="h-9 rounded-md border border-slate-700 px-3 text-sm" onClick={() => setImpersonationTarget(null)}>
+              <button className="h-9 rounded-md border border-slate-200 px-3 text-sm" onClick={() => setImpersonationTarget(null)}>
                 Cancel
               </button>
               <button
@@ -997,29 +997,29 @@ function metricItems(metrics: DashboardMetrics | null) {
 function statusClass(status: ShopRecord["status"]): string {
   const base = "inline-flex rounded-md px-2 py-1 text-xs font-semibold";
   if (status === "ACTIVE") {
-    return `${base} bg-emerald-950 text-emerald-200`;
+    return `${base} bg-emerald-50 text-emerald-700`;
   }
 
   if (status === "WARNING") {
-    return `${base} bg-amber-950 text-amber-200`;
+    return `${base} bg-amber-50 text-amber-700`;
   }
 
-  return `${base} bg-red-950 text-red-200`;
+  return `${base} bg-red-50 text-red-700`;
 }
 
 function ecommerceStatusClass(status: string): string {
   const base = "inline-flex rounded-md px-2 py-1 text-xs font-semibold";
   if (status === "ACTIVE") {
-    return `${base} bg-emerald-950 text-emerald-200`;
+    return `${base} bg-emerald-50 text-emerald-700`;
   }
   if (status === "REQUESTED") {
-    return `${base} bg-amber-950 text-amber-200`;
+    return `${base} bg-amber-50 text-amber-700`;
   }
   if (status === "SUSPENDED") {
-    return `${base} bg-red-950 text-red-200`;
+    return `${base} bg-red-50 text-red-700`;
   }
 
-  return `${base} bg-slate-800 text-slate-300`;
+  return `${base} bg-slate-100 text-slate-700`;
 }
 
 function validateShopForm(form: CreateShopForm): string | null {
@@ -1070,10 +1070,10 @@ function TextInput({
   type?: "email" | "number" | "password" | "text";
 }>) {
   return (
-    <label className="block text-sm font-medium text-slate-300">
+    <label className="block text-sm font-medium text-slate-700">
       {label}
       <input
-        className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-emerald-500"
+        className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-emerald-500"
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -1096,10 +1096,10 @@ function SelectInput({
   onChange: (value: string) => void;
 }>) {
   return (
-    <label className="block text-sm font-medium text-slate-300">
+    <label className="block text-sm font-medium text-slate-700">
       {label}
       <select
-        className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-white outline-none focus:border-emerald-500"
+        className="mt-1 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-emerald-500"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -1133,10 +1133,10 @@ function TextAreaInput({
   tall?: boolean;
 }>) {
   return (
-    <label className="block text-sm font-medium text-slate-300">
+    <label className="block text-sm font-medium text-slate-700">
       {label}
       <textarea
-        className="mt-1 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white outline-none focus:border-emerald-500"
+        className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-950 outline-none focus:border-emerald-500"
         value={value}
         rows={tall ? 8 : 4}
         onChange={(event) => onChange(event.target.value)}

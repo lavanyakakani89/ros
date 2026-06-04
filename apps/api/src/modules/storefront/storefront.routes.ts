@@ -792,9 +792,6 @@ async function listCategories(fastify: FastifyInstance, tenantId: string) {
           tenantId,
           isActive: true,
           ecommerceDisabled: false,
-          currentStock: {
-            gt: 0,
-          },
         },
       },
     },
@@ -821,9 +818,6 @@ async function listProducts(
       tenantId,
       isActive: true,
       ecommerceDisabled: false,
-      currentStock: {
-        gt: 0,
-      },
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.search
         ? {

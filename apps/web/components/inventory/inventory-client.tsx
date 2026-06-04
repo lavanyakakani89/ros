@@ -841,6 +841,28 @@ function safeHost(value: string): string {
   }
 }
 
+function SellOnlineSwitch({ checked, disabled, onChange }: Readonly<{ checked: boolean; disabled: boolean; onChange: () => void }>) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={checked ? "Turn off online selling for this product" : "Turn on online selling for this product"}
+      title={checked ? "Sell online on" : "Sell online off"}
+      disabled={disabled}
+      onClick={onChange}
+      className={`inline-flex h-9 w-14 items-center rounded-full border p-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? "border-emerald-500 bg-emerald-500" : "border-slate-300 bg-slate-200"
+      }`}
+    >
+      <span
+        className={`size-6 rounded-full bg-white shadow-sm transition ${checked ? "translate-x-5" : "translate-x-0"}`}
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDelete, onBatch }: Readonly<{ product: ProductRecord; showBatchTools: boolean; canManageProducts: boolean; onUpdate: (payload: object) => void; onDelete: () => void; onBatch: (payload: object) => void }>) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -1024,8 +1046,8 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
 
   return (
     <article className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 gap-3">
+      <div className="grid items-center gap-3 lg:grid-cols-[minmax(280px,1fr)_auto_auto]">
+        <div className="flex min-w-0 gap-3">
           <ProductImageThumb src={imageSrc} name={product.name} />
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1036,53 +1058,50 @@ function ProductRow({ product, showBatchTools, canManageProducts, onUpdate, onDe
             </div>
             <div className="text-xs text-slate-500">{product.unit}{gstEnabled ? ` | GST ${String(product.gstRate)}%` : ""}{product.sku ? ` | SKU ${product.sku}` : ""}</div>
             <div className="mt-1 text-xs text-slate-500">Stock {Number(product.currentStock)} | Reorder {product.reorderLevel ?? "not set"}{product.rack ? ` | Rack ${product.rack}` : ""}</div>
-            {canManageProducts ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-border px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                  {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
-                    handleImageInput(event.target.files?.[0]);
-                    event.currentTarget.value = "";
-                  }} />
-                </label>
-                <button
-                  type="button"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                  disabled={searchSuggestions.isPending}
-                  onClick={findImages}
-                >
-                  <Sparkles className="size-3.5" aria-hidden="true" />
-                  {searchSuggestions.isPending ? "Finding..." : "Find images"}
-                </button>
-                {imageSrc ? (
-                  <button type="button" className="h-8 rounded-md border border-red-200 px-3 text-xs font-medium text-red-700 hover:bg-red-50" disabled={removeImage.isPending} onClick={() => removeImage.mutate()}>
-                    Remove image
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  aria-pressed={product.ecommerceDisabled !== true}
-                  className={`h-8 rounded-md border px-3 text-xs font-semibold ${product.ecommerceDisabled === true ? "border-slate-200 text-slate-600 hover:bg-slate-50" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
-                  onClick={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
-                >
-                  {product.ecommerceDisabled === true ? "Sell online off" : "Sell online on"}
-                </button>
-                <button
-                  className="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-slate-700"
-                  onClick={() => setShowHistory((value) => !value)}
-                >
-                  <History className="size-3.5" aria-hidden="true" />
-                  {showHistory ? "Hide history" : "Stock history"}
-                </button>
-                {uploadImage.error ?? removeImage.error ? <span className="text-xs text-red-700">{(uploadImage.error ?? removeImage.error)?.message}</span> : null}
-                {searchSuggestions.error ? <span className="text-xs text-red-700">{searchSuggestions.error.message}</span> : null}
-                {applySuggestion.error ? <span className="text-xs text-red-700">{applySuggestion.error.message}</span> : null}
-              </div>
-            ) : null}
           </div>
         </div>
         {canManageProducts ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-center">
+            <label className="inline-flex h-9 cursor-pointer items-center rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50">
+              {uploadImage.isPending ? "Uploading..." : imageSrc ? "Change image" : "Upload image"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => {
+                handleImageInput(event.target.files?.[0]);
+                event.currentTarget.value = "";
+              }} />
+            </label>
+            <button
+              type="button"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-emerald-200 bg-white px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              disabled={searchSuggestions.isPending}
+              onClick={findImages}
+            >
+              <Sparkles className="size-3.5" aria-hidden="true" />
+              {searchSuggestions.isPending ? "Finding..." : "Find images"}
+            </button>
+            {imageSrc ? (
+              <button type="button" className="h-9 rounded-md border border-red-200 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50" disabled={removeImage.isPending} onClick={() => removeImage.mutate()}>
+                Remove image
+              </button>
+            ) : null}
+            <SellOnlineSwitch
+              checked={product.ecommerceDisabled !== true}
+              disabled={false}
+              onChange={() => onUpdate({ ecommerceDisabled: product.ecommerceDisabled !== true })}
+            />
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              onClick={() => setShowHistory((value) => !value)}
+            >
+              <History className="size-3.5" aria-hidden="true" />
+              {showHistory ? "Hide history" : "Stock history"}
+            </button>
+            {uploadImage.error ?? removeImage.error ? <span className="basis-full text-xs text-red-700">{(uploadImage.error ?? removeImage.error)?.message}</span> : null}
+            {searchSuggestions.error ? <span className="basis-full text-xs text-red-700">{searchSuggestions.error.message}</span> : null}
+            {applySuggestion.error ? <span className="basis-full text-xs text-red-700">{applySuggestion.error.message}</span> : null}
+          </div>
+        ) : null}
+        {canManageProducts ? (
+          <div className="flex justify-start gap-2 lg:justify-end">
             <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
             <button className="inline-flex h-9 items-center gap-2 rounded-md border border-red-200 px-3 text-sm text-red-700" onClick={onDelete}>
               <Trash2 className="size-4" aria-hidden="true" />

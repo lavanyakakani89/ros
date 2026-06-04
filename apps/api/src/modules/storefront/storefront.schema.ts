@@ -18,7 +18,7 @@ export const storefrontCatalogQuerySchema = z.object({
   host: z.string().trim().min(1).max(255).optional(),
   search: z.string().trim().min(1).max(80).optional(),
   categoryId: z.string().trim().min(1).optional(),
-  limit: z.coerce.number().int().positive().max(120).default(80),
+  limit: z.coerce.number().int().positive().max(1000).default(1000),
 });
 
 export const storefrontCouponSchema = z.object({
