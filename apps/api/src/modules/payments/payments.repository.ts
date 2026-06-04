@@ -84,6 +84,7 @@ export class PaymentsRepository {
           amount: input.amount,
           paymentMethodId: paymentMethod.id,
           mode: input.mode ?? legacyMode(paymentMethod.type),
+          createdBy,
           cashierId: createdBy,
           ...(input.referenceNumber ? { referenceNumber: input.referenceNumber } : {}),
           ...(input.razorpayId ? { razorpayId: input.razorpayId } : {}),

@@ -1490,6 +1490,7 @@ async function recordStorefrontPayment(
         amount: paymentAmount,
         paymentMethodId: paymentMethod.id,
         mode: PaymentMode.UPI,
+        createdBy: "storefront",
         razorpayId: razorpayPaymentId,
         referenceNumber: razorpayPaymentId,
       },

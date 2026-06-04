@@ -912,6 +912,7 @@ model Payment {
   mode               PaymentMode?
   referenceNumber    String?       @map("reference_number") @db.VarChar(128)
   razorpayId         String?       @map("razorpay_id")
+  createdBy          String        @map("created_by")
   cashierId          String?       @map("cashier_id")
   cashier            User?         @relation("PaymentCashier", fields: [cashierId], references: [id], onDelete: SetNull)
   recordedAt         DateTime      @default(now()) @map("recorded_at")
