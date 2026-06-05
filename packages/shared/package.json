@@ -1,6 +1,7 @@
 {
   "name": "@retailos/shared",
   "version": "1.0.0",
+  "type": "module",
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
