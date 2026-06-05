@@ -32,6 +32,6 @@ export function decryptWhatsappToken(ciphertext: string | null | undefined): str
 }
 
 function getEncryptionKey(): Buffer {
-  const source = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "retailos-local-whatsapp-token-key";
+  const source = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY ?? process.env.JWT_SECRET ?? "bizbil-local-whatsapp-token-key";
   return createHash("sha256").update(source).digest();
 }

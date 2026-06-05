@@ -24,7 +24,7 @@ export default function DeliveryLayout() {
             <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.teal, alignItems: "center", justifyContent: "center" }}>
               <Text style={{ color: colors.white, fontWeight: "700" }}>R</Text>
             </View>
-            <Text style={{ color: colors.slate, fontWeight: "700" }}>RetailOS Delivery</Text>
+            <Text style={{ color: colors.slate, fontWeight: "700" }}>BizBil Delivery</Text>
           </View>
         ),
         headerRight: () => (

@@ -32,7 +32,7 @@ class DeliveryMobileDB extends Dexie {
   locationPings!: Table<PendingLocationPing, number>;
 
   constructor() {
-    super("RetailOS-Delivery-Mobile");
+    super("BizBil-Delivery-Mobile");
     this.version(1).stores({
       deliveries: "id, syncedAt",
       statusUpdates: "++id, deliveryId, status, clientUpdatedAt",

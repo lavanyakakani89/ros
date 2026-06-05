@@ -569,7 +569,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   function printUpiQr(method: PaymentMethodRecord) {
     if (!method.upi_qr_data) return;
     const tenant = getStoredTenant();
-    const storeName = tenant?.name ?? "RetailOS";
+    const storeName = tenant?.name ?? "BizBil";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
     printWindow.document.title = `${method.name} QR`;
@@ -1079,7 +1079,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         invoiceNumber: lastBill.invoiceNumber,
         grandTotal: lastBill.grandTotal,
         paymentMode: lastBill.paymentMode,
-        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        tenantName: getStoredTenant()?.name ?? "BizBil",
         customerName: lastBill.customer.name,
         items: lastBill.lines,
         templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady"),
@@ -1142,9 +1142,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         agentUrl: result.agentUrl,
         printerName: result.printerName,
         bytesBase64: result.bytesBase64,
-        jobName: `RetailOS ${invoiceNumber}`,
+        jobName: `BizBil ${invoiceNumber}`,
       });
-      notify(`${actionLabel}. Printed through RetailOS Local Print Agent.`);
+      notify(`${actionLabel}. Printed through BizBil Local Print Agent.`);
       return true;
     }
 
@@ -1840,7 +1840,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <div className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-lg font-bold text-slate-950">RetailOS Invoice</div>
+                  <div className="text-lg font-bold text-slate-950">BizBil Invoice</div>
                   <div className="text-sm text-slate-500">{lastBill.invoiceNumber}</div>
                   {lastBill.customer ? <div className="mt-2 text-sm text-slate-700">{lastBill.customer.name} | {lastBill.customer.phone}</div> : null}
                 </div>

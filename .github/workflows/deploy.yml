@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: retailos-production
+  group: bizbil-production
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 35
 
     env:
-      DATABASE_URL: postgresql://retailos:password@localhost:5432/retailos
+      DATABASE_URL: postgresql://bizbil:password@localhost:5432/bizbil
       REDIS_URL: redis://:password@localhost:6379
       JWT_SECRET: ci-only-jwt-secret
       NEXT_PUBLIC_API_URL: /api
@@ -30,13 +30,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: retailos
-          POSTGRES_USER: retailos
+          POSTGRES_DB: bizbil
+          POSTGRES_USER: bizbil
           POSTGRES_PASSWORD: password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U retailos -d retailos"
+          --health-cmd "pg_isready -U bizbil -d bizbil"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -60,13 +60,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: pnpm --filter @retailos/api prisma:generate
+        run: pnpm --filter @bizbil/api prisma:generate
 
       - name: Apply migrations to CI database
-        run: pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+        run: pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma
 
       - name: Verify RLS policies
-        run: pnpm --filter @retailos/api prisma:verify-rls
+        run: pnpm --filter @bizbil/api prisma:verify-rls
 
       - name: Lint, typecheck, and test
         run: pnpm check
@@ -98,7 +98,7 @@ jobs:
           set -Eeuo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-66.42.79.12}"
           DEPLOY_USER="${DEPLOY_USER:-root}"
-          DEPLOY_PATH="${DEPLOY_PATH:-/opt/retailos}"
+          DEPLOY_PATH="${DEPLOY_PATH:-/opt/bizbil}"
           HEALTH_URL="${HEALTH_URL:-https://ros.sivsanoils.in/api/health}"
 
           if [ -z "${DEPLOY_SSH_KEY:-}" ]; then

@@ -397,8 +397,8 @@ function isConfiguredRazorpaySecret(value: string | undefined): value is string 
 }
 
 function normalizeRazorpayCustomerName(value: string): string {
-  const trimmed = value.trim() || "RetailOS Customer";
-  return trimmed.length < 3 ? "RetailOS Customer" : trimmed.slice(0, 50);
+  const trimmed = value.trim() || "BizBil Customer";
+  return trimmed.length < 3 ? "BizBil Customer" : trimmed.slice(0, 50);
 }
 
 function normalizeRazorpayContact(value: string | null | undefined): string | undefined {

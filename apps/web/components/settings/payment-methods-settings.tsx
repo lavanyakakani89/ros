@@ -166,7 +166,7 @@ export function PaymentMethodsSettings() {
 
   function printQr(method: PaymentMethodRecord) {
     if (!method.upi_qr_data) return;
-    const storeName = getStoredTenant()?.name ?? "RetailOS";
+    const storeName = getStoredTenant()?.name ?? "BizBil";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
     printWindow.document.title = `${method.name} QR`;

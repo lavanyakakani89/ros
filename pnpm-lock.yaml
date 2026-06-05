@@ -12,7 +12,7 @@ importers:
         specifier: ^2.8.1
         version: 2.8.1
     devDependencies:
-      '@retailos/eslint-config':
+      '@bizbil/eslint-config':
         specifier: workspace:*
         version: link:packages/eslint-config
       '@types/node':
@@ -48,10 +48,10 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
-      '@retailos/shared':
+      '@bizbil/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@retailos/vertical-configs':
+      '@bizbil/vertical-configs':
         specifier: workspace:^
         version: link:../../packages/vertical-configs
       '@whiskeysockets/baileys':
@@ -103,7 +103,7 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
-      '@retailos/eslint-config':
+      '@bizbil/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
       '@types/qrcode':
@@ -145,7 +145,7 @@ importers:
       '@react-navigation/native-stack':
         specifier: ^6.9.26
         version: 6.11.0(@react-navigation/native@6.1.18(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native-safe-area-context@4.10.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native-screens@3.31.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0)
-      '@retailos/shared':
+      '@bizbil/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@tanstack/react-query':
@@ -264,7 +264,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@retailos/shared':
+      '@bizbil/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@tanstack/react-query':
@@ -301,10 +301,10 @@ importers:
         specifier: ^5.0.12
         version: 5.0.12(@types/react@18.3.28)(immer@11.1.4)(react@18.2.0)(use-sync-external-store@1.6.0(react@18.2.0))
     devDependencies:
-      '@retailos/eslint-config':
+      '@bizbil/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@retailos/vertical-configs':
+      '@bizbil/vertical-configs':
         specifier: workspace:*
         version: link:../../packages/vertical-configs
       '@types/react':
@@ -352,11 +352,11 @@ importers:
 
   packages/vertical-configs:
     dependencies:
-      '@retailos/shared':
+      '@bizbil/shared':
         specifier: workspace:*
         version: link:../shared
     devDependencies:
-      '@retailos/eslint-config':
+      '@bizbil/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
       typescript:

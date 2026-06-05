@@ -1,1 +1,1 @@
-export * from "@retailos/shared";
+export * from "@bizbil/shared";

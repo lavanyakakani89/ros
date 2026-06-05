@@ -1,5 +1,5 @@
 {
-  "name": "@retailos/web",
+  "name": "@bizbil/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "test": "tsc --noEmit"
   },
   "devDependencies": {
-    "@retailos/eslint-config": "workspace:*",
-    "@retailos/vertical-configs": "workspace:*",
+    "@bizbil/eslint-config": "workspace:*",
+    "@bizbil/vertical-configs": "workspace:*",
     "@types/react": "^18.2.79",
     "@types/react-dom": "^18.2.25",
     "autoprefixer": "^10.5.0",
@@ -24,7 +24,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@retailos/shared": "workspace:*",
+    "@bizbil/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.8",
     "clsx": "^2.1.1",
     "dexie": "^4.4.2",

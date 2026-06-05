@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "RetailOS",
-    "slug": "retailos",
+    "name": "BizBil",
+    "slug": "bizbil",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": { "backgroundColor": "#0F6E56" },
     "android": {
-      "package": "in.sivsanoils.retailos",
+      "package": "in.sivsanoils.bizbil",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F6E56"
@@ -30,8 +30,8 @@
       "expo-router",
       "expo-secure-store",
       "expo-local-authentication",
-      ["expo-camera", { "cameraPermission": "Allow RetailOS to access camera for barcode scanning and proof of delivery." }],
-      ["expo-location", { "locationAlwaysAndWhenInUsePermission": "Allow RetailOS to access location for delivery proof." }],
+      ["expo-camera", { "cameraPermission": "Allow BizBil to access camera for barcode scanning and proof of delivery." }],
+      ["expo-location", { "locationAlwaysAndWhenInUsePermission": "Allow BizBil to access location for delivery proof." }],
       ["expo-notifications", { "icon": "./assets/notification-icon.png", "color": "#0F6E56" }]
     ]
   }

@@ -179,7 +179,7 @@ export class BillingService {
       objectName,
       downloadUrl: invoicePdfViewUrl(invoiceId),
       templateId: template?.id ?? null,
-      templateName: template?.name ?? "RetailOS default",
+      templateName: template?.name ?? "BizBil default",
       renderType: template?.renderType ?? "HTML_PDF",
     };
   }

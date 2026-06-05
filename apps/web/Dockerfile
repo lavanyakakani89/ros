@@ -29,12 +29,12 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN pnpm --filter @retailos/shared build \
-  && pnpm --filter @retailos/vertical-configs build \
-  && pnpm --filter @retailos/web build
+RUN pnpm --filter @bizbil/shared build \
+  && pnpm --filter @bizbil/vertical-configs build \
+  && pnpm --filter @bizbil/web build
 
 ENV NODE_ENV=production
 
 EXPOSE 3000
 
-CMD ["pnpm", "--filter", "@retailos/web", "start"]
+CMD ["pnpm", "--filter", "@bizbil/web", "start"]

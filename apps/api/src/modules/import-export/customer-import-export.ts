@@ -29,7 +29,7 @@ const customerColumns: readonly ExcelColumn[] = [
 ];
 
 export function sendCustomerTemplate(reply: Parameters<typeof sendExcelHtml>[0]): unknown {
-  return sendExcelHtml(reply, "retailos-customer-template.xls", buildExcelHtml({ title: "RetailOS Customer Import Template", columns: customerColumns }));
+  return sendExcelHtml(reply, "bizbil-customer-template.xls", buildExcelHtml({ title: "BizBil Customer Import Template", columns: customerColumns }));
 }
 
 export async function sendCustomerExport(fastify: FastifyInstance, tenant: Tenant, reply: Parameters<typeof sendExcelHtml>[0]): Promise<unknown> {
@@ -38,8 +38,8 @@ export async function sendCustomerExport(fastify: FastifyInstance, tenant: Tenan
     orderBy: { createdAt: "desc" },
   });
 
-  return sendExcelHtml(reply, "retailos-customers-export.xls", buildExcelHtml({
-    title: "RetailOS Customers Export",
+  return sendExcelHtml(reply, "bizbil-customers-export.xls", buildExcelHtml({
+    title: "BizBil Customers Export",
     columns: customerColumns,
     rows: customers.map(customerToRow),
   }));

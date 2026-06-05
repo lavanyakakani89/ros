@@ -1,4 +1,4 @@
-name: retailos-prod
+name: bizbil-prod
 
 services:
   caddy:
@@ -68,8 +68,8 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-retailos}
-      POSTGRES_USER: ${POSTGRES_USER:-retailos}
+      POSTGRES_DB: ${POSTGRES_DB:-bizbil}
+      POSTGRES_USER: ${POSTGRES_USER:-bizbil}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data

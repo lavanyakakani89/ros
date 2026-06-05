@@ -1,4 +1,4 @@
-import type { TenantVertical, VerticalConfig } from "@retailos/shared";
+import type { TenantVertical, VerticalConfig } from "@bizbil/shared";
 
 import { electronicsConfig } from "./electronics.config.js";
 import { fashionConfig } from "./fashion.config.js";

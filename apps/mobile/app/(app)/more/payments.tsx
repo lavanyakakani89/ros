@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FlatList, Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency } from "@retailos/shared";
+import { formatCurrency } from "@bizbil/shared";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";

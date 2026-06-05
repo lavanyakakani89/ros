@@ -18,7 +18,7 @@ export default function GlobalError({
             </div>
             <h1 className="mt-4 text-2xl font-semibold text-slate-950">Something went wrong</h1>
             <p className="mt-2 text-sm text-slate-600">
-              RetailOS could not load this screen. Try again, or return to the dashboard.
+              BizBil could not load this screen. Try again, or return to the dashboard.
             </p>
             <div className="mt-5 flex justify-center gap-3">
               <button

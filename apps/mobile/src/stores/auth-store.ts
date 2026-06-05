@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { UserRole } from "@retailos/shared";
+import type { UserRole } from "@bizbil/shared";
 
 interface AuthState {
   user: { id: string; name: string; email: string; role: UserRole; tenantId: string; storeId?: string | null } | null;

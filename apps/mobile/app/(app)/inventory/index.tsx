@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, formatDate, stockAdjustmentSchema } from "@retailos/shared";
+import { formatCurrency, formatDate, stockAdjustmentSchema } from "@bizbil/shared";
 
 import { AddProductBottomSheet } from "@/components/inventory/AddProductBottomSheet";
 import { EditProductBottomSheet } from "@/components/inventory/EditProductBottomSheet";

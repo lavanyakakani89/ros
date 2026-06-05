@@ -1,6 +1,6 @@
-# RetailOS CI/CD
+# BizBil CI/CD
 
-RetailOS deploys automatically from GitHub Actions when code is pushed to `main`.
+BizBil deploys automatically from GitHub Actions when code is pushed to `main`.
 
 ## Production Flow
 
@@ -18,7 +18,7 @@ Set these in GitHub:
 - `DEPLOY_HOST`: VPS IP or hostname, currently `66.42.79.12`
 - `DEPLOY_USER`: SSH user, currently `root`
 - `DEPLOY_SSH_KEY`: private key that matches the deploy public key on the VPS
-- `DEPLOY_PATH`: server repo path, currently `/opt/retailos`
+- `DEPLOY_PATH`: server repo path, currently `/opt/bizbil`
 - `DEPLOY_HEALTH_URL`: `https://ros.sivsanoils.in/api/health`
 
 ## Server Requirements
@@ -27,8 +27,8 @@ The VPS must already have:
 
 - Docker and Docker Compose plugin
 - Git
-- Repo checked out at `/opt/retailos`
-- `.env.production` present in `/opt/retailos`
+- Repo checked out at `/opt/bizbil`
+- `.env.production` present in `/opt/bizbil`
 - Deploy public key in `/root/.ssh/authorized_keys`
 - Server checkout able to run `git fetch origin main`
 
@@ -37,7 +37,7 @@ The VPS must already have:
 If GitHub Actions is unavailable, run this on the VPS:
 
 ```bash
-cd /opt/retailos
+cd /opt/bizbil
 DEPLOY_REF=origin/main bash infra/deploy-production.sh
 ```
 

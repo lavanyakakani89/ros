@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { BarChart } from "react-native-chart-kit";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, Permission } from "@retailos/shared";
+import { formatCurrency, Permission } from "@bizbil/shared";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";

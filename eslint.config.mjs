@@ -1,4 +1,4 @@
-import baseConfig from "@retailos/eslint-config/base";
+import baseConfig from "@bizbil/eslint-config/base";
 
 export default [
   ...baseConfig,

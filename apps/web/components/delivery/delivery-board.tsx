@@ -118,7 +118,7 @@ export function DeliveryBoard() {
     openWhatsappMessage(
       delivery.customer?.phone,
       formatDeliveryWhatsappMessage({
-        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        tenantName: getStoredTenant()?.name ?? "BizBil",
         customerName: delivery.customer?.name,
         invoiceNumber: delivery.invoice?.invoiceNumber,
         grandTotal: delivery.invoice?.grandTotal,

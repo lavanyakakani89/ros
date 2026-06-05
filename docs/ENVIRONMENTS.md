@@ -1,12 +1,12 @@
-# RetailOS Environments
+# BizBil Environments
 
-RetailOS uses two long-running environments.
+BizBil uses two long-running environments.
 
 ## Production
 
 - Branch: `main`
 - URL: `https://ros.sivsanoils.in`
-- VPS path: `/opt/retailos`
+- VPS path: `/opt/bizbil`
 - Compose file: `infra/docker-compose.prod.yml`
 - Env file on server: `.env.production`
 - GitHub environment: `production`
@@ -18,7 +18,7 @@ Production is the live customer/shop environment. Do not test unfinished changes
 
 - Branch: `develop`
 - URL: `https://test-ros.sivsanoils.in`
-- VPS path: `/opt/retailos-testing`
+- VPS path: `/opt/bizbil-testing`
 - Compose file: `infra/docker-compose.test.yml`
 - Env file on server: `.env.testing`
 - GitHub environment: `testing`
@@ -44,12 +44,12 @@ The testing UI shows a `TESTING` badge in the top bar because `NEXT_PUBLIC_APP_E
 From the server:
 
 ```bash
-git clone /opt/retailos /opt/retailos-testing
-cd /opt/retailos-testing
+git clone /opt/bizbil /opt/bizbil-testing
+cd /opt/bizbil-testing
 git fetch origin main develop || true
 git checkout -B develop origin/develop || git checkout -B develop origin/main
 cp .env.testing.example .env.testing
-nano /opt/retailos-testing/.env.testing
+nano /opt/bizbil-testing/.env.testing
 ```
 
 Use testing-only secrets. Do not copy production database passwords, JWT secrets, Razorpay live keys, or WhatsApp live tokens unless you deliberately want to test that integration.
@@ -58,7 +58,7 @@ Minimum values to set:
 
 ```bash
 POSTGRES_PASSWORD=<testing-db-password>
-DATABASE_URL=postgresql://retailos:<testing-db-password>@postgres:5432/retailos_test
+DATABASE_URL=postgresql://bizbil:<testing-db-password>@postgres:5432/bizbil_test
 REDIS_PASSWORD=<testing-redis-password>
 REDIS_URL=redis://:<testing-redis-password>@redis:6379
 MINIO_ROOT_PASSWORD=<testing-minio-password>
@@ -72,7 +72,7 @@ TEST_HTTP_PORT=3100
 Manual deploy:
 
 ```bash
-cd /opt/retailos-testing
+cd /opt/bizbil-testing
 DEPLOY_BRANCH=develop DEPLOY_REF=origin/develop bash infra/deploy-testing.sh
 ```
 
@@ -94,5 +94,5 @@ The testing workflow can reuse these existing repository secrets:
 
 Optional testing-specific secrets:
 
-- `DEPLOY_TEST_PATH`, default `/opt/retailos-testing`
+- `DEPLOY_TEST_PATH`, default `/opt/bizbil-testing`
 - `DEPLOY_TEST_HEALTH_URL`, default `https://test-ros.sivsanoils.in/api/health`

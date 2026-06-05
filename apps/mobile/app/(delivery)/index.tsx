@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FlatList, Linking, Pressable, SectionList, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, formatDate } from "@retailos/shared";
+import { formatCurrency, formatDate } from "@bizbil/shared";
 
 import { DeliveryProofSheet } from "@/components/delivery/DeliveryProofSheet";
 import { Badge } from "@/components/ui/Badge";

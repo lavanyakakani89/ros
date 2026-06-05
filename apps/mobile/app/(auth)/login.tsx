@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { loginSchema, type LoginPayload } from "@retailos/shared";
+import { loginSchema, type LoginPayload } from "@bizbil/shared";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
@@ -72,7 +72,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
-      <Text style={styles.title}>RetailOS</Text>
+      <Text style={styles.title}>BizBil</Text>
       <Text style={styles.subtitle}>Sign in to your shop</Text>
 
       <View style={styles.form}>

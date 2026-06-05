@@ -205,7 +205,7 @@ export function InvoiceHistory({
 
     const opened = openWhatsappMessage(
       invoice.customer.phone,
-      formatInvoiceRecordWhatsappMessage(invoice, getStoredTenant()?.name ?? "RetailOS", getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady")),
+      formatInvoiceRecordWhatsappMessage(invoice, getStoredTenant()?.name ?? "BizBil", getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady")),
     );
     if (!opened) {
       setActionError("Customer phone number is invalid for WhatsApp.");

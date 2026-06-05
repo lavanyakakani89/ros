@@ -1,6 +1,6 @@
 "use client";
 
-import type { TenantVertical } from "@retailos/shared";
+import type { TenantVertical } from "@bizbil/shared";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";

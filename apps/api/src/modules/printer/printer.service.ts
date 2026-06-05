@@ -165,7 +165,7 @@ export async function testPrinterForTenant(input: {
   const receipt = buildEscposText(
     [
       input.tenant.name,
-      "RetailOS printer test",
+      "BizBil printer test",
       new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
       "If this prints, billing print is ready.",
     ],
@@ -399,7 +399,7 @@ async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | nul
   if (printer.connectionType === PrinterConn.LOCAL_AGENT) {
     return {
       status: "local_agent_payload",
-      message: "Send these ESC/POS bytes to the RetailOS Local Print Agent.",
+      message: "Send these ESC/POS bytes to the BizBil Local Print Agent.",
       bytesBase64: bytes.toString("base64"),
       printerName: printer.localPrinterName,
       agentUrl: printer.localAgentUrl ?? "http://127.0.0.1:9211",
@@ -472,10 +472,10 @@ async function sendPrintNode(apiKey: string, printerId: string, bytes: Buffer): 
     },
     body: JSON.stringify({
       printerId: Number(printerId),
-      title: "RetailOS invoice",
+      title: "BizBil invoice",
       contentType: "raw_base64",
       content: bytes.toString("base64"),
-      source: "RetailOS",
+      source: "BizBil",
     }),
   });
 

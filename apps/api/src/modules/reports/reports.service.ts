@@ -538,7 +538,7 @@ export class ReportsService {
         debitLedger: invoice.customer?.name ?? "Cash",
         creditLedger: "Sales Account",
         amount: invoice.grandTotal.toNumber(),
-        narration: `RetailOS sales invoice ${invoice.invoiceNumber}`,
+        narration: `BizBil sales invoice ${invoice.invoiceNumber}`,
       })),
       ...purchaseOrders.map((order) => tallyVoucher({
         type: "Purchase",
@@ -548,7 +548,7 @@ export class ReportsService {
         debitLedger: "Purchase Account",
         creditLedger: order.supplier.name,
         amount: order.totalAmount.toNumber(),
-        narration: `RetailOS purchase order ${order.poNumber}`,
+        narration: `BizBil purchase order ${order.poNumber}`,
       })),
       ...expenses.map((expense) => tallyVoucher({
         type: "Payment",

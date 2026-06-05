@@ -25,7 +25,7 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis mi
 
 echo "==> Running database migrations"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
-  pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+  pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma
 
 echo "==> Restarting application services"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api web caddy prometheus loki promtail grafana

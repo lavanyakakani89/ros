@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FlatList, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { Permission } from "@retailos/shared";
+import { Permission } from "@bizbil/shared";
 
 import { QueryWrapper } from "@/components/common/QueryWrapper";
 import { Badge } from "@/components/ui/Badge";

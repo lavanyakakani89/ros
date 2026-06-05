@@ -275,11 +275,11 @@ export function InventoryClient() {
             </div>
             {canManageProducts ? (
               <div className="flex flex-wrap items-center gap-2">
-                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/template", "retailos-product-template.xls")}>
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/template", "bizbil-product-template.xls")}>
                   <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
                   Template
                 </button>
-                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export?format=csv", "retailos-products-export.csv")}>
+                <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/inventory/products/export?format=csv", "bizbil-products-export.csv")}>
                   <Download className="size-4 text-blue-700" aria-hidden="true" />
                   Export
                 </button>

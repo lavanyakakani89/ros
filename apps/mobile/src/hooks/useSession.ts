@@ -38,7 +38,7 @@ export function useSession() {
         if (current.user) {
           setUser({
             id: current.user.id,
-            name: current.user.name ?? "RetailOS User",
+            name: current.user.name ?? "BizBil User",
             email: current.user.email ?? "",
             role: current.user.role,
             tenantId: current.user.tenantId,

@@ -1,12 +1,12 @@
-import type { StoredAuthSession, StoredTenant, VerticalConfig } from "@retailos/shared";
+import type { StoredAuthSession, StoredTenant, VerticalConfig } from "@bizbil/shared";
 
-export type { StoredAuthSession, StoredTenant, StoredUser, UserRole, VerticalConfig } from "@retailos/shared";
+export type { StoredAuthSession, StoredTenant, StoredUser, UserRole, VerticalConfig } from "@bizbil/shared";
 
 import { clearStoredImpersonation } from "@/lib/impersonation";
 
-const authStorageKey = "retailos.auth";
-const verticalConfigStorageKey = "retailos.verticalConfig";
-const tenantStorageKey = "retailos.tenant";
+const authStorageKey = "bizbil.auth";
+const verticalConfigStorageKey = "bizbil.verticalConfig";
+const tenantStorageKey = "bizbil.tenant";
 let authSessionMemory: StoredAuthSession | null = null;
 let tenantMemory: StoredTenant | null = null;
 let verticalConfigMemory: VerticalConfig | null = null;

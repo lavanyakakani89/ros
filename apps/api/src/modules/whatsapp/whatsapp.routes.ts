@@ -54,7 +54,7 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
       });
 
       if (!integration) {
-        throw new WhatsappIntegrationError("No RetailOS shop is connected to this WhatsApp phone number", 404);
+        throw new WhatsappIntegrationError("No BizBil shop is connected to this WhatsApp phone number", 404);
       }
 
       const tenant = await fastify.prisma.tenant.findUnique({
@@ -113,7 +113,7 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
       });
 
       if (!integration) {
-        throw new WhatsappIntegrationError("No RetailOS shop is connected to this WhatsApp phone number", 404);
+        throw new WhatsappIntegrationError("No BizBil shop is connected to this WhatsApp phone number", 404);
       }
 
       const tenant = await fastify.prisma.tenant.findUnique({
@@ -307,7 +307,7 @@ function verifyWebhookSignature(request: FastifyRequest): void {
   }
 
   if (sharedSecret) {
-    const headerSecret = String(request.headers["x-retailos-whatsapp-secret"] ?? "");
+    const headerSecret = String(request.headers["x-bizbil-whatsapp-secret"] ?? "");
     const querySecret = typeof request.query === "object" && request.query ? stringValue((request.query as Record<string, unknown>).secret) : "";
     if (headerSecret !== sharedSecret && querySecret !== sharedSecret) {
       throw new WhatsappIntegrationError("Invalid WhatsApp webhook secret", 401);

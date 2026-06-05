@@ -1,5 +1,5 @@
 {
-  "name": "@retailos/vertical-configs",
+  "name": "@bizbil/vertical-configs",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,10 +14,10 @@
     "test": "tsc --noEmit"
   },
   "dependencies": {
-    "@retailos/shared": "workspace:*"
+    "@bizbil/shared": "workspace:*"
   },
   "devDependencies": {
-    "@retailos/eslint-config": "workspace:*",
+    "@bizbil/eslint-config": "workspace:*",
     "typescript": "^5.7.2"
   }
 }

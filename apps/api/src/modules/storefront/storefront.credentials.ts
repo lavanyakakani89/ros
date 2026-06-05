@@ -36,6 +36,6 @@ function getEncryptionKey(): Buffer {
     process.env.STOREFRONT_SECRET_ENCRYPTION_KEY ??
     process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY ??
     process.env.JWT_SECRET ??
-    "retailos-local-storefront-secret-key";
+    "bizbil-local-storefront-secret-key";
   return createHash("sha256").update(source).digest();
 }

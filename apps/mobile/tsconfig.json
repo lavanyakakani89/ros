@@ -6,8 +6,8 @@
     "types": ["react", "node"],
     "paths": {
       "@/*": ["src/*"],
-      "@retailos/shared": ["../../packages/shared/src/index.ts"],
-      "@retailos/shared/*": ["../../packages/shared/src/*"]
+      "@bizbil/shared": ["../../packages/shared/src/index.ts"],
+      "@bizbil/shared/*": ["../../packages/shared/src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts"]

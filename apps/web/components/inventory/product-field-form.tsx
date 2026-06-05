@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { VerticalConfig, VerticalField } from "@retailos/shared";
-import { pharmacyConfig } from "@retailos/vertical-configs";
+import type { VerticalConfig, VerticalField } from "@bizbil/shared";
+import { pharmacyConfig } from "@bizbil/vertical-configs";
 import { ChevronDown, Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 

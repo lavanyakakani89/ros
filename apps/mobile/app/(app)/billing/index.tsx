@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { ApiError, calculateBillTotals, calculateLineTotal, createInvoiceSchema, formatCurrency, useBillingStore } from "@retailos/shared";
+import { ApiError, calculateBillTotals, calculateLineTotal, createInvoiceSchema, formatCurrency, useBillingStore } from "@bizbil/shared";
 
 import { BarcodeScanner } from "@/components/billing/BarcodeScanner";
 import { BillPreviewBottomSheet } from "@/components/billing/BillPreviewBottomSheet";
@@ -225,7 +225,7 @@ export default function BillingScreen() {
         <Button label="Confirm bill" fullWidth onPress={() => void confirmBill()} />
       </ScrollView>
       <BarcodeScanner visible={scannerVisible} onClose={() => setScannerVisible(false)} onScan={handleScan} />
-      <BillPreviewBottomSheet visible={Boolean(confirmedInvoice)} invoice={confirmedInvoice} shopName={tenant?.name ?? "RetailOS"} gstEnabled={tenant?.gstEnabled ?? true} onNewBill={() => { setConfirmedInvoice(null); reset(); }} />
+      <BillPreviewBottomSheet visible={Boolean(confirmedInvoice)} invoice={confirmedInvoice} shopName={tenant?.name ?? "BizBil"} gstEnabled={tenant?.gstEnabled ?? true} onNewBill={() => { setConfirmedInvoice(null); reset(); }} />
     </View>
   );
 }

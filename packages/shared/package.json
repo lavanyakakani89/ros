@@ -1,5 +1,5 @@
 {
-  "name": "@retailos/shared",
+  "name": "@bizbil/shared",
   "version": "1.0.0",
   "type": "module",
   "main": "./dist/index.mjs",
@@ -17,7 +17,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && node scripts/fix-esm-output.mjs"
+    "build": "node -e \"const fs=require('fs'); fs.rmSync('dist',{recursive:true,force:true});\" && tsc && node scripts/fix-esm-output.mjs"
   },
   "dependencies": {
     "zod": "^3.24.1",

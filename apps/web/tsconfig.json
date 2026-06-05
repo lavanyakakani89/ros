@@ -9,10 +9,10 @@
       "@/*": [
         "apps/web/*"
       ],
-      "@retailos/shared": [
+      "@bizbil/shared": [
         "packages/shared/src/index.ts"
       ],
-      "@retailos/vertical-configs": [
+      "@bizbil/vertical-configs": [
         "packages/vertical-configs/src/index.ts"
       ]
     },

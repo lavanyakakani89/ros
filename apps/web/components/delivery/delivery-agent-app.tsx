@@ -311,9 +311,9 @@ export function DeliveryAgentApp() {
     return (
       <main className="min-h-screen bg-slate-950 px-5 py-10 text-white">
         <div className="mx-auto max-w-sm">
-          <div className="text-sm font-semibold text-emerald-300">RetailOS Delivery</div>
+          <div className="text-sm font-semibold text-emerald-300">BizBil Delivery</div>
           <h1 className="mt-3 text-3xl font-bold">Sign in to view assigned orders.</h1>
-          <p className="mt-3 text-sm text-slate-300">Use the same shop slug, email, and password created for the delivery user in RetailOS settings.</p>
+          <p className="mt-3 text-sm text-slate-300">Use the same shop slug, email, and password created for the delivery user in BizBil settings.</p>
           <Link href="/login" className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 text-sm font-semibold text-slate-950">Sign in</Link>
         </div>
       </main>
@@ -324,9 +324,9 @@ export function DeliveryAgentApp() {
     return (
       <main className="min-h-screen bg-slate-950 px-5 py-10 text-white">
         <div className="mx-auto max-w-sm">
-          <div className="text-sm font-semibold text-emerald-300">RetailOS Delivery</div>
+          <div className="text-sm font-semibold text-emerald-300">BizBil Delivery</div>
           <h1 className="mt-3 text-3xl font-bold">Delivery app access only.</h1>
-          <p className="mt-3 text-sm text-slate-300">This phone view is restricted to DELIVERY users. Use the main RetailOS dashboard for shop work.</p>
+          <p className="mt-3 text-sm text-slate-300">This phone view is restricted to DELIVERY users. Use the main BizBil dashboard for shop work.</p>
           <Link href="/dashboard" className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-emerald-500 text-sm font-semibold text-slate-950">Go to dashboard</Link>
         </div>
       </main>
@@ -338,7 +338,7 @@ export function DeliveryAgentApp() {
       <header className="sticky top-0 z-10 border-b border-emerald-800 bg-emerald-700 px-4 py-3 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{tenant?.name ?? "RetailOS"}</div>
+            <div className="truncate text-sm font-semibold">{tenant?.name ?? "BizBil"}</div>
             <div className="truncate text-xs text-emerald-100">{activeUser.name}</div>
           </div>
           <button className="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-semibold" onClick={() => void handleLogout()}>Logout</button>

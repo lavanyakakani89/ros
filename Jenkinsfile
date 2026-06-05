@@ -15,13 +15,13 @@ pipeline {
   environment {
     CI = 'true'
     DEPLOY_BRANCH = 'main'
-    DEPLOY_PATH = '/opt/retailos'
+    DEPLOY_PATH = '/opt/bizbil'
     HEALTH_URL = 'https://ros.sivsanoils.in/api/health'
-    DATABASE_URL = 'postgresql://retailos:password@localhost:5432/retailos'
+    DATABASE_URL = 'postgresql://bizbil:password@localhost:5432/bizbil'
     REDIS_URL = 'redis://:password@localhost:6379'
     JWT_SECRET = 'jenkins-ci-only-jwt-secret'
     NEXT_PUBLIC_API_URL = 'http://localhost:3001/api'
-    NEXT_PUBLIC_APP_NAME = 'RetailOS'
+    NEXT_PUBLIC_APP_NAME = 'BizBil'
   }
 
   stages {
@@ -41,13 +41,13 @@ pipeline {
 
     stage('Prisma') {
       steps {
-        sh 'corepack pnpm --filter @retailos/api prisma:generate'
+        sh 'corepack pnpm --filter @bizbil/api prisma:generate'
       }
     }
 
     stage('Validate Compose') {
       steps {
-        sh 'docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config >/tmp/retailos-compose.yml'
+        sh 'docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config >/tmp/bizbil-compose.yml'
       }
     }
 
@@ -87,8 +87,8 @@ pipeline {
       }
       steps {
         withCredentials([
-          sshUserPrivateKey(credentialsId: 'retailos-prod-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
-          string(credentialsId: 'retailos-prod-host', variable: 'DEPLOY_HOST')
+          sshUserPrivateKey(credentialsId: 'bizbil-prod-ssh', keyFileVariable: 'SSH_KEY', usernameVariable: 'SSH_USER'),
+          string(credentialsId: 'bizbil-prod-host', variable: 'DEPLOY_HOST')
         ]) {
           sh 'bash ops/jenkins/deploy-over-ssh.sh'
         }
@@ -98,10 +98,10 @@ pipeline {
 
   post {
     success {
-      echo "RetailOS pipeline completed successfully for ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'current branch'} at ${env.GIT_COMMIT}"
+      echo "BizBil pipeline completed successfully for ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'current branch'} at ${env.GIT_COMMIT}"
     }
     failure {
-      echo 'RetailOS pipeline failed. Deployment was not marked successful.'
+      echo 'BizBil pipeline failed. Deployment was not marked successful.'
     }
   }
 }

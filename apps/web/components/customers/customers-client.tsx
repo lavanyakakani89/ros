@@ -151,11 +151,11 @@ export function CustomersClient() {
           </div>
           {canImportExport ? (
             <div className="flex flex-wrap items-center gap-2">
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/template", "retailos-customer-template.xls")}>
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/template", "bizbil-customer-template.xls")}>
                 <FileSpreadsheet className="size-4 text-emerald-700" aria-hidden="true" />
                 Template
               </button>
-              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/export", "retailos-customers-export.xls")}>
+              <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700" onClick={() => void downloadApiFile("/customers/export", "bizbil-customers-export.xls")}>
                 <Download className="size-4 text-blue-700" aria-hidden="true" />
                 Export
               </button>

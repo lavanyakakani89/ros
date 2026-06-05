@@ -5,10 +5,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const host = process.env.RETAILOS_PRINT_AGENT_HOST ?? "127.0.0.1";
-const port = Number(process.env.RETAILOS_PRINT_AGENT_PORT ?? "9211");
-const agentKey = process.env.RETAILOS_PRINT_AGENT_KEY?.trim();
-const maxPayloadBytes = Number(process.env.RETAILOS_PRINT_AGENT_MAX_BYTES ?? "262144");
+const host = process.env.BIZBIL_PRINT_AGENT_HOST ?? "127.0.0.1";
+const port = Number(process.env.BIZBIL_PRINT_AGENT_PORT ?? "9211");
+const agentKey = process.env.BIZBIL_PRINT_AGENT_KEY?.trim();
+const maxPayloadBytes = Number(process.env.BIZBIL_PRINT_AGENT_MAX_BYTES ?? "262144");
 const defaultTcpPort = 9100;
 
 type PrintConnection = "WINDOWS" | "NETWORK";
@@ -44,7 +44,7 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`RetailOS Print Agent listening on http://${host}:${String(port)}`);
+  console.log(`BizBil Print Agent listening on http://${host}:${String(port)}`);
 });
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -61,7 +61,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === "GET" && path === "/health") {
       sendJson(response, 200, {
         status: "ok",
-        app: "RetailOS Local Print Agent",
+        app: "BizBil Local Print Agent",
         version: "0.1.0",
         platform: process.platform,
       });
@@ -99,7 +99,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 function setCorsHeaders(response: ServerResponse): void {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-RetailOS-Agent-Key");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-BizBil-Agent-Key");
   response.setHeader("Access-Control-Max-Age", "86400");
 }
 
@@ -108,7 +108,7 @@ function requireAgentKey(request: IncomingMessage): void {
     return;
   }
 
-  const value = request.headers["x-retailos-agent-key"];
+  const value = request.headers["x-bizbil-agent-key"];
   if (typeof value !== "string" || value !== agentKey) {
     throw new HttpError(401, "Invalid print agent key.");
   }
@@ -167,7 +167,7 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
   const result: ValidatedPrintRequest = {
     connectionType,
     payloadBase64: input.payloadBase64,
-    jobName: sanitizeJobName(input.jobName ?? "RetailOS invoice"),
+    jobName: sanitizeJobName(input.jobName ?? "BizBil invoice"),
     port: input.port ?? defaultTcpPort,
   };
 
@@ -293,7 +293,7 @@ function stringValue(value: unknown): string | undefined {
 }
 
 async function printRawToWindowsPrinter(input: { printerName: string; jobName: string; bytes: Buffer }): Promise<void> {
-  const dir = await mkdtemp(join(os.tmpdir(), "retailos-print-"));
+  const dir = await mkdtemp(join(os.tmpdir(), "bizbil-print-"));
   const dataPath = join(dir, "job.bin");
   const scriptPath = join(dir, "print-raw.ps1");
 
@@ -349,7 +349,7 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
 }
 
 function sanitizeJobName(value: string): string {
-  return value.replace(/[^\w .-]/g, "").trim().slice(0, 80) || "RetailOS invoice";
+  return value.replace(/[^\w .-]/g, "").trim().slice(0, 80) || "BizBil invoice";
 }
 
 class HttpError extends Error {

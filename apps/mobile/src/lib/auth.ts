@@ -1,9 +1,9 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 
-const ACCESS_TOKEN_KEY = "retailos.access_token";
-const REFRESH_TOKEN_KEY = "retailos.refresh_token";
-const BIOMETRIC_ENABLED_KEY = "retailos.biometric_enabled";
+const ACCESS_TOKEN_KEY = "bizbil.access_token";
+const REFRESH_TOKEN_KEY = "bizbil.refresh_token";
+const BIOMETRIC_ENABLED_KEY = "bizbil.biometric_enabled";
 
 export async function storeTokens(access: string, refresh: string): Promise<void> {
   await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, access);
@@ -36,7 +36,7 @@ export async function isBiometricAvailable(): Promise<boolean> {
 
 export async function authenticateWithBiometric(): Promise<boolean> {
   const result = await LocalAuthentication.authenticateAsync({
-    promptMessage: "Unlock RetailOS",
+    promptMessage: "Unlock BizBil",
     fallbackLabel: "Use password",
     cancelLabel: "Cancel",
   });

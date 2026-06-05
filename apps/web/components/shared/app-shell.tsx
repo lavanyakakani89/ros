@@ -1,7 +1,7 @@
 "use client";
 
-import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
-import { pharmacyConfig } from "@retailos/vertical-configs";
+import type { VerticalConfig, VerticalNavigationItem } from "@bizbil/shared";
+import { pharmacyConfig } from "@bizbil/vertical-configs";
 import {
   AlertTriangle,
   Building2,
@@ -71,7 +71,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       return;
     }
 
-    const storedSidebar = window.localStorage.getItem("retailos.sidebarCollapsed");
+    const storedSidebar = window.localStorage.getItem("bizbil.sidebarCollapsed");
 
     if (storedSidebar) {
       setSidebarCollapsed(storedSidebar === "true");
@@ -305,7 +305,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   function toggleSidebar() {
     setSidebarCollapsed((value) => {
-      window.localStorage.setItem("retailos.sidebarCollapsed", String(!value));
+      window.localStorage.setItem("bizbil.sidebarCollapsed", String(!value));
       return !value;
     });
   }

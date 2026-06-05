@@ -1,4 +1,4 @@
-import { useImpersonationStore } from "@retailos/shared";
+import { useImpersonationStore } from "@bizbil/shared";
 
 export function getImpersonationHeaderToken(): string | null {
   const store = useImpersonationStore.getState();

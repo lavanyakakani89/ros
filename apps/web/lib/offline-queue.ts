@@ -15,7 +15,7 @@ class OfflineDB extends Dexie {
   pendingInvoices!: Table<PendingInvoice, string>;
 
   constructor() {
-    super("RetailOS-Offline");
+    super("BizBil-Offline");
     this.version(1).stores({
       pendingInvoices: "id, tenantId, syncStatus, createdAt",
     });

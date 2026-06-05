@@ -1,6 +1,6 @@
 import { FlatList, StyleSheet, Text, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, formatDate } from "@retailos/shared";
+import { formatCurrency, formatDate } from "@bizbil/shared";
 
 import { QueryWrapper } from "@/components/common/QueryWrapper";
 import { Badge } from "@/components/ui/Badge";

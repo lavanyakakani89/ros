@@ -19,7 +19,7 @@ async function createIcon(filename, width, height, bg, text) {
 async function main() {
   await createIcon("icon.png", 1024, 1024, "#0F6E56", "ROS");
   await createIcon("adaptive-icon.png", 1024, 1024, "#0F6E56", "R");
-  await createIcon("splash.png", 1284, 2778, "#0F6E56", "RetailOS");
+  await createIcon("splash.png", 1284, 2778, "#0F6E56", "BizBil");
   await createIcon("notification-icon.png", 96, 96, "#0F6E56", "R");
   console.log("All placeholder icons created. Replace with real assets before Play Store.");
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { TenantVertical } from "@retailos/shared";
+import type { TenantVertical } from "@bizbil/shared";
 import { Hammer, Pill, Shirt, ShoppingBasket, Smartphone, Utensils } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";

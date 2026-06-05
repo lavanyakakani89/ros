@@ -1,9 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ApiError, type CreateInvoicePayload } from "@retailos/shared";
+import { ApiError, type CreateInvoicePayload } from "@bizbil/shared";
 
 import { logger } from "./logger";
 
-const QUEUE_KEY = "retailos.invoice_queue";
+const QUEUE_KEY = "bizbil.invoice_queue";
 
 export interface QueuedInvoice {
   id: string;

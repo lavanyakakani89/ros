@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useRouter } from "expo-router";
-import { hasPermission, type Permission, type UserRole } from "@retailos/shared";
+import { hasPermission, type Permission, type UserRole } from "@bizbil/shared";
 
 import { useAuthStore } from "../stores/auth-store";
 

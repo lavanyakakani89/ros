@@ -1,6 +1,6 @@
 param(
   [string]$AgentDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-  [string]$TaskName = "RetailOS Print Agent"
+  [string]$TaskName = "BizBil Print Agent"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +10,7 @@ $server = Join-Path $AgentDir "dist\server.js"
 $launcher = Join-Path $AgentDir "scripts\start-hidden.vbs"
 
 if (-not (Test-Path $server)) {
-  throw "Build the print agent first: corepack pnpm --filter @retailos/print-agent build"
+  throw "Build the print agent first: corepack pnpm --filter @bizbil/print-agent build"
 }
 
 $action = New-ScheduledTaskAction `
@@ -31,10 +31,10 @@ Register-ScheduledTask `
   -Action $action `
   -Trigger $trigger `
   -Settings $settings `
-  -Description "Runs RetailOS Local Print Agent on localhost for ESC/POS thermal printing." `
+  -Description "Runs BizBil Local Print Agent on localhost for ESC/POS thermal printing." `
   -Force | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName
 
-Write-Host "RetailOS Print Agent startup task installed and started."
+Write-Host "BizBil Print Agent startup task installed and started."
 Write-Host "Health check: http://127.0.0.1:9211/health"

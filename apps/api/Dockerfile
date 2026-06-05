@@ -51,13 +51,13 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-RUN pnpm --filter @retailos/shared build \
-  && pnpm --filter @retailos/vertical-configs build \
-  && pnpm --filter @retailos/api prisma:generate \
-  && pnpm --filter @retailos/api build
+RUN pnpm --filter @bizbil/shared build \
+  && pnpm --filter @bizbil/vertical-configs build \
+  && pnpm --filter @bizbil/api prisma:generate \
+  && pnpm --filter @bizbil/api build
 
 ENV NODE_ENV=production
 
 EXPOSE 3001
 
-CMD ["pnpm", "--filter", "@retailos/api", "start"]
+CMD ["pnpm", "--filter", "@bizbil/api", "start"]

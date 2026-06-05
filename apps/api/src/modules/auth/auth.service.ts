@@ -49,7 +49,7 @@ export class AuthService {
     }
 
     if (user.tenant.status === "SUSPENDED") {
-      throw new AuthError("Account suspended. Contact your RetailOS administrator to reactivate access.", 403);
+      throw new AuthError("Account suspended. Contact your BizBil administrator to reactivate access.", 403);
     }
 
     return this.createAuthResponse(user);
@@ -64,7 +64,7 @@ export class AuthService {
     }
 
     if (storedToken.tenant.status === "SUSPENDED") {
-      throw new AuthError("Account suspended. Contact your RetailOS administrator to reactivate access.", 403);
+      throw new AuthError("Account suspended. Contact your BizBil administrator to reactivate access.", 403);
     }
 
     await this.repository.revokeRefreshToken(storedToken.id);

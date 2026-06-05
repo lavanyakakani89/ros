@@ -1,7 +1,7 @@
 "use client";
 
-import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
-import { pharmacyConfig } from "@retailos/vertical-configs";
+import type { VerticalConfig, VerticalNavigationItem } from "@bizbil/shared";
+import { pharmacyConfig } from "@bizbil/vertical-configs";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -186,7 +186,7 @@ export function DashboardHome() {
   const pendingDeliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
   const failedDeliveryCount = deliveries.filter((delivery) => delivery.status === "FAILED").length;
   const auditLogs = auditQuery.data?.data ?? [];
-  const tenantName = tenant?.name ?? "RetailOS";
+  const tenantName = tenant?.name ?? "BizBil";
   const moduleGroups = dashboardModuleGroups(verticalConfig.navigation);
   const maxSales = Math.max(...(s?.dailySales ?? []).map((day) => day.sales), 1);
   const revenueTrend = trendPercent(revenueSparkline);

@@ -36,7 +36,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
     echo "NEXT_PUBLIC_APP_NAME=BizBil Testing"
     echo "TEST_APP_DOMAIN=test.bizbil.com"
     echo "POSTGRES_PASSWORD=$TEST_POSTGRES_PASSWORD"
-    echo "DATABASE_URL=postgresql://retailos:$TEST_POSTGRES_PASSWORD@postgres:5432/retailos_test"
+    echo "DATABASE_URL=postgresql://bizbil:$TEST_POSTGRES_PASSWORD@postgres:5432/bizbil_test"
     echo "REDIS_PASSWORD=$TEST_REDIS_PASSWORD"
     echo "REDIS_URL=redis://:$TEST_REDIS_PASSWORD@redis:6379"
     echo "MINIO_ROOT_PASSWORD=$TEST_MINIO_PASSWORD"
@@ -166,7 +166,7 @@ POSTGRES_TARGET_USER="$(get_env_value POSTGRES_USER || true)"
 POSTGRES_TARGET_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
 
 if [[ -z "$POSTGRES_TARGET_USER" ]]; then
-  POSTGRES_TARGET_USER="retailos"
+  POSTGRES_TARGET_USER="bizbil"
 fi
 
 if [[ -z "$POSTGRES_TARGET_PASSWORD" ]]; then
@@ -238,10 +238,10 @@ echo "==> Running testing database migrations"
 if [[ "${RESET_DATABASE:-false}" == "true" ]]; then
   echo "==> WARNING: database reset requested for testing deployment"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
-    pnpm --filter @retailos/api exec -- prisma migrate reset --force --skip-seed --schema prisma/schema.prisma
+    pnpm --filter @bizbil/api exec -- prisma migrate reset --force --skip-seed --schema prisma/schema.prisma
 else
   if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm api \
-    pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma; then
+    pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma; then
     echo "==> Prisma migrate deploy failed for the testing database" >&2
     exit 1
   fi

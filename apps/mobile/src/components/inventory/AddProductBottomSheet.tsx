@@ -1,6 +1,6 @@
 import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useState } from "react";
-import { createProductSchema } from "@retailos/shared";
+import { createProductSchema } from "@bizbil/shared";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";

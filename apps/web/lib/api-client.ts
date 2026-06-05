@@ -1,4 +1,4 @@
-import type { TenantVertical, VerticalConfig } from "@retailos/shared";
+import type { TenantVertical, VerticalConfig } from "@bizbil/shared";
 
 import {
   clearStoredImpersonation,

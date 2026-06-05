@@ -1,4 +1,4 @@
-import { loginSchema } from "@retailos/shared";
+import { loginSchema } from "@bizbil/shared";
 import { VerticalType } from "@prisma/client";
 import { z } from "zod";
 

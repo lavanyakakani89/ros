@@ -1,5 +1,5 @@
 {
-  "name": "@retailos/mobile",
+  "name": "@bizbil/mobile",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -22,7 +22,7 @@
     "@react-navigation/bottom-tabs": "^6.5.20",
     "@react-navigation/native": "^6.1.17",
     "@react-navigation/native-stack": "^6.9.26",
-    "@retailos/shared": "workspace:*",
+    "@bizbil/shared": "workspace:*",
     "@tanstack/react-query": "^5.0.0",
     "date-fns": "^3.6.0",
     "expo": "~51.0.0",

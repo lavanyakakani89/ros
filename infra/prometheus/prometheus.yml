@@ -8,7 +8,7 @@ scrape_configs:
       - targets:
           - prometheus:9090
 
-  - job_name: retailos-api
+  - job_name: bizbil-api
     metrics_path: /metrics
     static_configs:
       - targets:

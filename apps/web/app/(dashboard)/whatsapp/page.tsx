@@ -1,7 +1,7 @@
 import { WhatsappOrdersClient } from "@/components/whatsapp/whatsapp-orders-client";
 import { PageHeader } from "@/components/shared/page-header";
 
-export const metadata = { title: "WhatsApp Orders — RetailOS" };
+export const metadata = { title: "WhatsApp Orders — BizBil" };
 
 export default function WhatsappOrdersPage() {
   return (

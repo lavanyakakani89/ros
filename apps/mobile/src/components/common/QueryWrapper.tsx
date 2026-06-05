@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { AuthError } from "@retailos/shared";
+import { AuthError } from "@bizbil/shared";
 import { router } from "expo-router";
 
 import { Button } from "@/components/ui/Button";

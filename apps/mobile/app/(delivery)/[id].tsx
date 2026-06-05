@@ -3,7 +3,7 @@ import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import MapView, { Marker } from "react-native-maps";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency } from "@retailos/shared";
+import { formatCurrency } from "@bizbil/shared";
 
 import { DeliveryProofSheet } from "@/components/delivery/DeliveryProofSheet";
 import { Badge } from "@/components/ui/Badge";

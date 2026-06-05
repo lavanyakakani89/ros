@@ -69,7 +69,7 @@ export function createExpiryAlertsWorker() {
         await whatsappNotifyQueue.add("send-expiry-alert", {
           tenantId: tenant.id,
           phone: tenant.phone,
-          message: `RetailOS expiry alert for ${tenant.name}\n${lines.join("\n")}`,
+          message: `BizBil expiry alert for ${tenant.name}\n${lines.join("\n")}`,
         });
 
         await sendPushToTenant(prisma, tenant.id, [UserRole.OWNER, UserRole.MANAGER], {

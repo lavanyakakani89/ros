@@ -13,7 +13,7 @@ required_env DEPLOY_HOST
 required_env SSH_USER
 required_env SSH_KEY
 
-DEPLOY_PATH="${DEPLOY_PATH:-/opt/retailos}"
+DEPLOY_PATH="${DEPLOY_PATH:-/opt/bizbil}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 HEALTH_URL="${HEALTH_URL:-https://ros.sivsanoils.in/api/health}"
 
@@ -71,10 +71,10 @@ git pull --ff-only origin "${DEPLOY_BRANCH}"
 after_commit="$(git rev-parse --short HEAD)"
 echo "Deploying server commit: ${after_commit}"
 
-compose config >/tmp/retailos-compose-validated.yml
+compose config >/tmp/bizbil-compose-validated.yml
 compose build api web
 compose up -d postgres redis minio
-compose run --rm api pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+compose run --rm api pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma
 compose up -d
 compose ps
 retry_health

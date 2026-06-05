@@ -2,7 +2,7 @@ import { useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, formatDate, formatPhone, type CustomerResult } from "@retailos/shared";
+import { formatCurrency, formatDate, formatPhone, type CustomerResult } from "@bizbil/shared";
 
 import { AddCustomerBottomSheet } from "@/components/customers/AddCustomerBottomSheet";
 import { Badge } from "@/components/ui/Badge";

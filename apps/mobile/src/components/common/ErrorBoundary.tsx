@@ -20,7 +20,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
       return (
         <View style={styles.screen}>
           <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.body}>RetailOS hit an unexpected screen error. Try again to reload this section.</Text>
+          <Text style={styles.body}>BizBil hit an unexpected screen error. Try again to reload this section.</Text>
           <Button label="Retry" onPress={() => this.setState({ hasError: false })} />
         </View>
       );

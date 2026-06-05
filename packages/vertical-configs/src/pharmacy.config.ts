@@ -1,4 +1,4 @@
-import type { VerticalConfig } from "@retailos/shared";
+import type { VerticalConfig } from "@bizbil/shared";
 
 export const pharmacyConfig: VerticalConfig = {
   vertical: "PHARMACY",

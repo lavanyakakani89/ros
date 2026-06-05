@@ -338,8 +338,8 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         .header("Content-Type", "application/pdf")
         .header("Content-Disposition", `inline; filename="${invoice.invoiceNumber}.pdf"`)
         .header("Cache-Control", "no-store, max-age=0")
-        .header("X-RetailOS-Template-Id", pdf.templateId ?? "")
-        .header("X-RetailOS-Template-Name", pdf.templateName);
+        .header("X-BizBil-Template-Id", pdf.templateId ?? "")
+        .header("X-BizBil-Template-Name", pdf.templateName);
       return reply.send(stream);
     });
   });

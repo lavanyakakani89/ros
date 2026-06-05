@@ -7,7 +7,7 @@ export function LoadingScreen() {
     <View style={styles.screen}>
       <View style={styles.logo}><Text style={styles.logoText}>R</Text></View>
       <ActivityIndicator color={colors.teal} />
-      <Text style={styles.text}>Loading RetailOS</Text>
+      <Text style={styles.text}>Loading BizBil</Text>
     </View>
   );
 }

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency, formatDate } from "@retailos/shared";
+import { formatCurrency, formatDate } from "@bizbil/shared";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -31,7 +31,7 @@ export default function DashboardScreen() {
   ].filter(Boolean) as Array<{ color: "red" | "amber"; text: string; href: any }>;
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <ScreenHeader title={`${greeting}, ${tenant?.name ?? "RetailOS"}`} subtitle={`${formatDate(new Date())} | ${tenant?.vertical ?? "Shop"}`} />
+      <ScreenHeader title={`${greeting}, ${tenant?.name ?? "BizBil"}`} subtitle={`${formatDate(new Date())} | ${tenant?.vertical ?? "Shop"}`} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.statStrip}>
         <Stat label="Today's sales" value={formatCurrency(Number(data.todaySales ?? 0))} color={colors.teal} />
         <Stat label="Invoice count" value={String(data.invoiceCount ?? 0)} color={colors.blue} />

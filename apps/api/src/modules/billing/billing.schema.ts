@@ -1,4 +1,4 @@
-import { createInvoiceItemSchema, createInvoiceSchema, confirmInvoiceSchema } from "@retailos/shared";
+import { createInvoiceItemSchema, createInvoiceSchema, confirmInvoiceSchema } from "@bizbil/shared";
 import { z } from "zod";
 
 const queryBooleanSchema = z.preprocess((value) => {

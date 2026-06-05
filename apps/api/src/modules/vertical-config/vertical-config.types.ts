@@ -1,4 +1,4 @@
-import type { UserRole, VerticalConfig } from "@retailos/shared";
+import type { UserRole, VerticalConfig } from "@bizbil/shared";
 
 export interface CurrentVerticalConfigResponse {
   tenantId: string;

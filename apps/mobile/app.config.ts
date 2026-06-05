@@ -20,14 +20,14 @@ const plugins: NonNullable<ExpoConfig["plugins"]> = [
   "expo-router",
   "expo-secure-store",
   "expo-local-authentication",
-  ["expo-camera", { cameraPermission: "Allow RetailOS to use the camera for barcode scanning and delivery photos." }],
-  ["expo-location", { locationWhenInUsePermission: "Allow RetailOS to capture your location when marking deliveries." }],
+  ["expo-camera", { cameraPermission: "Allow BizBil to use the camera for barcode scanning and delivery photos." }],
+  ["expo-location", { locationWhenInUsePermission: "Allow BizBil to capture your location when marking deliveries." }],
   ...(hasGoogleServices ? [["expo-notifications", { icon: "./assets/notification-icon.png", color: "#0F6E56" }] as [string, Record<string, string>]] : []),
 ];
 
 const config: ExpoConfig = {
-  name: "RetailOS",
-  slug: "retailos",
+  name: "BizBil",
+  slug: "bizbil",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
@@ -36,14 +36,14 @@ const config: ExpoConfig = {
     resizeMode: "contain",
     backgroundColor: "#0F6E56",
   },
-  scheme: "retailos",
+  scheme: "bizbil",
   extra: {
     appEnv,
     apiUrl: process.env.EXPO_PUBLIC_API_URL ?? apiUrls[appEnv] ?? apiUrls.development,
     eas: { projectId: process.env.EAS_PROJECT_ID ?? "d1ce757f-7cab-47cb-bcb2-5eb0eb8b5175" },
   },
   android: {
-    package: "in.sivsanoils.retailos",
+    package: "in.sivsanoils.bizbil",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#0F6E56",

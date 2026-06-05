@@ -15,7 +15,7 @@ If Not fso.FileExists(nodePath) Then
 End If
 
 If Not fso.FileExists(server) Then
-  WScript.Echo "Build the print agent first: pnpm --filter @retailos/print-agent build"
+  WScript.Echo "Build the print agent first: pnpm --filter @bizbil/print-agent build"
   WScript.Quit 1
 End If
 

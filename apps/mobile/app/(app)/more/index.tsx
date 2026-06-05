@@ -1,7 +1,7 @@
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Permission } from "@retailos/shared";
+import { Permission } from "@bizbil/shared";
 
 import { Card } from "@/components/ui/Card";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";

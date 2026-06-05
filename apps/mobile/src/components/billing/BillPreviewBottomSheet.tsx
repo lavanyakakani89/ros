@@ -1,5 +1,5 @@
 import { Linking, Modal, ScrollView, StyleSheet, Text, View } from "react-native";
-import { formatCurrency, formatDate, numberToWords } from "@retailos/shared";
+import { formatCurrency, formatDate, numberToWords } from "@bizbil/shared";
 
 import { Button } from "@/components/ui/Button";
 import { printReceipt, type PrintableInvoice } from "@/lib/bluetooth-print";

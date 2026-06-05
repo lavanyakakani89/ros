@@ -1,6 +1,6 @@
-# RetailOS Master Progress
+# BizBil Master Progress
 
-Source: `C:\Users\Sivsan Oils\OneDrive\Old Files\Desktop\retailos-master-change-list.txt`
+Source: `C:\Users\Sivsan Oils\OneDrive\Old Files\Desktop\bizbil-master-change-list.txt`
 
 Legend: `[x]` completed and verified in code, `[~]` partially complete, `[ ]` pending.
 

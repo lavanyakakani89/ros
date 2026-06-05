@@ -378,7 +378,7 @@ export class WhatsappService {
       messageType: "text",
       receivedAt: new Date(),
       payload: {
-        source: "retailos-manual-paste",
+        source: "bizbil-manual-paste",
       },
     });
   }

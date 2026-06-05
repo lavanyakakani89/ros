@@ -1,4 +1,4 @@
-import type { VerticalNavigationItem } from "@retailos/shared";
+import type { VerticalNavigationItem } from "@bizbil/shared";
 
 export interface NavigationGroup {
   label: string;

@@ -20,7 +20,7 @@ export async function geocodeAddress(address: string, logger: FastifyBaseLogger)
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "RetailOS/0.1 delivery-geocoder",
+        "User-Agent": "BizBil/0.1 delivery-geocoder",
       },
     });
 

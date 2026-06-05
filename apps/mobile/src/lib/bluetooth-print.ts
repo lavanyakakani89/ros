@@ -1,8 +1,8 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform, ToastAndroid } from "react-native";
-import { formatCurrency, formatDate, numberToWords } from "@retailos/shared";
+import { formatCurrency, formatDate, numberToWords } from "@bizbil/shared";
 
-const PRINTER_KEY = "retailos.printer_device_id";
+const PRINTER_KEY = "bizbil.printer_device_id";
 
 declare const require: (moduleName: string) => unknown;
 

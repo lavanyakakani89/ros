@@ -1,4 +1,4 @@
-import { createApiClient } from "@retailos/shared";
+import { createApiClient } from "@bizbil/shared";
 
 import { API_BASE_URL } from "./config";
 import { getAuthHeader } from "./auth";

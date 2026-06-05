@@ -96,7 +96,7 @@ const tenantPluginCallback: FastifyPluginCallback = (fastify, _options, done) =>
       return reply.status(403).send({
         error: "Account suspended",
         code: "TENANT_SUSPENDED",
-        message: "This shop is suspended. Contact your RetailOS administrator to reactivate access.",
+        message: "This shop is suspended. Contact your BizBil administrator to reactivate access.",
       });
     }
 

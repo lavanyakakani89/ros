@@ -1,4 +1,4 @@
--- Scope payroll records to the current RetailOS tenant before exposing payroll APIs.
+-- Scope payroll records to the current BizBil tenant before exposing payroll APIs.
 ALTER TABLE "employees" ADD COLUMN "tenant_id" TEXT;
 ALTER TABLE "payroll_runs" ADD COLUMN "tenant_id" TEXT;
 

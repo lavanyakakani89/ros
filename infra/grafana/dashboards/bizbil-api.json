@@ -37,7 +37,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (method, route, status) (rate(retailos_http_requests_total[5m]))",
+          "expr": "sum by (method, route, status) (rate(bizbil_http_requests_total[5m]))",
           "legendFormat": "{{method}} {{route}} {{status}}",
           "refId": "A"
         }
@@ -74,7 +74,7 @@
       },
       "targets": [
         {
-          "expr": "max by (method, route, status) (retailos_http_request_duration_seconds_max)",
+          "expr": "max by (method, route, status) (bizbil_http_request_duration_seconds_max)",
           "legendFormat": "{{method}} {{route}} {{status}}",
           "refId": "A"
         }
@@ -106,7 +106,7 @@
       },
       "targets": [
         {
-          "expr": "{compose_project=\"retailos-prod\"}",
+          "expr": "{compose_project=\"bizbil-prod\"}",
           "refId": "A"
         }
       ],
@@ -117,7 +117,7 @@
   "refresh": "30s",
   "schemaVersion": 39,
   "tags": [
-    "retailos"
+    "bizbil"
   ],
   "templating": {
     "list": []
@@ -128,8 +128,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "RetailOS API",
-  "uid": "retailos-api",
+  "title": "BizBil API",
+  "uid": "bizbil-api",
   "version": 1,
   "weekStart": ""
 }

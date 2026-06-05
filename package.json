@@ -1,5 +1,5 @@
 {
-  "name": "retailos",
+  "name": "bizbil",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.4",
@@ -8,10 +8,10 @@
     "lint": "corepack pnpm -r --if-present lint",
     "typecheck": "corepack pnpm -r --if-present typecheck",
     "test": "corepack pnpm -r --if-present test",
-    "check": "corepack pnpm --filter @retailos/shared build && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test"
+    "check": "corepack pnpm --filter @bizbil/shared build && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test"
   },
   "devDependencies": {
-    "@retailos/eslint-config": "workspace:*",
+    "@bizbil/eslint-config": "workspace:*",
     "@types/node": "^20.17.10",
     "eslint": "^9.17.0",
     "typescript": "^5.7.2",

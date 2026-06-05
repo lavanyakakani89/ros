@@ -1,6 +1,6 @@
 UPDATE "invoice_templates"
 SET
-  "name" = 'RetailOS POS Thermal Receipt - 2 inch',
+  "name" = 'BizBil POS Thermal Receipt - 2 inch',
   "description" = 'Editable compact ESC/POS receipt for 2 inch POS thermal printers.',
   "escpos_config" = '{
     "columns": 32,
@@ -42,7 +42,7 @@ WHERE "id" = 'system-thermal-2';
 
 UPDATE "invoice_templates"
 SET
-  "name" = 'RetailOS POS Thermal Receipt - 3 inch',
+  "name" = 'BizBil POS Thermal Receipt - 3 inch',
   "description" = 'Editable ESC/POS receipt for 3 inch POS thermal printers such as ATPOS.',
   "escpos_config" = '{
     "columns": 42,
@@ -84,7 +84,7 @@ WHERE "id" = 'system-thermal-3';
 
 UPDATE "invoice_templates"
 SET
-  "name" = 'RetailOS POS Thermal Receipt - 4 inch',
+  "name" = 'BizBil POS Thermal Receipt - 4 inch',
   "description" = 'Editable wide ESC/POS receipt for 4 inch POS thermal printers.',
   "escpos_config" = '{
     "columns": 56,

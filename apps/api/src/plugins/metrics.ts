@@ -6,19 +6,19 @@ const registry = new Registry();
 const requestStarts = new WeakMap<FastifyRequest, bigint>();
 
 collectDefaultMetrics({
-  prefix: "retailos_",
+  prefix: "bizbil_",
   register: registry,
 });
 
 const httpRequestsTotal = new Counter({
-  name: "retailos_http_requests_total",
+  name: "bizbil_http_requests_total",
   help: "Total HTTP requests by method, route, and status.",
   labelNames: ["method", "route", "status"] as const,
   registers: [registry],
 });
 
 const httpRequestDurationSeconds = new Histogram({
-  name: "retailos_http_request_duration_seconds",
+  name: "bizbil_http_request_duration_seconds",
   help: "HTTP request duration by method, route, and status.",
   labelNames: ["method", "route", "status"] as const,
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
@@ -26,7 +26,7 @@ const httpRequestDurationSeconds = new Histogram({
 });
 
 const processUptimeSeconds = new Gauge({
-  name: "retailos_process_uptime_seconds",
+  name: "bizbil_process_uptime_seconds",
   help: "API process uptime in seconds.",
   registers: [registry],
 });

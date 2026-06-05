@@ -6,7 +6,7 @@ import { PrismaClient, SuperAdminRole } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  const name = process.env.SUPERADMIN_NAME ?? "RetailOS Owner";
+  const name = process.env.SUPERADMIN_NAME ?? "BizBil Owner";
   const email = process.env.SUPERADMIN_EMAIL?.trim().toLowerCase();
   const password = process.env.SUPERADMIN_PASSWORD;
 

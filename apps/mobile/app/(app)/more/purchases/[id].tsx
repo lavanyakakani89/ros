@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatCurrency } from "@retailos/shared";
+import { formatCurrency } from "@bizbil/shared";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
