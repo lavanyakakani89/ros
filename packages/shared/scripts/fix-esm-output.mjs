@@ -36,8 +36,13 @@ await Promise.all(
       }
 
       const resolvedSpecifier = resolve(dirname(filePath), specifier);
+      const jsFile = normalize(resolvedSpecifier);
       const directFile = normalize(`${resolvedSpecifier}.js`);
       const indexFile = normalize(join(resolvedSpecifier, "index.js"));
+
+      if (specifier.endsWith(".js") && fileSet.has(jsFile)) {
+        return `${prefix}${specifier.replace(/\.js$/, ".mjs")}${suffix}`;
+      }
 
       if (fileSet.has(directFile)) {
         return `${prefix}${specifier}.mjs${suffix}`;
