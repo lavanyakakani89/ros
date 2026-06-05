@@ -1,4 +1,4 @@
-import type { UserRole } from "../types";
+import type { UserRole } from "../types/index.js";
 
 export const Permission = {
   AUDIT_VIEW: "audit:view",

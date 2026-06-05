@@ -2,9 +2,9 @@
 
 import { create } from "zustand";
 
-import type { PosLine } from "../types";
+import type { PosLine } from "../types/index.js";
 
-export type { PosLine } from "../types";
+export type { PosLine } from "../types/index.js";
 
 export interface HeldBill {
   id: string;

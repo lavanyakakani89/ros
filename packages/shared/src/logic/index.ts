@@ -1,3 +1,3 @@
-export * from "./calculations";
-export * from "./formatters";
-export * from "./words";
+export * from "./calculations.js";
+export * from "./formatters.js";
+export * from "./words.js";
