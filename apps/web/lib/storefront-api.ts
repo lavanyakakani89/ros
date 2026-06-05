@@ -32,22 +32,69 @@ export interface StorefrontCategory {
   id: string;
   name: string;
   code: string;
+  parentId: string | null;
+  productCount: number;
+  children: Array<{
+    id: string;
+    name: string;
+    code: string;
+    parentId: string | null;
+    productCount: number;
+  }>;
 }
 
 export interface StorefrontProduct {
   id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   description: string | null;
   categoryId: string | null;
   categoryName: string;
+  categoryParentId: string | null;
   unit: string;
   mrp: number;
   sellingPrice: number;
   defaultDiscountPercent: number | null;
+  discountPercent: number;
   gstRate: number;
+  hsnCode: string | null;
   currentStock: number;
   imageUrl: string | null;
+  brand: string | null;
+  size: string | null;
+  color: string | null;
+  hasVariants: boolean;
+  grouped: boolean;
+  groupId: string | null;
+  groupName: string | null;
+  variantAttributeLabel: string | null;
+  variantCount: number;
+  variantLabels: string[];
+  defaultVariantLabel: string | null;
+}
+
+export interface StorefrontProductVariant {
+  id: string;
+  productId: string;
+  label: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellingPrice: number;
+  mrp: number;
+  currentStock: number;
+  imageUrl: string | null;
+  unit: string;
+  attributes: Record<string, unknown>;
+}
+
+export interface StorefrontProductDetail extends StorefrontProduct {
+  variants: StorefrontProductVariant[];
+  specifications: Array<{
+    label: string;
+    value: string;
+  }>;
 }
 
 export interface StorefrontBootstrap {
@@ -55,6 +102,15 @@ export interface StorefrontBootstrap {
   storefront: StorefrontInfo;
   categories: StorefrontCategory[];
   products: StorefrontProduct[];
+  productFilters: {
+    brands: string[];
+    sizes: string[];
+    colors: string[];
+    priceRange: {
+      min: number;
+      max: number;
+    };
+  };
   checkout: {
     deliveryCharge: number;
     freeDeliveryAbove: number;
@@ -145,6 +201,20 @@ export interface StorefrontCheckoutResponse {
   } | null;
 }
 
+export interface StorefrontProductListResponse {
+  data: StorefrontProduct[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  filters: StorefrontBootstrap["productFilters"];
+}
+
+export interface StorefrontSearchResponse {
+  query: string;
+  suggestions: StorefrontProduct[];
+}
+
 export async function getStorefrontBootstrap(
   locator: { tenantSlug?: string; host?: string },
   options: { search?: string; categoryId?: string } = {},
@@ -162,6 +232,99 @@ export async function getStorefrontBootstrap(
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const path = locator.tenantSlug ? `/public/storefront/${locator.tenantSlug}/bootstrap${suffix}` : `/public/storefront/bootstrap${suffix}`;
   return fetchPublicJson<StorefrontBootstrap>(path);
+}
+
+export async function getStorefrontCategories(tenantSlug: string): Promise<{ categories: StorefrontCategory[] }> {
+  return fetchPublicJson<{ categories: StorefrontCategory[] }>(`/public/storefront/${tenantSlug}/categories`);
+}
+
+export async function getStorefrontCategoryProducts(
+  tenantSlug: string,
+  categoryId: string,
+  options: {
+    search?: string;
+    brand?: string;
+    size?: string;
+    color?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    discountOnly?: boolean;
+    sort?: "FEATURED" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST" | "DISCOUNT" | "NAME";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): Promise<StorefrontProductListResponse> {
+  const query = new URLSearchParams();
+  if (options.search) query.set("search", options.search);
+  if (options.brand) query.set("brand", options.brand);
+  if (options.size) query.set("size", options.size);
+  if (options.color) query.set("color", options.color);
+  if (options.minPrice !== undefined) query.set("minPrice", String(options.minPrice));
+  if (options.maxPrice !== undefined) query.set("maxPrice", String(options.maxPrice));
+  if (options.discountOnly) query.set("discountOnly", "true");
+  if (options.sort) query.set("sort", options.sort);
+  if (options.page) query.set("page", String(options.page));
+  if (options.pageSize) query.set("pageSize", String(options.pageSize));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchPublicJson<StorefrontProductListResponse>(`/public/storefront/${tenantSlug}/categories/${categoryId}/products${suffix}`);
+}
+
+export async function getStorefrontProducts(
+  tenantSlug: string,
+  options: {
+    search?: string;
+    categoryId?: string;
+    brand?: string;
+    size?: string;
+    color?: string;
+    minPrice?: number;
+    maxPrice?: number;
+    discountOnly?: boolean;
+    sort?: "FEATURED" | "PRICE_ASC" | "PRICE_DESC" | "NEWEST" | "DISCOUNT" | "NAME";
+    page?: number;
+    pageSize?: number;
+  } = {},
+): Promise<StorefrontProductListResponse> {
+  if (options.categoryId) {
+    return getStorefrontCategoryProducts(tenantSlug, options.categoryId, options);
+  }
+
+  const query = new URLSearchParams();
+  if (options.search) query.set("search", options.search);
+  if (options.brand) query.set("brand", options.brand);
+  if (options.size) query.set("size", options.size);
+  if (options.color) query.set("color", options.color);
+  if (options.minPrice !== undefined) query.set("minPrice", String(options.minPrice));
+  if (options.maxPrice !== undefined) query.set("maxPrice", String(options.maxPrice));
+  if (options.discountOnly) query.set("discountOnly", "true");
+  if (options.sort) query.set("sort", options.sort);
+  if (options.page) query.set("page", String(options.page));
+  if (options.pageSize) query.set("pageSize", String(options.pageSize));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return fetchPublicJson<StorefrontProductListResponse>(`/public/storefront/${tenantSlug}/products${suffix}`);
+}
+
+export async function getStorefrontProductDetail(
+  tenantSlug: string,
+  productId: string,
+): Promise<{
+  product: StorefrontProductDetail;
+  relatedProducts: StorefrontProduct[];
+  frequentlyBoughtTogether: StorefrontProduct[];
+}> {
+  return fetchPublicJson(`/public/storefront/${tenantSlug}/products/${productId}`);
+}
+
+export async function searchStorefrontProducts(
+  tenantSlug: string,
+  queryText: string,
+  limit = 8,
+): Promise<StorefrontSearchResponse> {
+  const query = new URLSearchParams({
+    query: queryText,
+    limit: String(limit),
+  });
+  return fetchPublicJson<StorefrontSearchResponse>(`/public/storefront/${tenantSlug}/search?${query.toString()}`);
 }
 
 export async function validateStorefrontCoupon(

@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRight,
   CheckCircle2,
+  ChevronRight,
   CreditCard,
+  Grid2x2,
+  Heart,
   History,
+  Leaf,
+  List,
   Loader2,
   LogIn,
   LogOut,
@@ -14,7 +20,12 @@ import {
   Phone,
   Plus,
   Search,
+  Share2,
+  ShieldCheck,
   ShoppingBag,
+  SlidersHorizontal,
+  Sparkles,
+  Star,
   Tag,
   Trash2,
   Truck,
@@ -26,15 +37,19 @@ import {
   createStorefrontCheckout,
   getStorefrontBootstrap,
   getStorefrontCustomer,
+  getStorefrontProductDetail,
+  getStorefrontProducts,
   listStorefrontCustomerOrders,
   loginStorefrontCustomer,
   logoutStorefrontCustomer,
   registerStorefrontCustomer,
+  searchStorefrontProducts,
   storefrontImageUrl,
   type StorefrontBootstrap,
   type StorefrontCheckoutResponse,
   type StorefrontCustomer,
   type StorefrontOrder,
+  type StorefrontProductDetail,
   type StorefrontProduct,
   validateStorefrontCoupon,
   verifyStorefrontRazorpay,
@@ -75,6 +90,8 @@ declare global {
 
 type PaymentMethod = "COD" | "RAZORPAY";
 type AuthMode = "login" | "register";
+type ProductSort = "FEATURED" | "PRICE_ASC" | "PRICE_DESC" | "DISCOUNT" | "NAME" | "NEWEST";
+type CatalogView = "grid" | "list";
 
 interface CheckoutFormState {
   name: string;
@@ -98,6 +115,15 @@ interface AuthFormState {
   city: string;
   state: string;
   postalCode: string;
+}
+
+interface CatalogFilterState {
+  brand: string;
+  size: string;
+  color: string;
+  minPrice: string;
+  maxPrice: string;
+  discountOnly: boolean;
 }
 
 const initialForm: CheckoutFormState = {
@@ -124,12 +150,36 @@ const initialAuthForm: AuthFormState = {
   postalCode: "",
 };
 
+const initialCatalogFilters: CatalogFilterState = {
+  brand: "",
+  size: "",
+  color: "",
+  minPrice: "",
+  maxPrice: "",
+  discountOnly: false,
+};
+
 export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: string; host?: string }>) {
   const [bootstrap, setBootstrap] = useState<StorefrontBootstrap | null>(null);
+  const [catalogProducts, setCatalogProducts] = useState<StorefrontProduct[]>([]);
+  const [catalogFilters, setCatalogFilters] = useState<StorefrontBootstrap["productFilters"] | null>(null);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogTotalPages, setCatalogTotalPages] = useState(1);
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [productsById, setProductsById] = useState<Record<string, StorefrontProduct>>({});
   const [cart, setCart] = useState<Record<string, number>>({});
   const [selectedCategory, setSelectedCategory] = useState("");
   const [search, setSearch] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<StorefrontProduct[]>([]);
+  const [sortBy, setSortBy] = useState<ProductSort>("FEATURED");
+  const [viewMode, setViewMode] = useState<CatalogView>("grid");
+  const [filters, setFilters] = useState<CatalogFilterState>(initialCatalogFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [form, setForm] = useState(initialForm);
@@ -147,8 +197,17 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   const [orders, setOrders] = useState<StorefrontOrder[]>([]);
   const [ordersOpen, setOrdersOpen] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null);
+  const [selectedProductDetail, setSelectedProductDetail] = useState<StorefrontProductDetail | null>(null);
+  const [relatedProducts, setRelatedProducts] = useState<StorefrontProduct[]>([]);
+  const [frequentlyBoughtTogether, setFrequentlyBoughtTogether] = useState<StorefrontProduct[]>([]);
+  const [productDetailLoading, setProductDetailLoading] = useState(false);
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>([]);
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const searchMenuRef = useRef<HTMLDivElement | null>(null);
 
   const activeTenantSlug = bootstrap?.tenant.slug ?? tenantSlug ?? "";
+  const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,8 +220,6 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
         ...(host ? { host } : {}),
       },
       {
-        ...(search.trim() ? { search: search.trim() } : {}),
-        ...(selectedCategory ? { categoryId: selectedCategory } : {}),
       },
     )
       .then((data) => {
@@ -171,6 +228,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
         }
 
         setBootstrap(data);
+        setCatalogFilters(data.productFilters);
         setProductsById((current) => {
           const next = { ...current };
           for (const product of data.products) {
@@ -193,7 +251,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
     return () => {
       cancelled = true;
     };
-  }, [tenantSlug, host, selectedCategory, search]);
+  }, [host, tenantSlug]);
 
   useEffect(() => {
     if (!activeTenantSlug || !bootstrap?.storefront.allowCustomerLogin) {
@@ -216,6 +274,219 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
       cancelled = true;
     };
   }, [activeTenantSlug, bootstrap?.storefront.allowCustomerLogin]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(recentlyViewedKey(activeTenantSlug));
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        setRecentlyViewedIds(parsed.filter((value): value is string => typeof value === "string"));
+      }
+    } catch {
+      setRecentlyViewedIds([]);
+    }
+  }, [activeTenantSlug]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(recentlyViewedKey(activeTenantSlug), JSON.stringify(recentlyViewedIds.slice(0, 12)));
+    } catch {
+      // Local recent history is non-critical.
+    }
+  }, [activeTenantSlug, recentlyViewedIds]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(recentSearchesKey(activeTenantSlug));
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        setRecentSearches(parsed.filter((value): value is string => typeof value === "string"));
+      }
+    } catch {
+      setRecentSearches([]);
+    }
+  }, [activeTenantSlug]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(wishlistKey(activeTenantSlug));
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) {
+        setWishlistIds(parsed.filter((value): value is string => typeof value === "string"));
+      }
+    } catch {
+      setWishlistIds([]);
+    }
+  }, [activeTenantSlug]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(recentSearchesKey(activeTenantSlug), JSON.stringify(recentSearches.slice(0, 8)));
+    } catch {
+      // Local recent history is non-critical.
+    }
+  }, [activeTenantSlug, recentSearches]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !activeTenantSlug) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(wishlistKey(activeTenantSlug), JSON.stringify(wishlistIds.slice(0, 24)));
+    } catch {
+      // Wishlist is local-only fallback for now.
+    }
+  }, [activeTenantSlug, wishlistIds]);
+
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [
+    deferredSearch,
+    filters.brand,
+    filters.color,
+    filters.discountOnly,
+    filters.maxPrice,
+    filters.minPrice,
+    filters.size,
+    selectedCategory,
+    sortBy,
+  ]);
+
+  useEffect(() => {
+    if (!activeTenantSlug) {
+      return;
+    }
+
+    let cancelled = false;
+    const isLoadingMore = catalogPage > 1;
+    if (isLoadingMore) {
+      setCatalogLoadingMore(true);
+    } else {
+      setCatalogLoading(true);
+      setCatalogError("");
+    }
+
+    getStorefrontProducts(activeTenantSlug, {
+      ...(deferredSearch.trim() ? { search: deferredSearch.trim() } : {}),
+      ...(selectedCategory ? { categoryId: selectedCategory } : {}),
+      ...(filters.brand ? { brand: filters.brand } : {}),
+      ...(filters.size ? { size: filters.size } : {}),
+      ...(filters.color ? { color: filters.color } : {}),
+      ...(filters.minPrice ? { minPrice: Number(filters.minPrice) } : {}),
+      ...(filters.maxPrice ? { maxPrice: Number(filters.maxPrice) } : {}),
+      ...(filters.discountOnly ? { discountOnly: true } : {}),
+      sort: sortBy,
+      page: catalogPage,
+      pageSize: 24,
+    })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+
+        setCatalogProducts((current) => (catalogPage > 1 ? [...current, ...result.data] : result.data));
+        setCatalogFilters(result.filters);
+        setCatalogTotal(result.total);
+        setCatalogTotalPages(result.totalPages);
+        setProductsById((current) => {
+          const next = { ...current };
+          for (const product of result.data) {
+            next[product.id] = product;
+          }
+          return next;
+        });
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setCatalogError(loadError instanceof Error ? loadError.message : "Products could not be loaded");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCatalogLoading(false);
+          setCatalogLoadingMore(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantSlug, catalogPage, deferredSearch, filters.brand, filters.color, filters.discountOnly, filters.maxPrice, filters.minPrice, filters.size, selectedCategory, sortBy]);
+
+  useEffect(() => {
+    if (!activeTenantSlug || !searchFocused) {
+      return;
+    }
+
+    const queryText = deferredSearch.trim();
+    if (!queryText) {
+      setSearchSuggestions([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+    searchStorefrontProducts(activeTenantSlug, queryText, 8)
+      .then((result) => {
+        if (!cancelled) {
+          setSearchSuggestions(result.suggestions);
+          setProductsById((current) => {
+            const next = { ...current };
+            for (const product of result.suggestions) {
+              next[product.id] = product;
+            }
+            return next;
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSearchSuggestions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSearchLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTenantSlug, deferredSearch, searchFocused]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (searchMenuRef.current && !searchMenuRef.current.contains(event.target as Node)) {
+        setSearchFocused(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
 
   const cartLines = useMemo(() => Object.entries(cart)
     .flatMap(([productId, quantity]) => {
@@ -259,8 +530,10 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   }, [cartItems]);
 
   const products = bootstrap?.products ?? [];
+  const liveCatalogProducts = catalogProducts;
   const tenant = bootstrap?.tenant;
   const storefront = bootstrap?.storefront;
+  const categories = bootstrap?.categories ?? [];
   const canUseRazorpay = Boolean(bootstrap?.checkout.razorpayKeyId && bootstrap.checkout.paymentMethods.includes("RAZORPAY"));
   const canUseCod = Boolean(bootstrap?.checkout.paymentMethods.includes("COD"));
   const checkoutRequiresLogin = Boolean(storefront && !storefront.allowGuestCheckout && !customer);
@@ -270,9 +543,68 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
   const heroTitle = storefront?.heroTitle ?? displayName;
   const heroSubtitle = storefront?.heroSubtitle ?? "Browse live stock, place your order, and choose delivery with cash or online payment where available.";
   const heroBanner = storefront?.banners[0]?.imageUrl ? storefrontImageUrl(storefront.banners[0].imageUrl) : null;
+  const secondaryBanner = storefront?.banners[1]?.imageUrl ? storefrontImageUrl(storefront.banners[1].imageUrl) : null;
   const freeDeliveryAbove = bootstrap?.checkout.freeDeliveryAbove ?? 0;
-  const freeDeliveryBalance = Math.max(freeDeliveryAbove - subtotal, 0);
-  const freeDeliveryProgress = freeDeliveryAbove > 0 ? Math.min((subtotal / freeDeliveryAbove) * 100, 100) : 0;
+  const discountedSubtotal = Math.max(subtotal - (coupon?.discount ?? 0), 0);
+  const freeDeliveryBalance = Math.max(freeDeliveryAbove - discountedSubtotal, 0);
+  const freeDeliveryProgress = freeDeliveryAbove > 0 ? Math.min((discountedSubtotal / freeDeliveryAbove) * 100, 100) : 0;
+
+  const categorySummaries = useMemo(() => categories.map((category) => {
+    const categoryProducts = products.filter((product) => product.categoryId === category.id || category.children.some((child) => child.id === product.categoryId));
+    return {
+      id: category.id,
+      name: category.name,
+      code: category.code,
+      count: category.productCount,
+      product: categoryProducts[0] ?? null,
+    };
+  }).filter((category) => category.count > 0), [categories, products]);
+
+  const spotlightCategories = categorySummaries.slice(0, 4);
+  const discountedProducts = products.filter((product) => discountPercent(product) > 0).sort((left, right) => discountPercent(right) - discountPercent(left)).slice(0, 4);
+  const heroProducts = products.slice(0, 3);
+  const freshProducts = [...products].slice(0, 4);
+  const bestSellerProducts = [...products]
+    .sort((left, right) => right.currentStock - left.currentStock || discountPercent(right) - discountPercent(left) || left.name.localeCompare(right.name))
+    .slice(0, 4);
+  const topBrands = (bootstrap?.productFilters.brands ?? []).slice(0, 6).map((brand) => ({
+    brand,
+    product: products.find((product) => product.brand === brand) ?? null,
+  })).filter((entry) => entry.product);
+  const recentlyViewedProducts = recentlyViewedIds
+    .map((productId) => productsById[productId])
+    .filter((product): product is StorefrontProduct => Boolean(product))
+    .slice(0, 6);
+  const wishlistProducts = wishlistIds
+    .map((productId) => productsById[productId])
+    .filter((product): product is StorefrontProduct => Boolean(product))
+    .slice(0, 6);
+  const selectedCategoryName = categorySummaries.find((category) => category.id === selectedCategory)?.name ?? "All products";
+  const filtersSummaryCount = [filters.brand, filters.size, filters.color, filters.minPrice, filters.maxPrice].filter(Boolean).length + (filters.discountOnly ? 1 : 0);
+
+  function storefrontProductFromVariant(base: StorefrontProduct, variant: StorefrontProductDetail["variants"][number]): StorefrontProduct {
+    return {
+      ...base,
+      id: variant.productId,
+      name: variant.name,
+      sku: variant.sku,
+      barcode: variant.barcode,
+      unit: variant.unit,
+      mrp: variant.mrp,
+      sellingPrice: variant.sellingPrice,
+      currentStock: variant.currentStock,
+      imageUrl: variant.imageUrl,
+      size: variant.label,
+      hasVariants: false,
+      grouped: false,
+      groupId: base.groupId,
+      groupName: base.groupName,
+      variantAttributeLabel: null,
+      variantCount: 0,
+      variantLabels: [],
+      defaultVariantLabel: variant.label,
+    };
+  }
 
   function addToCart(product: StorefrontProduct) {
     setCompletedOrder(null);
@@ -341,6 +673,112 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
       state: nextCustomer.state ?? "",
       postalCode: nextCustomer.postalCode ?? "",
     }));
+  }
+
+  function rememberSearch(term: string) {
+    const normalized = term.trim();
+    if (!normalized) {
+      return;
+    }
+
+    setRecentSearches((current) => [normalized, ...current.filter((value) => value.toLowerCase() !== normalized.toLowerCase())].slice(0, 8));
+  }
+
+  function commitSearch(term: string) {
+    const normalized = term.trim();
+    setSearch(normalized);
+    if (normalized) {
+      rememberSearch(normalized);
+    }
+    setSearchFocused(false);
+    startTransition(() => {
+      setSelectedCategory("");
+    });
+  }
+
+  function updateCatalogFilter(field: keyof CatalogFilterState, value: string | boolean) {
+    setFilters((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function clearCatalogFilters() {
+    setFilters(initialCatalogFilters);
+  }
+
+  function toggleWishlist(productId: string) {
+    setWishlistIds((current) => current.includes(productId)
+      ? current.filter((value) => value !== productId)
+      : [productId, ...current].slice(0, 24));
+  }
+
+  async function shareProduct(product: StorefrontProduct) {
+    const shareUrl = typeof window !== "undefined" ? window.location.href : "";
+    const shareData = {
+      title: product.name,
+      text: `${product.name} - ${money(product.sellingPrice)}`,
+      url: shareUrl,
+    };
+
+    try {
+      if (typeof navigator !== "undefined" && "share" in navigator) {
+        await navigator.share(shareData);
+        return;
+      }
+      if (typeof window !== "undefined") {
+        await window.navigator.clipboard.writeText(`${shareData.title}\n${shareData.url}`);
+      }
+    } catch {
+      setError("Product link could not be shared.");
+    }
+  }
+
+  function openProductDetails(product: StorefrontProduct) {
+    setSelectedProduct(product);
+    setSelectedProductDetail(null);
+    setRelatedProducts([]);
+    setFrequentlyBoughtTogether([]);
+    setProductDetailLoading(true);
+    startTransition(() => {
+      setRecentlyViewedIds((current) => [product.id, ...current.filter((value) => value !== product.id)].slice(0, 12));
+    });
+    if (!activeTenantSlug) {
+      setProductDetailLoading(false);
+      return;
+    }
+
+    void getStorefrontProductDetail(activeTenantSlug, product.id)
+      .then((result) => {
+        setSelectedProduct(result.product);
+        setSelectedProductDetail(result.product);
+        setRelatedProducts(result.relatedProducts);
+        setFrequentlyBoughtTogether(result.frequentlyBoughtTogether);
+        setProductsById((current) => {
+          const next = {
+            ...current,
+            [result.product.id]: result.product,
+          };
+          for (const variant of result.product.variants) {
+            next[variant.productId] = storefrontProductFromVariant(result.product, variant);
+          }
+          for (const item of [...result.relatedProducts, ...result.frequentlyBoughtTogether]) {
+            next[item.id] = item;
+          }
+          return next;
+        });
+      })
+      .catch((detailError: unknown) => {
+        setError(detailError instanceof Error ? detailError.message : "Product details could not be loaded");
+      })
+      .finally(() => setProductDetailLoading(false));
+  }
+
+  function loadMoreProducts() {
+    if (catalogPage >= catalogTotalPages || catalogLoadingMore) {
+      return;
+    }
+    setCatalogPage((current) => current + 1);
   }
 
   async function applyCoupon() {
@@ -414,13 +852,13 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
     setOrdersOpen(false);
   }
 
-  async function loadOrders() {
+  async function openOrders() {
     if (!activeTenantSlug || !customer) {
       setAuthOpen(true);
       return;
     }
 
-    setOrdersOpen((value) => !value);
+    setOrdersOpen(true);
     if (orders.length > 0) {
       return;
     }
@@ -505,7 +943,7 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
       order_id: response.razorpay.orderId,
       prefill: response.razorpay.prefill,
       theme: {
-        color: storefront?.primaryColor ?? "#166534",
+        color: storefront?.primaryColor ?? "#234239",
       },
       handler: (paymentResponse) => {
         void verifyStorefrontRazorpay(activeTenantSlug, {
@@ -551,191 +989,583 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
 
   return (
     <main
-      className={`min-h-screen ${theme.page} ${theme.ink}`}
+      className={`relative min-h-screen overflow-x-hidden ${theme.page} ${theme.ink}`}
       style={{
         "--store-primary": storefront?.primaryColor ?? theme.primary,
         "--store-accent": storefront?.accentColor ?? theme.accent,
       } as React.CSSProperties}
     >
-      <header className={`sticky top-0 z-20 border-b ${theme.header}`}>
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-0 top-0 h-[420px] w-full bg-[radial-gradient(circle_at_top_left,_rgba(255,172,120,0.16),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(35,66,57,0.10),_transparent_34%)]" />
+        <div className="absolute inset-x-0 top-[22rem] h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
+      </div>
+
+      <header className={`sticky top-0 z-30 border-b backdrop-blur-xl ${theme.header}`}>
         <div className={`hidden border-b text-xs font-semibold sm:block ${theme.topBar}`}>
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2 lg:px-8">
-            <span className="flex min-w-0 items-center gap-2 truncate"><Truck className="h-4 w-4 shrink-0" />{freeDeliveryAbove > 0 ? `Free delivery above ${money(freeDeliveryAbove)}` : "Fast local delivery"}</span>
-            <span className="hidden items-center gap-2 md:flex"><PackageCheck className="h-4 w-4" />Live stock from BizBil</span>
-            {tenant?.phone ? <a className="flex shrink-0 items-center gap-2" href={`tel:${tenant.phone}`}><Phone className="h-4 w-4" />{tenant.phone}</a> : null}
+            <span className="flex min-w-0 items-center gap-2 truncate">
+              <Truck className="h-4 w-4 shrink-0" />
+              {freeDeliveryAbove > 0 ? `Free delivery above ${money(freeDeliveryAbove)}` : "Fast local delivery"}
+            </span>
+            <span className="hidden items-center gap-2 md:flex">
+              <PackageCheck className="h-4 w-4" />
+              Live stock synced from BizBil POS
+            </span>
+            {tenant?.phone ? (
+              <a className="flex shrink-0 items-center gap-2" href={`tel:${tenant.phone}`}>
+                <Phone className="h-4 w-4" />
+                {tenant.phone}
+              </a>
+            ) : null}
           </div>
         </div>
-        <div className="mx-auto grid max-w-7xl gap-3 px-4 py-3 sm:px-6 lg:grid-cols-[minmax(210px,auto)_minmax(280px,1fr)_auto] lg:items-center lg:px-8">
+
+        <div className="mx-auto grid max-w-7xl gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[minmax(240px,auto)_minmax(320px,1fr)_auto] lg:items-center lg:px-8">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <StoreLogo tenantName={displayName} logoUrl={tenant?.logoUrl} />
               <div className="min-w-0">
-                <div className={`truncate text-[11px] font-semibold ${theme.muted}`}>{defaultHostname}</div>
-                <h1 className="truncate text-xl font-bold leading-tight md:text-2xl">{displayName}</h1>
+                <div className={`truncate text-[11px] font-semibold uppercase tracking-[0.18em] ${theme.muted}`}>{defaultHostname}</div>
+                <h1 className="truncate text-xl font-semibold tracking-tight md:text-[1.7rem]">{displayName}</h1>
               </div>
             </div>
-            <div className="flex shrink-0 gap-2 lg:hidden">
-              <button className={iconButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)} aria-label="Account"><User className="h-5 w-5" /></button>
-              <a className={`${iconButtonClass(theme)} relative`} href="#checkout" aria-label="Cart">
+            <div className="flex shrink-0 items-center gap-2 lg:hidden">
+              <button className={iconButtonClass(theme)} type="button" onClick={() => setAuthOpen(true)} aria-label="Account">
+                <User className="h-5 w-5" />
+              </button>
+              <button className={`${iconButtonClass(theme)} relative`} type="button" onClick={() => document.getElementById("checkout")?.scrollIntoView({ behavior: "smooth", block: "start" })} aria-label="Cart">
                 <ShoppingBag className="h-5 w-5" />
-                {cartCount > 0 ? <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">{cartCount}</span> : null}
-              </a>
+                {cartCount > 0 ? <CountBadge count={cartCount} /> : null}
+              </button>
             </div>
           </div>
 
-          <label className="relative block">
-            <Search className={`pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 ${theme.iconMuted}`} />
-            <input className={inputClass(theme, "h-11 w-full pl-12 pr-4 text-sm")} placeholder="Search products" value={search} onChange={(event) => setSearch(event.target.value)} />
-          </label>
+          <div className="relative block" ref={searchMenuRef}>
+            <Search className={`pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 ${theme.iconMuted}`} />
+            <input
+              className={inputClass(theme, "h-12 w-full border-white/70 bg-white/80 pl-12 pr-12 text-sm shadow-sm")}
+              placeholder="Search by product, SKU, barcode, or brand"
+              value={search}
+              onFocus={() => setSearchFocused(true)}
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitSearch(search);
+                }
+              }}
+            />
+            {search ? (
+              <button
+                className={`absolute right-3 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full ${theme.softBg}`}
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setSearchFocused(false);
+                }}
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+            {searchFocused ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-[0_24px_70px_-32px_rgba(15,23,42,0.35)]">
+                {searchLoading ? (
+                  <div className="flex items-center gap-2 px-4 py-4 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Searching catalog...
+                  </div>
+                ) : deferredSearch.trim() ? (
+                  searchSuggestions.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {searchSuggestions.map((product) => (
+                        <button
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                          key={product.id}
+                          type="button"
+                          onClick={() => {
+                            commitSearch(product.name);
+                            openProductDetails(product);
+                          }}
+                        >
+                          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl">
+                            <ProductVisual product={product} theme={theme} tenantName={displayName} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-slate-950">{product.name}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              {product.brand ? `${product.brand} | ` : ""}{product.sku ?? product.categoryName}
+                            </div>
+                          </div>
+                          <div className="text-sm font-semibold text-slate-950">{money(product.sellingPrice)}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-4 text-sm text-slate-500">
+                      No direct matches yet. Try category names, barcode, or a broader search term.
+                    </div>
+                  )
+                ) : recentSearches.length > 0 ? (
+                  <div className="p-4">
+                    <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent searches</div>
+                    <div className="flex flex-wrap gap-2">
+                      {recentSearches.map((term) => (
+                        <button
+                          className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                          key={term}
+                          type="button"
+                          onClick={() => commitSearch(term)}
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-4 py-4 text-sm text-slate-500">
+                    Start typing to search the live catalog.
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
 
-          <div className="hidden items-center gap-2 lg:flex">
+          <div className="hidden items-center justify-end gap-2 lg:flex">
             {storefront?.allowCustomerLogin ? customer ? (
               <>
-                <button className={outlineButtonClass(theme)} type="button" onClick={() => void loadOrders()}><History className="h-4 w-4" />Orders</button>
-                <button className={outlineButtonClass(theme)} type="button" onClick={() => void signOutCustomer()}><LogOut className="h-4 w-4" />Sign out</button>
+                <button className={outlineButtonClass(theme)} type="button" onClick={() => void openOrders()}>
+                  <History className="h-4 w-4" />
+                  Orders
+                </button>
+                <button className={outlineButtonClass(theme)} type="button" onClick={() => void signOutCustomer()}>
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
               </>
             ) : (
-              <button className={outlineButtonClass(theme)} type="button" onClick={() => setAuthOpen((value) => !value)}><LogIn className="h-4 w-4" />Account</button>
+              <button className={outlineButtonClass(theme)} type="button" onClick={() => setAuthOpen(true)}>
+                <LogIn className="h-4 w-4" />
+                Account
+              </button>
             ) : null}
-            <a className={`inline-flex h-11 items-center gap-2 rounded-md px-4 text-sm font-bold ${theme.cartButton}`} href="#checkout"><ShoppingBag className="h-5 w-5" />{cartCount} item{cartCount === 1 ? "" : "s"}</a>
+            <button className={`relative inline-flex h-12 items-center gap-3 rounded-full px-5 text-sm font-semibold shadow-sm ${theme.cartButton}`} type="button" onClick={() => document.getElementById("checkout")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              <ShoppingBag className="h-5 w-5" />
+              {cartCount} item{cartCount === 1 ? "" : "s"}
+              {cartCount > 0 ? <CountBadge count={cartCount} inset /> : null}
+            </button>
           </div>
         </div>
       </header>
 
-      <section className={theme.hero}>
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 md:py-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center lg:px-8">
+      <section className="relative">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-6 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_440px] lg:items-center lg:px-8 lg:pt-14">
           <div className="max-w-2xl">
-            <h2 className="text-4xl font-bold leading-[1.04] tracking-normal text-slate-950 md:text-6xl">{heroTitle}</h2>
-            <p className={`mt-4 max-w-xl text-base leading-7 md:text-lg ${theme.heroMuted}`}>{heroSubtitle}</p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <a className={`inline-flex h-11 items-center justify-center rounded-md px-5 text-sm font-bold ${theme.ctaBg}`} href="#store-products">Shop products</a>
-              {tenant?.phone ? <a className={`inline-flex h-11 items-center justify-center gap-2 rounded-md border px-5 text-sm font-semibold ${theme.heroButton}`} href={`tel:${tenant.phone}`}><Phone className="h-4 w-4" />Call store</a> : null}
+            <div className={`inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] shadow-sm ${theme.muted}`}>
+              <Sparkles className="h-3.5 w-3.5 text-[var(--store-accent)]" />
+              Fast local ecommerce
             </div>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <HeroMetric label="Products" value={products.length > 0 ? String(products.length) : "Live"} />
-              <HeroMetric label={freeDeliveryAbove > 0 ? "Free delivery" : "Delivery"} value={freeDeliveryAbove > 0 ? `${money(freeDeliveryAbove)}+` : "Local"} />
-              <HeroMetric label="Payment" value={canUseRazorpay ? "COD + Online" : canUseCod ? "COD" : "Online"} />
+            <h2 className="mt-5 max-w-[14ch] text-[2.9rem] font-semibold leading-[0.95] tracking-tight text-slate-950 sm:text-[4rem] lg:text-[4.7rem]">{heroTitle}</h2>
+            <p className={`mt-5 max-w-xl text-base leading-7 sm:text-lg ${theme.heroMuted}`}>{heroSubtitle}</p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <a className={`inline-flex h-12 items-center justify-center rounded-full px-6 text-sm font-semibold shadow-sm transition hover:-translate-y-0.5 ${theme.ctaBg}`} href="#store-products">
+                Shop products
+              </a>
+              <button className={`inline-flex h-12 items-center justify-center gap-2 rounded-full border px-6 text-sm font-semibold ${theme.heroButton}`} type="button" onClick={() => document.getElementById("category-discovery")?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+                Explore categories
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+              <HeroMetric label="Products online" value={String(products.length || 0)} />
+              <HeroMetric label="Payments" value={canUseRazorpay ? "COD + prepaid" : canUseCod ? "Cash on delivery" : "Online only"} />
+              <HeroMetric label="Delivery" value={freeDeliveryAbove > 0 ? `${money(freeDeliveryAbove)}+ free` : "Same-city"} />
             </div>
           </div>
-          {heroBanner ? <HeroBannerShowcase imageUrl={heroBanner} theme={theme} tenantName={displayName} /> : <HeroProductShowcase products={products.slice(0, 4)} theme={theme} tenantName={displayName} />}
+
+          <div className="relative">
+            {heroBanner ? (
+              <HeroBannerShowcase imageUrl={heroBanner} secondaryImageUrl={secondaryBanner} theme={theme} tenantName={displayName} />
+            ) : (
+              <HeroProductShowcase products={heroProducts} theme={theme} tenantName={displayName} />
+            )}
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <TrustTile icon={<ShieldCheck className="h-4 w-4" />} title="Verified stock" subtitle="Inventory stays in sync with BizBil." />
+              <TrustTile icon={<Leaf className="h-4 w-4" />} title="Fresh assortment" subtitle="Only in-stock items are shown online." />
+              <TrustTile icon={<Truck className="h-4 w-4" />} title="Ready to deliver" subtitle="COD and prepaid checkout supported." />
+            </div>
+          </div>
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl px-4 pt-2 sm:px-6 lg:px-8">
-        <div className="flex gap-2 overflow-x-auto border-b border-slate-200 pb-0">
-          <CategoryTile
-            active={selectedCategory === ""}
-            label="All products"
-            theme={theme}
-            onClick={() => setSelectedCategory("")}
-          />
-          {(bootstrap?.categories ?? []).map((category) => (
-            <CategoryTile
-              active={selectedCategory === category.id}
+      <section className="mx-auto max-w-7xl px-4 pb-4 sm:px-6 lg:px-8">
+        <div className="grid gap-4 rounded-[28px] border border-white/70 bg-white/75 p-5 shadow-[0_20px_80px_-45px_rgba(15,23,42,0.4)] backdrop-blur sm:grid-cols-3">
+          <FeatureStripItem icon={<PackageCheck className="h-5 w-5" />} title="Live stock only" detail="Online catalog hides unavailable items automatically." />
+          <FeatureStripItem icon={<CreditCard className="h-5 w-5" />} title="Checkout that feels simple" detail="Guest checkout, account login, and payment choice in one flow." />
+          <FeatureStripItem icon={<History className="h-5 w-5" />} title="Customer account ready" detail="Order history and sign-in stay within the storefront." />
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8" id="category-discovery">
+        <SectionHeader
+          title="Shop by category"
+          subtitle="Quick ways into the catalog, shaped around what this tenant already has online."
+          action={categorySummaries.length > 4 ? `${String(categorySummaries.length)} live categories` : undefined}
+        />
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {spotlightCategories.map((category) => (
+            <CategorySpotlightCard
               key={category.id}
-              label={category.name}
+              active={selectedCategory === category.id}
+              count={category.count}
+              product={category.product}
               theme={theme}
-              onClick={() => setSelectedCategory(category.id)}
+              title={category.name}
+              onClick={() => startTransition(() => setSelectedCategory(category.id))}
             />
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:px-8">
-        <section className="min-w-0" id="store-products">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold">Best sellers</h2>
-              <p className={`text-sm ${theme.muted}`}>{products.length} product{products.length === 1 ? "" : "s"} available online</p>
-            </div>
-            <button className={categoryClass(selectedCategory === "", theme)} type="button" onClick={() => setSelectedCategory("")}>
-              View all
-            </button>
-          </div>
-
-          {error ? <ErrorBanner theme={theme} message={error} onClose={() => setError("")} /> : null}
-
-          {authOpen && storefront?.allowCustomerLogin ? (
-            <AccountPanel
-              authMode={authMode}
-              authForm={authForm}
-              authLoading={authLoading}
-              authError={authError}
-              theme={theme}
-              onModeChange={setAuthMode}
-              onFieldChange={updateAuthField}
-              onSubmit={submitAuth}
-              onClose={() => setAuthOpen(false)}
+      <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.24)] backdrop-blur">
+            <SectionHeader
+              title="Best sellers"
+              subtitle="High-demand products surfaced from the live online assortment."
             />
-          ) : null}
-
-          {ordersOpen ? (
-            <OrderHistory orders={orders} loading={ordersLoading} theme={theme} />
-          ) : null}
-
-          {loading && !bootstrap ? (
-            <ProductSkeleton theme={theme} />
-          ) : products.length === 0 ? (
-            <div className={`rounded-md border p-8 text-center ${theme.panel}`}>
-              <div className={`mx-auto grid h-12 w-12 place-items-center rounded-md ${theme.softBg}`}>
-                <Search className="h-5 w-5" />
-              </div>
-              <h2 className="mt-4 text-lg font-semibold">No products found</h2>
-              <p className={`mt-1 text-sm ${theme.muted}`}>Try a different search or category.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-3">
-              {products.map((product) => (
-                <ProductCard
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {bestSellerProducts.map((product) => (
+                <CompactProductRow
                   key={product.id}
                   product={product}
-                  quantity={cart[product.id] ?? 0}
                   theme={theme}
                   tenantName={displayName}
-                  onAdd={() => addToCart(product)}
-                  onDecrement={() => decrement(product.id)}
+                  onClick={() => openProductDetails(product)}
                 />
               ))}
             </div>
-          )}
+          </div>
+
+          <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.24)] backdrop-blur">
+            <SectionHeader
+              title="New arrivals"
+              subtitle="Fresh products that give the storefront a sense of movement."
+            />
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {freshProducts.map((product) => (
+                <CompactProductRow
+                  key={product.id}
+                  product={product}
+                  theme={theme}
+                  tenantName={displayName}
+                  onClick={() => openProductDetails(product)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {topBrands.length > 0 ? (
+        <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+          <SectionHeader
+            title="Shop by brand"
+            subtitle="Simple brand-led entry points for customers who already know what they want."
+          />
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {topBrands.map(({ brand, product }) => (
+              <button
+                className="group flex items-center gap-4 rounded-[26px] border border-white/70 bg-white/80 p-4 text-left shadow-[0_16px_50px_-36px_rgba(15,23,42,0.28)] transition hover:-translate-y-0.5 hover:border-slate-200 hover:shadow-[0_24px_65px_-32px_rgba(15,23,42,0.3)]"
+                key={brand}
+                type="button"
+                onClick={() => {
+                  updateCatalogFilter("brand", brand);
+                  document.getElementById("store-products")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl ${theme.softBg}`}>
+                  <Star className="h-5 w-5 text-[var(--store-primary)]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-base font-semibold text-slate-950">{brand}</div>
+                  <div className="mt-1 text-sm text-slate-500">{product?.categoryName ?? "Browse brand catalog"}</div>
+                </div>
+                <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+          <OfferPanel
+            product={discountedProducts[0] ?? heroProducts[0] ?? null}
+            theme={theme}
+            tenantName={displayName}
+            onBrowse={() => document.getElementById("store-products")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          />
+          <MerchandisingPanel
+            products={discountedProducts.length > 0 ? discountedProducts : freshProducts}
+            theme={theme}
+            title={discountedProducts.length > 0 ? "Offers worth highlighting" : "Fresh online picks"}
+            subtitle={discountedProducts.length > 0 ? "A quick shortlist for the products with the strongest value." : "A compact set of items now available in the storefront."}
+            onProductClick={openProductDetails}
+          />
+        </div>
+      </section>
+
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 pb-16 sm:px-6 lg:grid-cols-[minmax(0,1fr)_392px] lg:px-8">
+        <section className="min-w-0" id="store-products">
+          <div className="rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.28)] backdrop-blur">
+            <div className="flex flex-col gap-5 border-b border-slate-200/80 pb-5">
+              <SectionHeader
+                title={selectedCategory ? selectedCategoryName : "Browse the storefront"}
+                subtitle={`${String(catalogTotal || liveCatalogProducts.length)} product${catalogTotal === 1 ? "" : "s"} available online now`}
+              />
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  <CategoryChip active={selectedCategory === ""} label="All products" theme={theme} onClick={() => startTransition(() => setSelectedCategory(""))} />
+                  {categorySummaries.map((category) => (
+                    <CategoryChip
+                      active={selectedCategory === category.id}
+                      key={category.id}
+                      label={category.name}
+                      theme={theme}
+                      onClick={() => startTransition(() => setSelectedCategory(category.id))}
+                    />
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="min-w-[180px]">
+                    <span className="sr-only">Sort products</span>
+                    <select
+                      className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")}
+                      value={sortBy}
+                      onChange={(event) => setSortBy(event.target.value as ProductSort)}
+                    >
+                      <option value="FEATURED">Featured first</option>
+                      <option value="NEWEST">Newest</option>
+                      <option value="PRICE_ASC">Price: low to high</option>
+                      <option value="PRICE_DESC">Price: high to low</option>
+                      <option value="DISCOUNT">Best discount</option>
+                      <option value="NAME">Alphabetical</option>
+                    </select>
+                  </label>
+                  <div className="inline-flex rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+                    <button className={modeButtonClass(viewMode === "grid", theme)} type="button" onClick={() => setViewMode("grid")} aria-label="Grid view">
+                      <Grid2x2 className="h-4 w-4" />
+                    </button>
+                    <button className={modeButtonClass(viewMode === "list", theme)} type="button" onClick={() => setViewMode("list")} aria-label="List view">
+                      <List className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px_120px_auto]">
+                <label>
+                  <span className="sr-only">Filter by brand</span>
+                  <select className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")} value={filters.brand} onChange={(event) => updateCatalogFilter("brand", event.target.value)}>
+                    <option value="">All brands</option>
+                    {(catalogFilters?.brands ?? bootstrap?.productFilters.brands ?? []).map((brand) => (
+                      <option key={brand} value={brand}>{brand}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Filter by size</span>
+                  <select className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")} value={filters.size} onChange={(event) => updateCatalogFilter("size", event.target.value)}>
+                    <option value="">All sizes</option>
+                    {(catalogFilters?.sizes ?? bootstrap?.productFilters.sizes ?? []).map((size) => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Filter by color</span>
+                  <select className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")} value={filters.color} onChange={(event) => updateCatalogFilter("color", event.target.value)}>
+                    <option value="">All colors</option>
+                    {(catalogFilters?.colors ?? bootstrap?.productFilters.colors ?? []).map((color) => (
+                      <option key={color} value={color}>{color}</option>
+                    ))}
+                  </select>
+                </label>
+                <input
+                  className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")}
+                  placeholder="Min"
+                  inputMode="numeric"
+                  value={filters.minPrice}
+                  onChange={(event) => updateCatalogFilter("minPrice", event.target.value.replace(/[^\d.]/g, ""))}
+                />
+                <input
+                  className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 px-4 shadow-sm")}
+                  placeholder="Max"
+                  inputMode="numeric"
+                  value={filters.maxPrice}
+                  onChange={(event) => updateCatalogFilter("maxPrice", event.target.value.replace(/[^\d.]/g, ""))}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    className={`inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold ${filters.discountOnly ? theme.outlineActive : theme.outline}`}
+                    type="button"
+                    onClick={() => updateCatalogFilter("discountOnly", !filters.discountOnly)}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Offers only
+                  </button>
+                  {filtersSummaryCount > 0 ? (
+                    <button className="text-sm font-semibold text-slate-500 transition hover:text-slate-700" type="button" onClick={clearCatalogFilters}>
+                      Clear {filtersSummaryCount}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {error ? <ErrorBanner theme={theme} message={error} onClose={() => setError("")} /> : null}
+            {catalogError ? <ErrorBanner theme={theme} message={catalogError} onClose={() => setCatalogError("")} /> : null}
+
+            {loading && !bootstrap ? (
+              <div className="mt-6">
+                <ProductSkeleton theme={theme} />
+              </div>
+            ) : catalogLoading ? (
+              <div className="mt-6">
+                <ProductSkeleton theme={theme} />
+              </div>
+            ) : liveCatalogProducts.length === 0 ? (
+              <div className={`mt-6 rounded-[24px] border border-dashed p-10 text-center ${theme.empty}`}>
+                <div className={`mx-auto grid h-14 w-14 place-items-center rounded-2xl ${theme.softBg}`}>
+                  <Search className="h-6 w-6" />
+                </div>
+                <h3 className="mt-5 text-xl font-semibold text-slate-950">No products match this view</h3>
+                <p className={`mx-auto mt-2 max-w-md text-sm leading-6 ${theme.muted}`}>Try a different search term, clear one of the active filters, or switch categories to keep browsing the online catalog.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {recentSearches.slice(0, 3).map((term) => (
+                    <button className="rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50" key={term} type="button" onClick={() => commitSearch(term)}>
+                      {term}
+                    </button>
+                  ))}
+                  {categorySummaries.slice(0, 3).map((category) => (
+                    <button className="rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50" key={category.id} type="button" onClick={() => setSelectedCategory(category.id)}>
+                      {category.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className={viewMode === "grid" ? "mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3" : "mt-6 space-y-4"}>
+                  {liveCatalogProducts.map((product, index) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      quantity={product.grouped ? 0 : (cart[product.id] ?? 0)}
+                      rank={index + 1}
+                      theme={theme}
+                      tenantName={displayName}
+                      viewMode={viewMode}
+                      wishlisted={wishlistIds.includes(product.id)}
+                      onAdd={() => addToCart(product)}
+                      onDecrement={() => decrement(product.id)}
+                      onQuickView={() => openProductDetails(product)}
+                      onWishlist={() => toggleWishlist(product.id)}
+                    />
+                  ))}
+                </div>
+                {catalogPage < catalogTotalPages ? (
+                  <div className="mt-6 flex justify-center">
+                    <button className={`inline-flex h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold ${theme.outline}`} type="button" onClick={loadMoreProducts} disabled={catalogLoadingMore}>
+                      {catalogLoadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Load more products
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          {wishlistProducts.length > 0 ? (
+            <section className="mt-8 rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.24)] backdrop-blur">
+              <SectionHeader
+                title="Wishlist"
+                subtitle="Saved items that customers may want to revisit before checkout."
+              />
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {wishlistProducts.map((product) => (
+                  <CompactProductRow
+                    key={product.id}
+                    product={product}
+                    theme={theme}
+                    tenantName={displayName}
+                    onClick={() => openProductDetails(product)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {recentlyViewedProducts.length > 0 ? (
+            <section className="mt-8 rounded-[28px] border border-white/70 bg-white/80 p-5 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.24)] backdrop-blur">
+              <SectionHeader
+                title="Recently viewed"
+                subtitle="Shortcuts back to products the customer explored during this visit."
+              />
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {recentlyViewedProducts.map((product) => (
+                  <CompactProductRow
+                    key={product.id}
+                    product={product}
+                    theme={theme}
+                    tenantName={displayName}
+                    onClick={() => openProductDetails(product)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
         </section>
 
         <aside className="lg:sticky lg:top-24 lg:self-start" id="checkout">
-          <form className={`overflow-hidden rounded-md border shadow-xl shadow-black/5 ${theme.panel}`} onSubmit={submitOrder}>
-            <div className={`border-b p-5 ${theme.panelDivider}`}>
-              <div className="flex items-center justify-between gap-3">
+          <form className={`overflow-hidden rounded-[30px] border border-white/70 bg-white/88 shadow-[0_28px_90px_-46px_rgba(15,23,42,0.38)] backdrop-blur ${theme.panel}`} onSubmit={submitOrder}>
+            <div className={`border-b p-6 ${theme.panelDivider}`}>
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-xl font-bold">Your cart</h2>
-                  <p className={`text-sm ${theme.muted}`}>{cartCount} item{cartCount === 1 ? "" : "s"} selected</p>
+                  <div className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${theme.muted}`}>Cart summary</div>
+                  <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Ready to place order</h2>
+                  <p className={`mt-1 text-sm ${theme.muted}`}>{cartCount} item{cartCount === 1 ? "" : "s"} selected</p>
                 </div>
-                <div className={`grid h-11 w-11 place-items-center rounded-md ${theme.softBg}`}>
+                <div className={`grid h-12 w-12 place-items-center rounded-2xl ${theme.softBg}`}>
                   <ShoppingBag className="h-5 w-5 text-[var(--store-primary)]" />
                 </div>
               </div>
               {freeDeliveryAbove > 0 ? (
-                <div className="mt-4">
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
                   <div className={`flex items-center justify-between text-xs font-semibold ${theme.muted}`}>
                     <span>{freeDeliveryBalance > 0 ? `${money(freeDeliveryBalance)} away from free delivery` : "Free delivery unlocked"}</span>
-                    <span>{money(subtotal)} / {money(freeDeliveryAbove)}</span>
+                    <span>{money(discountedSubtotal)} / {money(freeDeliveryAbove)}</span>
                   </div>
-                  <div className={`mt-2 h-2 overflow-hidden rounded-full ${theme.progressTrack}`}>
+                  <div className={`mt-3 h-2 overflow-hidden rounded-full ${theme.progressTrack}`}>
                     <div className="h-full rounded-full bg-[var(--store-primary)] transition-all" style={{ width: `${String(freeDeliveryProgress)}%` }} />
                   </div>
                 </div>
               ) : null}
             </div>
 
-            <div className="max-h-[34vh] overflow-y-auto p-4 lg:max-h-[32vh]">
+            <div className="max-h-[32vh] overflow-y-auto px-5 py-5">
               {cartLines.length === 0 ? (
-                <div className={`rounded-md border border-dashed p-5 text-sm ${theme.empty}`}>
-                  Add products to start an online order.
+                <div className={`rounded-[22px] border border-dashed p-5 text-sm leading-6 ${theme.empty}`}>
+                  Add products to start an online order. The checkout will calculate tax and delivery from live catalog data.
                 </div>
               ) : (
                 <div className="space-y-3">
                   {cartLines.map((line) => (
-                    <div className={`grid grid-cols-[1fr_auto] gap-3 rounded-md border p-3 ${theme.line}`} key={line.product.id}>
+                    <div className={`grid grid-cols-[1fr_auto] gap-3 rounded-[22px] border p-4 ${theme.line}`} key={line.product.id}>
                       <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">{line.product.name}</div>
+                        <button className="text-left" type="button" onClick={() => openProductDetails(line.product)}>
+                          <div className="truncate text-sm font-semibold text-slate-950">{line.product.name}</div>
+                        </button>
                         <div className={`mt-1 text-xs ${theme.muted}`}>{money(line.product.sellingPrice)} / {line.product.unit}</div>
                         <QuantityControl
                           quantity={line.quantity}
@@ -746,10 +1576,10 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
                         />
                       </div>
                       <div className="flex flex-col items-end justify-between">
-                        <button className="grid h-8 w-8 place-items-center rounded-md text-red-600 hover:bg-red-50" type="button" onClick={() => removeFromCart(line.product.id)} aria-label={`Remove ${line.product.name}`}>
+                        <button className="grid h-8 w-8 place-items-center rounded-full text-red-600 transition hover:bg-red-50" type="button" onClick={() => removeFromCart(line.product.id)} aria-label={`Remove ${line.product.name}`}>
                           <Trash2 className="h-4 w-4" />
                         </button>
-                        <div className="text-sm font-semibold">{money(line.product.sellingPrice * line.quantity)}</div>
+                        <div className="text-sm font-semibold text-slate-950">{money(line.product.sellingPrice * line.quantity)}</div>
                       </div>
                     </div>
                   ))}
@@ -757,25 +1587,25 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               )}
             </div>
 
-            <div className={`border-y p-4 ${theme.summary}`}>
+            <div className={`border-y px-5 py-5 ${theme.summary}`}>
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <label className="relative block">
                   <Tag className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${theme.accentText}`} />
                   <input
-                    className={inputClass(theme, "h-10 w-full pl-10 pr-3")}
+                    className={inputClass(theme, "h-11 w-full border-white/70 bg-white/90 pl-10 pr-3 shadow-sm")}
                     placeholder="Coupon code"
                     value={form.couponCode}
                     onChange={(event) => updateFormField("couponCode", event.target.value)}
                   />
                 </label>
-                <button className={`inline-flex h-10 items-center justify-center rounded-md px-3 text-sm font-bold text-white disabled:opacity-50 ${theme.accentBg}`} type="button" disabled={couponLoading || cartItems.length === 0} onClick={() => void applyCoupon()}>
+                <button className={`inline-flex h-11 items-center justify-center rounded-full px-4 text-sm font-semibold text-white disabled:opacity-50 ${theme.accentBg}`} type="button" disabled={couponLoading || cartItems.length === 0} onClick={() => void applyCoupon()}>
                   {couponLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Apply"}
                 </button>
               </div>
-              {coupon ? <div className="mt-2 text-xs font-semibold text-[var(--store-primary)]">{coupon.code}: {coupon.label}</div> : null}
-              {couponError ? <div className="mt-2 text-xs font-semibold text-red-600">{couponError}</div> : null}
+              {coupon ? <div className="mt-3 text-xs font-semibold text-[var(--store-primary)]">{coupon.code}: {coupon.label}</div> : null}
+              {couponError ? <div className="mt-3 text-xs font-semibold text-red-600">{couponError}</div> : null}
 
-              <div className="mt-4 space-y-2 text-sm">
+              <div className="mt-5 space-y-2 text-sm">
                 <MoneyRow label="Subtotal" value={subtotal} />
                 <MoneyRow label="Discount" value={-(coupon?.discount ?? 0)} />
                 <MoneyRow label="GST estimate" value={gstEstimate} />
@@ -787,9 +1617,9 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
               </div>
             </div>
 
-            <div className="space-y-3 p-4">
+            <div className="space-y-4 p-5">
               {checkoutRequiresLogin ? (
-                <button className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border text-sm font-semibold ${theme.outline}`} type="button" onClick={() => setAuthOpen(true)}>
+                <button className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border text-sm font-semibold ${theme.outline}`} type="button" onClick={() => setAuthOpen(true)}>
                   <LogIn className="h-4 w-4" />
                   Sign in to checkout
                 </button>
@@ -805,32 +1635,160 @@ export function StorefrontClient({ tenantSlug, host }: Readonly<{ tenantSlug?: s
                 <TextField theme={theme} label="City" value={form.city} onChange={(value) => updateFormField("city", value)} />
                 <TextField theme={theme} label="PIN code" value={form.postalCode} onChange={(value) => updateFormField("postalCode", value)} inputMode="numeric" />
               </div>
-              <TextField theme={theme} label="Delivery note" value={form.notes} onChange={(value) => updateFormField("notes", value)} />
+              <TextAreaField theme={theme} label="Delivery note" value={form.notes} onChange={(value) => updateFormField("notes", value)} />
 
               <div className="grid grid-cols-2 gap-2">
-                <PaymentButton theme={theme} active={form.paymentMethod === "COD"} disabled={!canUseCod} icon={<Truck className="h-4 w-4" />} label="COD" onClick={() => updateFormField("paymentMethod", "COD")} />
-                <PaymentButton theme={theme} active={form.paymentMethod === "RAZORPAY"} disabled={!canUseRazorpay} icon={<CreditCard className="h-4 w-4" />} label="Prepaid" onClick={() => updateFormField("paymentMethod", "RAZORPAY")} />
+                <PaymentButton theme={theme} active={form.paymentMethod === "COD"} disabled={!canUseCod} icon={<Truck className="h-4 w-4" />} label="Cash on delivery" onClick={() => updateFormField("paymentMethod", "COD")} />
+                <PaymentButton theme={theme} active={form.paymentMethod === "RAZORPAY"} disabled={!canUseRazorpay} icon={<CreditCard className="h-4 w-4" />} label="Pay online" onClick={() => updateFormField("paymentMethod", "RAZORPAY")} />
               </div>
 
-              <button className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-4 font-bold disabled:cursor-not-allowed disabled:opacity-60 ${theme.ctaBg}`} disabled={submitting || cartItems.length === 0 || checkoutRequiresLogin} type="submit">
+              <button className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${theme.ctaBg}`} disabled={submitting || cartItems.length === 0 || checkoutRequiresLogin} type="submit">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />}
                 Proceed to checkout
               </button>
+
+              <div className={`grid gap-2 rounded-[22px] border border-slate-200 bg-slate-50/80 p-4 text-xs ${theme.muted}`}>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-[var(--store-primary)]" />
+                  Price, stock, and checkout totals are validated from BizBil before order creation.
+                </div>
+                <div className="flex items-center gap-2">
+                  <Truck className="h-4 w-4 text-[var(--store-primary)]" />
+                  Orders are placed only for products that are still available online.
+                </div>
+              </div>
             </div>
           </form>
 
           {completedOrder ? <OrderComplete theme={theme} order={completedOrder} /> : null}
         </aside>
       </div>
+
+      {authOpen ? (
+        <SideSheet title={authMode === "login" ? "Customer account" : "Create account"} subtitle="Sign in to keep order history connected to the storefront." onClose={() => setAuthOpen(false)}>
+          <AccountPanel
+            authMode={authMode}
+            authForm={authForm}
+            authLoading={authLoading}
+            authError={authError}
+            theme={theme}
+            onModeChange={setAuthMode}
+            onFieldChange={updateAuthField}
+            onSubmit={submitAuth}
+          />
+        </SideSheet>
+      ) : null}
+
+      {ordersOpen ? (
+        <SideSheet title="Your orders" subtitle="Track online orders placed from this storefront." onClose={() => setOrdersOpen(false)}>
+          <OrderHistory orders={orders} loading={ordersLoading} theme={theme} />
+        </SideSheet>
+      ) : null}
+
+      {selectedProduct ? (
+        <SideSheet
+          title={selectedProduct.name}
+          subtitle={selectedProduct.categoryName}
+          onClose={() => {
+            setSelectedProduct(null);
+            setSelectedProductDetail(null);
+            setRelatedProducts([]);
+            setFrequentlyBoughtTogether([]);
+          }}
+          wide
+        >
+          <ProductQuickView
+            product={selectedProduct}
+            detail={selectedProductDetail}
+            relatedProducts={relatedProducts}
+            frequentlyBoughtTogether={frequentlyBoughtTogether}
+            loading={productDetailLoading}
+            theme={theme}
+            tenantName={displayName}
+            cart={cart}
+            productsById={productsById}
+            onAddProduct={addToCart}
+            onDecrementProduct={decrement}
+            onSelectProduct={openProductDetails}
+            onWishlist={() => toggleWishlist(selectedProduct.id)}
+            onShare={() => void shareProduct(selectedProduct)}
+            wishlisted={wishlistIds.includes(selectedProduct.id)}
+          />
+        </SideSheet>
+      ) : null}
+
+      <FloatingCartButton cartCount={cartCount} total={estimatedTotal} onClick={() => document.getElementById("checkout")?.scrollIntoView({ behavior: "smooth", block: "start" })} />
     </main>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+}: Readonly<{
+  title: string;
+  subtitle: string;
+  action?: string | undefined;
+}>) {
+  return (
+    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h2 className="text-[1.9rem] font-semibold tracking-tight text-slate-950">{title}</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">{subtitle}</p>
+      </div>
+      {action ? <div className="text-sm font-semibold text-slate-500">{action}</div> : null}
+    </div>
   );
 }
 
 function HeroMetric({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
-    <div className="rounded-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-base font-bold text-slate-950 md:text-lg">{value}</div>
-      <div className="text-[10px] font-semibold uppercase text-slate-500 md:text-xs">{label}</div>
+    <div className="rounded-[22px] border border-white/70 bg-white/78 px-4 py-4 shadow-sm">
+      <div className="text-lg font-semibold tracking-tight text-slate-950">{value}</div>
+      <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+    </div>
+  );
+}
+
+function FeatureStripItem({
+  icon,
+  title,
+  detail,
+}: Readonly<{
+  icon: React.ReactNode;
+  title: string;
+  detail: string;
+}>) {
+  return (
+    <div className="flex gap-3 rounded-[22px] border border-slate-200/80 bg-white/70 p-4">
+      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]">
+        {icon}
+      </div>
+      <div>
+        <div className="text-sm font-semibold text-slate-950">{title}</div>
+        <div className="mt-1 text-sm leading-6 text-slate-500">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function TrustTile({
+  icon,
+  title,
+  subtitle,
+}: Readonly<{
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}>) {
+  return (
+    <div className="rounded-[22px] border border-white/75 bg-white/78 p-4 shadow-sm">
+      <div className="flex items-center gap-2 text-[var(--store-primary)]">
+        {icon}
+        <span className="text-sm font-semibold text-slate-950">{title}</span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{subtitle}</p>
     </div>
   );
 }
@@ -847,11 +1805,11 @@ function HeroProductShowcase({
   const showcaseProducts = products.length > 0 ? products : [null, null, null];
 
   return (
-    <div className={`relative hidden min-h-[320px] overflow-hidden rounded-md border p-5 shadow-xl md:block ${theme.heroShowcase}`}>
-      <div className="absolute inset-x-8 bottom-8 h-8 rounded-full bg-black/10 blur-xl" />
-      <div className="relative grid h-[230px] grid-cols-[0.82fr_1fr_0.82fr] items-end gap-3">
+    <div className={`relative hidden overflow-hidden rounded-[32px] border p-6 shadow-[0_28px_100px_-50px_rgba(15,23,42,0.5)] md:block ${theme.heroShowcase}`}>
+      <div className="pointer-events-none absolute inset-x-12 bottom-12 h-10 rounded-full bg-black/12 blur-2xl" />
+      <div className="grid min-h-[330px] grid-cols-[0.82fr_1fr_0.82fr] items-end gap-4">
         {showcaseProducts.slice(0, 3).map((product, index) => (
-          <div className={index === 1 ? "pb-2" : "pb-10"} key={product?.id ?? `hero-product-${String(index)}`}>
+          <div className={index === 1 ? "pb-4" : "pb-10"} key={product?.id ?? `hero-product-${String(index)}`}>
             {product ? (
               <ProductVisual product={product} theme={theme} tenantName={tenantName} hero={index === 1} />
             ) : (
@@ -860,27 +1818,193 @@ function HeroProductShowcase({
           </div>
         ))}
       </div>
-      <div className={`relative mt-3 rounded-md border px-4 py-3 ${theme.heroShelf}`}>
-        <div className="text-sm font-bold text-slate-950">Ready for online orders</div>
-        <div className="mt-1 text-xs text-slate-500">Catalog, cart, login, and checkout connected to BizBil.</div>
+      <div className={`mt-5 rounded-[24px] border px-5 py-4 ${theme.heroShelf}`}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Curated for online orders</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">The storefront stays rooted in the live BizBil catalog while presenting products more cleanly.</div>
+          </div>
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[var(--store-accent)]/10 text-[var(--store-accent)]">
+            <Sparkles className="h-5 w-5" />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function HeroBannerShowcase({ imageUrl, theme, tenantName }: Readonly<{ imageUrl: string; theme: StoreTheme; tenantName: string }>) {
+function HeroBannerShowcase({
+  imageUrl,
+  secondaryImageUrl,
+  theme,
+  tenantName,
+}: Readonly<{ imageUrl: string; secondaryImageUrl: string | null; theme: StoreTheme; tenantName: string }>) {
   return (
-    <div className={`relative hidden min-h-[320px] overflow-hidden rounded-md border shadow-xl md:block ${theme.heroShowcase}`}>
+    <div className={`relative hidden overflow-hidden rounded-[32px] border shadow-[0_28px_100px_-50px_rgba(15,23,42,0.5)] md:block ${theme.heroShowcase}`}>
       <img className="absolute inset-0 h-full w-full object-cover" src={imageUrl} alt={`${tenantName} ecommerce banner`} />
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5">
-        <div className="text-sm font-bold text-white">Ready for online orders</div>
-        <div className="mt-1 text-xs text-white/75">Catalog, cart, login, and checkout connected to BizBil.</div>
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-slate-950/18 to-transparent" />
+      <div className="relative flex min-h-[390px] flex-col justify-between p-6">
+        <div className="self-end rounded-full border border-white/30 bg-white/12 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white/90 backdrop-blur">
+          Online storefront
+        </div>
+        <div className="grid gap-4">
+          <div>
+            <div className="text-2xl font-semibold tracking-tight text-white">Built for local retail that wants to look polished online.</div>
+            <div className="mt-2 max-w-sm text-sm leading-6 text-white/78">Hero-led merchandising, cleaner browsing, and checkout that still maps back to BizBil operations.</div>
+          </div>
+          {secondaryImageUrl ? (
+            <div className="grid grid-cols-[1.15fr_0.85fr] gap-3">
+              <div className="rounded-[24px] border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-white/60">What customers feel</div>
+                <div className="mt-2 text-base font-semibold text-white">A calmer storefront with stronger hierarchy and faster scanability.</div>
+              </div>
+              <div className="overflow-hidden rounded-[24px] border border-white/15">
+                <img className="h-full w-full object-cover" src={secondaryImageUrl} alt={`${tenantName} secondary ecommerce banner`} />
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
 }
 
-function CategoryTile({
+function CategorySpotlightCard({
+  active,
+  count,
+  product,
+  theme,
+  title,
+  onClick,
+}: Readonly<{
+  active: boolean;
+  count: number;
+  product: StorefrontProduct | null;
+  theme: StoreTheme;
+  title: string;
+  onClick: () => void;
+}>) {
+  return (
+    <button
+      className={`group overflow-hidden rounded-[26px] border p-4 text-left transition duration-300 hover:-translate-y-1 hover:shadow-[0_16px_60px_-32px_rgba(15,23,42,0.35)] ${active ? "border-[var(--store-primary)] bg-[rgba(35,66,57,0.04)]" : "border-white/70 bg-white/82"}`}
+      type="button"
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-lg font-semibold tracking-tight text-slate-950">{title}</div>
+          <div className="mt-1 text-sm text-slate-500">{count} live product{count === 1 ? "" : "s"}</div>
+        </div>
+        <div className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${active ? "bg-[var(--store-primary)] text-white" : "bg-slate-100 text-slate-600"}`}>
+          Browse
+        </div>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-[22px]">
+        {product ? (
+          <ProductVisual product={product} theme={theme} tenantName={title} />
+        ) : (
+          <div className="aspect-[1.2] bg-slate-100" />
+        )}
+      </div>
+      <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[var(--store-primary)]">
+        Explore category
+        <ChevronRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+      </div>
+    </button>
+  );
+}
+
+function OfferPanel({
+  product,
+  theme,
+  tenantName,
+  onBrowse,
+}: Readonly<{
+  product: StorefrontProduct | null;
+  theme: StoreTheme;
+  tenantName: string;
+  onBrowse: () => void;
+}>) {
+  return (
+    <section className="relative overflow-hidden rounded-[32px] border border-[rgba(35,66,57,0.16)] bg-[linear-gradient(135deg,#fff8ee_0%,#ffffff_42%,#f3faf5_100%)] p-6 shadow-[0_26px_80px_-45px_rgba(15,23,42,0.32)]">
+      <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-[rgba(255,157,91,0.18)] blur-3xl" />
+      <div className="absolute bottom-0 left-0 h-40 w-40 rounded-full bg-[rgba(35,66,57,0.12)] blur-3xl" />
+      <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-[rgba(35,66,57,0.12)] bg-white/88 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+            <Star className="h-3.5 w-3.5 text-[var(--store-accent)]" />
+            Storefront highlight
+          </div>
+          <h3 className="mt-5 max-w-[12ch] text-[2.4rem] font-semibold leading-[0.96] tracking-tight text-slate-950">A cleaner way to merchandise the catalog online.</h3>
+          <p className="mt-4 max-w-lg text-sm leading-7 text-slate-600">Use the hero for branding, the category cards for wayfinding, and the catalog grid for fast comparison. The customer gets a calmer storefront without losing any real product detail.</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button className="inline-flex h-11 items-center justify-center rounded-full bg-[var(--store-primary)] px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5" type="button" onClick={onBrowse}>
+              Browse products
+            </button>
+            <div className="inline-flex h-11 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600">
+              {product ? `${String(discountPercent(product))}% off on selected lines` : "Live offers and pricing"}
+            </div>
+          </div>
+        </div>
+        <div className="relative">
+          {product ? (
+            <ProductVisual product={product} theme={theme} tenantName={tenantName} hero />
+          ) : (
+            <HeroProductShowcase products={[]} theme={theme} tenantName={tenantName} />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MerchandisingPanel({
+  products,
+  theme,
+  title,
+  subtitle,
+  onProductClick,
+}: Readonly<{
+  products: StorefrontProduct[];
+  theme: StoreTheme;
+  title: string;
+  subtitle: string;
+  onProductClick: (product: StorefrontProduct) => void;
+}>) {
+  return (
+    <section className="rounded-[32px] border border-white/70 bg-white/82 p-6 shadow-[0_18px_70px_-42px_rgba(15,23,42,0.28)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xl font-semibold tracking-tight text-slate-950">{title}</div>
+          <div className="mt-1 text-sm leading-6 text-slate-500">{subtitle}</div>
+        </div>
+        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[rgba(255,140,86,0.10)] text-[var(--store-accent)]">
+          <Sparkles className="h-5 w-5" />
+        </div>
+      </div>
+      <div className="mt-5 space-y-3">
+        {products.map((product) => (
+          <button className="flex w-full items-center gap-3 rounded-[22px] border border-slate-200/80 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-sm" key={product.id} type="button" onClick={() => onProductClick(product)}>
+            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[18px]">
+              <ProductVisual product={product} theme={theme} tenantName={product.categoryName} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-slate-950">{product.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{product.categoryName}</div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-950">{money(product.sellingPrice)}</span>
+                {discountPercent(product) > 0 ? <span className="text-xs font-semibold text-[var(--store-accent)]">{discountPercent(product)}% off</span> : null}
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CategoryChip({
   active,
   label,
   theme,
@@ -893,8 +2017,8 @@ function CategoryTile({
 }>) {
   return (
     <button
-      className={`shrink-0 border-b-2 px-1 pb-3 pt-2 text-sm font-semibold transition ${
-        active ? theme.categoryActive : theme.categoryTile
+      className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+        active ? `border-[var(--store-primary)] ${theme.primaryBg} text-white` : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950"
       }`}
       type="button"
       onClick={onClick}
@@ -913,7 +2037,6 @@ function AccountPanel({
   onModeChange,
   onFieldChange,
   onSubmit,
-  onClose,
 }: Readonly<{
   authMode: AuthMode;
   authForm: AuthFormState;
@@ -923,20 +2046,10 @@ function AccountPanel({
   onModeChange: (mode: AuthMode) => void;
   onFieldChange: (field: keyof AuthFormState, value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onClose: () => void;
 }>) {
   return (
-    <form className={`mb-4 rounded-md border p-4 ${theme.panel}`} onSubmit={onSubmit}>
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-base font-semibold">{authMode === "login" ? "Customer sign in" : "Create customer account"}</div>
-          <div className={`text-sm ${theme.muted}`}>Password login with order history.</div>
-        </div>
-        <button className="grid h-8 w-8 place-items-center rounded-md border" type="button" onClick={onClose} aria-label="Close account panel">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="mb-3 grid grid-cols-2 gap-2">
+    <form className={`rounded-[28px] border p-5 ${theme.panel}`} onSubmit={onSubmit}>
+      <div className="mb-4 grid grid-cols-2 gap-2">
         <button className={modeButtonClass(authMode === "login", theme)} type="button" onClick={() => onModeChange("login")}>Sign in</button>
         <button className={modeButtonClass(authMode === "register", theme)} type="button" onClick={() => onModeChange("register")}>Register</button>
       </div>
@@ -956,8 +2069,8 @@ function AccountPanel({
           </>
         ) : null}
       </div>
-      {authError ? <div className="mt-3 text-sm font-semibold text-red-600">{authError}</div> : null}
-      <button className={`mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold text-white ${theme.primaryBg}`} disabled={authLoading} type="submit">
+      {authError ? <div className="mt-4 text-sm font-semibold text-red-600">{authError}</div> : null}
+      <button className={`mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold text-white ${theme.primaryBg}`} disabled={authLoading} type="submit">
         {authLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
         {authMode === "login" ? "Sign in" : "Create account"}
       </button>
@@ -967,26 +2080,21 @@ function AccountPanel({
 
 function OrderHistory({ orders, loading, theme }: Readonly<{ orders: StorefrontOrder[]; loading: boolean; theme: StoreTheme }>) {
   return (
-    <section className={`mb-4 rounded-md border ${theme.panel}`}>
-      <div className={`border-b px-4 py-3 ${theme.panelDivider}`}>
-        <div className="flex items-center gap-2 font-semibold">
-          <History className="h-4 w-4" />
-          Order history
-        </div>
-      </div>
+    <section className={`rounded-[28px] border ${theme.panel}`}>
       {loading ? (
-        <div className={`p-4 text-sm ${theme.muted}`}>Loading orders...</div>
+        <div className="p-5 text-sm text-slate-500">Loading orders...</div>
       ) : orders.length === 0 ? (
-        <div className={`p-4 text-sm ${theme.muted}`}>No online orders yet.</div>
+        <div className="p-5 text-sm text-slate-500">No online orders yet.</div>
       ) : (
-        <div className="divide-y">
+        <div className="divide-y divide-slate-200/80">
           {orders.map((order) => (
-            <div className="grid gap-2 p-4 text-sm md:grid-cols-[1fr_auto]" key={order.invoiceId}>
+            <div className="grid gap-2 p-5 md:grid-cols-[1fr_auto]" key={order.invoiceId}>
               <div>
-                <div className="font-semibold">{order.orderNumber}</div>
-                <div className={theme.muted}>{order.items.length} item{order.items.length === 1 ? "" : "s"} | {order.status}</div>
+                <div className="text-sm font-semibold text-slate-950">{order.orderNumber}</div>
+                <div className="mt-1 text-sm text-slate-500">{order.items.length} item{order.items.length === 1 ? "" : "s"} | {order.status}</div>
+                <div className="mt-1 text-xs text-slate-400">{order.deliveryAddress}</div>
               </div>
-              <div className="font-semibold">{money(order.grandTotal)}</div>
+              <div className="text-sm font-semibold text-slate-950">{money(order.grandTotal)}</div>
             </div>
           ))}
         </div>
@@ -998,55 +2106,316 @@ function OrderHistory({ orders, loading, theme }: Readonly<{ orders: StorefrontO
 function ProductCard({
   product,
   quantity,
+  rank,
   theme,
   tenantName,
+  viewMode,
+  wishlisted,
   onAdd,
   onDecrement,
+  onQuickView,
+  onWishlist,
 }: Readonly<{
   product: StorefrontProduct;
   quantity: number;
+  rank: number;
   theme: StoreTheme;
   tenantName: string;
+  viewMode: CatalogView;
+  wishlisted: boolean;
   onAdd: () => void;
   onDecrement: () => void;
+  onQuickView: () => void;
+  onWishlist: () => void;
 }>) {
   const saving = product.mrp > product.sellingPrice ? product.mrp - product.sellingPrice : 0;
+  const discount = discountPercent(product);
 
   return (
-    <article className={`group min-w-0 overflow-hidden rounded-md border transition hover:border-emerald-200 hover:shadow-lg hover:shadow-slate-200/70 ${theme.panel}`}>
-      <ProductVisual product={product} theme={theme} tenantName={tenantName} />
-      <div className="p-3 sm:p-4">
-        <div className={`truncate text-[11px] font-bold uppercase ${theme.accentText}`}>{product.categoryName}</div>
-        <h3 className="mt-2 line-clamp-2 min-h-[40px] text-sm font-bold leading-snug text-slate-950 sm:text-base">{product.name}</h3>
-        <div className={`mt-1 text-xs ${theme.muted}`}>{product.unit} | {product.currentStock} available</div>
-        <div className="mt-4 grid gap-3">
+    <article className={`group min-w-0 overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_12px_40px_-28px_rgba(15,23,42,0.35)] transition duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_24px_70px_-32px_rgba(15,23,42,0.38)] ${theme.panel} ${viewMode === "list" ? "md:grid md:grid-cols-[220px_minmax(0,1fr)]" : ""}`}>
+      <div className="relative">
+        <button className="block w-full text-left" type="button" onClick={onQuickView}>
+          <ProductVisual product={product} theme={theme} tenantName={tenantName} />
+        </button>
+        <div className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-white/92 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 shadow-sm">
+          #{rank}
+          {discount > 0 ? <span className="text-[var(--store-accent)]">{discount}% off</span> : null}
+        </div>
+        <button
+          className={`absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-full border border-white/80 bg-white/92 shadow-sm transition ${wishlisted ? "text-rose-500" : "text-slate-500 hover:text-rose-500"}`}
+          type="button"
+          onClick={onWishlist}
+          aria-label={wishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+        >
+          <Heart className={`h-4 w-4 ${wishlisted ? "fill-current" : ""}`} />
+        </button>
+      </div>
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className={`truncate text-[11px] font-semibold uppercase tracking-[0.16em] ${theme.accentText}`}>{product.categoryName}</div>
+            <h3 className="mt-2 line-clamp-2 min-h-[48px] text-base font-semibold leading-snug text-slate-950">{product.name}</h3>
+          </div>
+          <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${theme.stockBadge}`}>
+            {product.grouped && product.variantCount > 1 ? `${String(product.variantCount)} options` : `${String(product.currentStock)} left`}
+          </div>
+        </div>
+        <div className={`mt-2 text-xs ${theme.muted}`}>
+          {product.brand ? `${product.brand} | ` : ""}{product.sku ? `SKU ${product.sku} | ` : ""}{product.unit}
+        </div>
+        {product.grouped && product.variantLabels.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {product.variantLabels.slice(0, 4).map((label) => (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600" key={label}>{label}</span>
+            ))}
+          </div>
+        ) : product.size || product.color ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {product.size ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{product.size}</span> : null}
+            {product.color ? <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{product.color}</span> : null}
+          </div>
+        ) : null}
+        <div className="mt-5 grid gap-3">
           {quantity > 0 ? (
-            <div className="flex items-end justify-between gap-2">
+            <div className="flex items-end justify-between gap-3">
               <div className="min-w-0">
-                <div className="whitespace-nowrap text-lg font-black leading-none sm:text-xl">{money(product.sellingPrice)}</div>
-                <div className={`mt-1 truncate text-[11px] sm:text-xs ${theme.muted}`}>
-                  {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>{product.unit} pack</span>}
+                <div className="whitespace-nowrap text-2xl font-semibold leading-none tracking-tight">{money(product.sellingPrice)}</div>
+                <div className={`mt-1 truncate text-xs ${theme.muted}`}>
+                  {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>Live stock</span>}
                 </div>
               </div>
               <QuantityControl quantity={quantity} theme={theme} onDecrease={onDecrement} onIncrease={onAdd} label={product.name} compact />
             </div>
           ) : (
             <>
-              <div>
-                <div className="whitespace-nowrap text-lg font-black leading-none sm:text-xl">{money(product.sellingPrice)}</div>
-                <div className={`mt-1 truncate text-[11px] sm:text-xs ${theme.muted}`}>
-                  {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>Live stock</span>}
+              <div className="flex items-end justify-between gap-3">
+                <div>
+                  <div className="whitespace-nowrap text-2xl font-semibold leading-none tracking-tight">{money(product.sellingPrice)}</div>
+                  <div className={`mt-1 truncate text-xs ${theme.muted}`}>
+                    {saving > 0 ? <span>MRP {money(product.mrp)} | Save {money(saving)}</span> : <span>{product.unit}</span>}
+                  </div>
                 </div>
+                {discount > 0 ? (
+                  <div className="rounded-full bg-[rgba(255,140,86,0.10)] px-2.5 py-1 text-xs font-semibold text-[var(--store-accent)]">
+                    {discount}% off
+                  </div>
+                ) : null}
               </div>
-              <button className={`inline-flex h-10 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60 ${theme.productButton}`} type="button" disabled={product.currentStock <= 0} onClick={onAdd}>
-                <Plus className="h-4 w-4" />
-                Add to cart
-              </button>
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <button className={`inline-flex h-11 items-center justify-center rounded-full border px-3 text-sm font-semibold ${theme.outline}`} type="button" onClick={onQuickView}>
+                  {product.grouped ? "Choose variant" : "View details"}
+                </button>
+                {product.grouped && product.variantCount > 1 ? (
+                  <button className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold text-white ${theme.productButton}`} type="button" onClick={onQuickView}>
+                    Choose
+                  </button>
+                ) : (
+                  <button className={`inline-flex h-11 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${theme.productButton}`} type="button" disabled={product.currentStock <= 0} onClick={onAdd}>
+                    <Plus className="h-4 w-4" />
+                    Add
+                  </button>
+                )}
+              </div>
             </>
           )}
         </div>
       </div>
     </article>
+  );
+}
+
+function CompactProductRow({
+  product,
+  theme,
+  tenantName,
+  onClick,
+}: Readonly<{
+  product: StorefrontProduct;
+  theme: StoreTheme;
+  tenantName: string;
+  onClick: () => void;
+}>) {
+  return (
+    <button className="flex items-center gap-3 rounded-[22px] border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:shadow-sm" type="button" onClick={onClick}>
+      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-[18px]">
+        <ProductVisual product={product} theme={theme} tenantName={tenantName} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-slate-950">{product.name}</div>
+        <div className="mt-1 text-xs text-slate-500">{product.categoryName}</div>
+        <div className="mt-2 text-sm font-semibold text-slate-950">{money(product.sellingPrice)}</div>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+    </button>
+  );
+}
+
+function ProductQuickView({
+  product,
+  detail,
+  relatedProducts,
+  frequentlyBoughtTogether,
+  loading,
+  theme,
+  tenantName,
+  cart,
+  productsById,
+  onAddProduct,
+  onDecrementProduct,
+  onSelectProduct,
+  onWishlist,
+  onShare,
+  wishlisted,
+}: Readonly<{
+  product: StorefrontProduct;
+  detail: StorefrontProductDetail | null;
+  relatedProducts: StorefrontProduct[];
+  frequentlyBoughtTogether: StorefrontProduct[];
+  loading: boolean;
+  theme: StoreTheme;
+  tenantName: string;
+  cart: Record<string, number>;
+  productsById: Record<string, StorefrontProduct>;
+  onAddProduct: (product: StorefrontProduct) => void;
+  onDecrementProduct: (productId: string) => void;
+  onSelectProduct: (product: StorefrontProduct) => void;
+  onWishlist: () => void;
+  onShare: () => void;
+  wishlisted: boolean;
+}>) {
+  const specifications = detail?.specifications ?? [];
+  const variants = detail?.variants ?? [];
+  const [selectedVariantProductId, setSelectedVariantProductId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedVariantProductId(detail?.variants[0]?.productId ?? null);
+  }, [detail?.id, detail?.variants]);
+
+  const activeVariant = variants.find((variant) => variant.productId === selectedVariantProductId) ?? variants[0] ?? null;
+  const displayProduct = activeVariant ? productsById[activeVariant.productId] ?? product : product;
+  const discount = discountPercent(displayProduct);
+  const saving = displayProduct.mrp > displayProduct.sellingPrice ? displayProduct.mrp - displayProduct.sellingPrice : 0;
+  const currentQuantity = cart[displayProduct.id] ?? 0;
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
+      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50">
+        <ProductVisual product={displayProduct} theme={theme} tenantName={tenantName} />
+      </div>
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">{displayProduct.categoryName}</span>
+          {discount > 0 ? <span className="rounded-full bg-[rgba(255,140,86,0.10)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--store-accent)]">{discount}% off</span> : null}
+          {displayProduct.brand ? <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">{displayProduct.brand}</span> : null}
+        </div>
+        <h3 className="mt-4 text-[2rem] font-semibold leading-tight tracking-tight text-slate-950">{product.name}</h3>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="text-[2rem] font-semibold tracking-tight text-slate-950">{money(displayProduct.sellingPrice)}</div>
+          {displayProduct.mrp > displayProduct.sellingPrice ? <div className="text-sm font-medium text-slate-400 line-through">{money(displayProduct.mrp)}</div> : null}
+          {saving > 0 ? <div className="text-sm font-semibold text-[var(--store-accent)]">Save {money(saving)}</div> : null}
+        </div>
+        <div className="mt-4 grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 text-sm text-slate-600">
+          <DetailRow label="Unit" value={displayProduct.unit} />
+          <DetailRow label="Stock" value={`${String(displayProduct.currentStock)} available`} />
+          <DetailRow label="SKU" value={displayProduct.sku ?? "Not specified"} />
+          <DetailRow label="Barcode" value={displayProduct.barcode ?? "Not specified"} />
+          <DetailRow label="HSN" value={displayProduct.hsnCode ?? "Not specified"} />
+          <DetailRow label="GST" value={`${String(displayProduct.gstRate)}%`} />
+        </div>
+        <div className="mt-5 text-sm leading-7 text-slate-600">
+          {product.description?.trim() || "This product is available in the online catalog with live pricing, tax details, and stock-aware checkout."}
+        </div>
+        {loading ? (
+          <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading product details
+          </div>
+        ) : null}
+        {variants.length > 0 ? (
+          <div className="mt-5">
+            <div className="text-sm font-semibold text-slate-950">{product.variantAttributeLabel ?? "Available variants"}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {variants.map((variant) => (
+                <button
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${activeVariant?.productId === variant.productId ? "border-[var(--store-primary)] bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                  key={variant.id}
+                  type="button"
+                  onClick={() => setSelectedVariantProductId(variant.productId)}
+                >
+                  {variant.label} - {money(variant.sellingPrice)}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {specifications.length > 0 ? (
+          <div className="mt-5 grid gap-3 rounded-[24px] border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-950">Specifications</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {specifications.map((item) => (
+                <DetailRow key={`${item.label}-${item.value}`} label={item.label} value={item.value} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          {currentQuantity > 0 ? (
+            <QuantityControl
+              quantity={currentQuantity}
+              theme={theme}
+              onDecrease={() => onDecrementProduct(displayProduct.id)}
+              onIncrease={() => onAddProduct(displayProduct)}
+              label={displayProduct.name}
+            />
+          ) : null}
+          <button className={`inline-flex h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold text-white ${theme.productButton}`} type="button" onClick={() => onAddProduct(displayProduct)}>
+            <Plus className="h-4 w-4" />
+            {currentQuantity > 0 ? "Add one more" : "Add to cart"}
+          </button>
+          <button className={`inline-flex h-12 items-center justify-center gap-2 rounded-full border px-5 text-sm font-semibold ${theme.outline}`} type="button" onClick={onWishlist}>
+            <Heart className={`h-4 w-4 ${wishlisted ? "fill-current text-rose-500" : ""}`} />
+            Wishlist
+          </button>
+          <button className={`inline-flex h-12 items-center justify-center gap-2 rounded-full border px-5 text-sm font-semibold ${theme.outline}`} type="button" onClick={onShare}>
+            <Share2 className="h-4 w-4" />
+            Share
+          </button>
+        </div>
+        <div className="mt-6 grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
+          <DetailRow label="Delivery estimate" value="Estimate shown at checkout" />
+          <DetailRow label="Return policy" value="Standard store policy applies" />
+        </div>
+        {relatedProducts.length > 0 ? (
+          <div className="mt-6">
+            <div className="text-sm font-semibold text-slate-950">Related products</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {relatedProducts.map((item) => (
+                <CompactProductRow key={item.id} product={item} theme={theme} tenantName={tenantName} onClick={() => onSelectProduct(item)} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {frequentlyBoughtTogether.length > 0 ? (
+          <div className="mt-6">
+            <div className="text-sm font-semibold text-slate-950">Frequently bought together</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {frequentlyBoughtTogether.map((item) => (
+                <CompactProductRow key={item.id} product={item} theme={theme} tenantName={tenantName} onClick={() => onSelectProduct(item)} />
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: Readonly<{ label: string; value: string }>) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right font-semibold text-slate-900">{value}</span>
+    </div>
   );
 }
 
@@ -1066,14 +2435,14 @@ function ProductVisual({
 
   if (imageUrl) {
     return (
-      <div className={`${hero ? "h-[220px]" : "aspect-square"} overflow-hidden ${theme.imageBg}`}>
+      <div className={`${hero ? "h-[260px]" : "aspect-[1.02]"} overflow-hidden ${theme.imageBg}`}>
         <img alt={product.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" src={imageUrl} />
       </div>
     );
   }
 
   return (
-    <div className={`relative grid ${hero ? "h-[220px]" : "aspect-square"} place-items-center overflow-hidden ${theme.productStage}`} style={style}>
+    <div className={`relative grid ${hero ? "h-[260px]" : "aspect-[1.02]"} place-items-center overflow-hidden ${theme.productStage}`} style={style}>
       <div className="absolute inset-x-8 bottom-5 h-5 rounded-full bg-black/15 blur-md" />
       <ProductPack product={product} tenantName={tenantName} hero={hero} />
     </div>
@@ -1090,16 +2459,31 @@ function ProductPlaceholderVisual({
     id: `placeholder-${String(index)}`,
     name: index === 1 ? `${tenantName} Sunflower Oil` : index === 2 ? `${tenantName} Rice Bran Oil` : `${tenantName} Groundnut Oil`,
     sku: null,
+    barcode: null,
     description: null,
     categoryId: null,
     categoryName: "Cooking Oils",
+    categoryParentId: null,
     unit: index === 1 ? "5 L" : "1 L",
     mrp: 0,
     sellingPrice: 0,
     defaultDiscountPercent: null,
+    discountPercent: 0,
     gstRate: 0,
+    hsnCode: null,
     currentStock: 1,
     imageUrl: null,
+    brand: tenantName,
+    size: index === 1 ? "5 L" : "1 L",
+    color: null,
+    hasVariants: false,
+    grouped: false,
+    groupId: null,
+    groupName: null,
+    variantAttributeLabel: null,
+    variantCount: 0,
+    variantLabels: [],
+    defaultVariantLabel: null,
   } satisfies StorefrontProduct;
 
   return <ProductVisual product={product} theme={theme} tenantName={tenantName} hero={hero} />;
@@ -1107,7 +2491,7 @@ function ProductPlaceholderVisual({
 
 function ProductPack({ product, tenantName, hero }: Readonly<{ product: StorefrontProduct; tenantName: string; hero: boolean }>) {
   const kind = productPackageKind(product);
-  const sizeClass = hero ? "h-48 w-32" : "h-40 w-28 sm:h-44 sm:w-32";
+  const sizeClass = hero ? "h-52 w-36" : "h-40 w-28 sm:h-44 sm:w-32";
   const labelText = product.name.replace(tenantName, "").trim() || product.name;
 
   if (kind === "jar") {
@@ -1181,12 +2565,12 @@ function QuantityControl({
   onIncrease: () => void;
 }>) {
   return (
-    <div className={`mt-2 flex h-10 shrink-0 items-center rounded-md border ${theme.quantity} ${compact ? "mt-0" : ""}`}>
-      <button className="grid h-10 w-10 place-items-center text-[var(--store-primary)]" type="button" onClick={onDecrease} aria-label={`Decrease ${label}`}>
+    <div className={`mt-3 flex h-11 shrink-0 items-center rounded-full border ${theme.quantity} ${compact ? "mt-0" : ""}`}>
+      <button className="grid h-11 w-11 place-items-center text-[var(--store-primary)]" type="button" onClick={onDecrease} aria-label={`Decrease ${label}`}>
         <Minus className="h-4 w-4" />
       </button>
-      <div className="grid h-10 w-9 place-items-center text-sm font-semibold">{quantity}</div>
-      <button className="grid h-10 w-10 place-items-center text-[var(--store-primary)]" type="button" onClick={onIncrease} aria-label={`Increase ${label}`}>
+      <div className="grid h-11 w-10 place-items-center text-sm font-semibold text-slate-950">{quantity}</div>
+      <button className="grid h-11 w-11 place-items-center text-[var(--store-primary)]" type="button" onClick={onIncrease} aria-label={`Increase ${label}`}>
         <Plus className="h-4 w-4" />
       </button>
     </div>
@@ -1196,20 +2580,20 @@ function QuantityControl({
 function StoreLogo({ tenantName, logoUrl }: Readonly<{ tenantName: string; logoUrl: string | null | undefined }>) {
   if (logoUrl) {
     return (
-      <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-md border bg-white">
+      <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <img alt={tenantName} className="h-full w-full object-contain" src={logoUrl} />
       </div>
     );
   }
 
-  return <div className="grid h-12 w-12 place-items-center rounded-md bg-[var(--store-primary)] text-sm font-bold text-white">{initials(tenantName)}</div>;
+  return <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--store-primary)] text-sm font-semibold text-white shadow-sm">{initials(tenantName)}</div>;
 }
 
 function ErrorBanner({ message, onClose, theme }: Readonly<{ message: string; onClose: () => void; theme: StoreTheme }>) {
   return (
-    <div className={`mb-4 flex items-start justify-between gap-3 rounded-md border border-red-200 p-3 text-sm font-medium text-red-700 ${theme.errorBg}`}>
+    <div className={`mt-5 flex items-start justify-between gap-3 rounded-[22px] border border-red-200 p-4 text-sm font-medium text-red-700 ${theme.errorBg}`}>
       <span>{message}</span>
-      <button className="grid h-6 w-6 place-items-center rounded-md hover:bg-white" type="button" onClick={onClose} aria-label="Dismiss error">
+      <button className="grid h-6 w-6 place-items-center rounded-full hover:bg-white" type="button" onClick={onClose} aria-label="Dismiss error">
         <X className="h-4 w-4" />
       </button>
     </div>
@@ -1220,7 +2604,7 @@ function MoneyRow({ label, value }: Readonly<{ label: string; value: number }>) 
   return (
     <div className="flex items-center justify-between">
       <span>{label}</span>
-      <span className={value < 0 ? "font-semibold text-[var(--store-primary)]" : "font-medium"}>{money(value)}</span>
+      <span className={value < 0 ? "font-semibold text-[var(--store-primary)]" : "font-medium text-slate-900"}>{money(value)}</span>
     </div>
   );
 }
@@ -1243,13 +2627,36 @@ function TextField({
   type?: "password" | "text";
 }>) {
   return (
-    <label className={`block text-xs font-semibold uppercase ${theme.muted}`}>
+    <label className={`block text-[11px] font-semibold uppercase tracking-[0.16em] ${theme.muted}`}>
       {label}
       <input
-        className={inputClass(theme, "mt-1 h-10 w-full px-3 font-normal normal-case")}
+        className={inputClass(theme, "mt-2 h-11 w-full border-white/70 bg-white/90 px-4 text-sm font-normal normal-case shadow-sm")}
         inputMode={inputMode}
         required={required}
         type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  theme,
+}: Readonly<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  theme: StoreTheme;
+}>) {
+  return (
+    <label className={`block text-[11px] font-semibold uppercase tracking-[0.16em] ${theme.muted}`}>
+      {label}
+      <textarea
+        className={inputClass(theme, "mt-2 min-h-[92px] w-full resize-none border-white/70 bg-white/90 px-4 py-3 text-sm font-normal normal-case shadow-sm")}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -1274,7 +2681,7 @@ function PaymentButton({
 }>) {
   return (
     <button
-      className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-[18px] border px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
         active ? theme.activePayment : theme.inactivePayment
       }`}
       disabled={disabled}
@@ -1282,24 +2689,24 @@ function PaymentButton({
       onClick={onClick}
     >
       {icon}
-      {label}
+      <span className="text-center leading-tight">{label}</span>
     </button>
   );
 }
 
 function OrderComplete({ order, theme }: Readonly<{ order: StorefrontOrder; theme: StoreTheme }>) {
   return (
-    <div className={`mt-4 rounded-md border p-4 shadow-sm ${theme.panel}`}>
+    <div className={`mt-4 rounded-[28px] border border-white/70 p-5 shadow-sm ${theme.panel}`}>
       <div className="flex items-start gap-3">
-        <div className={`grid h-10 w-10 place-items-center rounded-md ${theme.softBg}`}>
+        <div className={`grid h-11 w-11 place-items-center rounded-2xl ${theme.softBg}`}>
           <CheckCircle2 className="h-5 w-5 text-[var(--store-primary)]" />
         </div>
         <div>
-          <div className="text-sm font-semibold">Order received</div>
+          <div className="text-base font-semibold text-slate-950">Order received</div>
           <div className={`mt-1 text-sm ${theme.muted}`}>{order.orderNumber} | {money(order.grandTotal)}</div>
         </div>
       </div>
-      <div className={`mt-3 flex items-start gap-2 rounded-md p-3 text-sm ${theme.summary}`}>
+      <div className={`mt-4 flex items-start gap-2 rounded-[20px] p-4 text-sm ${theme.summary}`}>
         <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[var(--store-primary)]" />
         <span>{order.deliveryAddress}</span>
       </div>
@@ -1309,18 +2716,85 @@ function OrderComplete({ order, theme }: Readonly<{ order: StorefrontOrder; them
 
 function ProductSkeleton({ theme }: Readonly<{ theme: StoreTheme }>) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-4 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {Array.from({ length: 6 }).map((_, index) => (
-        <div className={`overflow-hidden rounded-md border ${theme.panel}`} key={index}>
-          <div className={`aspect-square animate-pulse ${theme.skeleton}`} />
-          <div className="space-y-3 p-4">
-            <div className={`h-4 w-20 animate-pulse rounded ${theme.skeleton}`} />
+        <div className={`overflow-hidden rounded-[28px] border ${theme.panel}`} key={index}>
+          <div className={`aspect-[1.02] animate-pulse ${theme.skeleton}`} />
+          <div className="space-y-3 p-5">
+            <div className={`h-4 w-24 animate-pulse rounded-full ${theme.skeleton}`} />
             <div className={`h-5 w-4/5 animate-pulse rounded ${theme.skeleton}`} />
-            <div className={`h-10 animate-pulse rounded ${theme.skeleton}`} />
+            <div className={`h-11 animate-pulse rounded-full ${theme.skeleton}`} />
           </div>
         </div>
       ))}
     </div>
+  );
+}
+
+function SideSheet({
+  title,
+  subtitle,
+  wide = false,
+  children,
+  onClose,
+}: Readonly<{
+  title: string;
+  subtitle: string;
+  wide?: boolean;
+  children: React.ReactNode;
+  onClose: () => void;
+}>) {
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-sm">
+      <div className={`ml-auto flex h-full w-full ${wide ? "max-w-[880px]" : "max-w-[540px]"} flex-col bg-[#fcfcfb] shadow-2xl`}>
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5">
+          <div>
+            <div className="text-xl font-semibold tracking-tight text-slate-950">{title}</div>
+            <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
+          </div>
+          <button className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-950" type="button" onClick={onClose} aria-label="Close panel">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FloatingCartButton({
+  cartCount,
+  total,
+  onClick,
+}: Readonly<{
+  cartCount: number;
+  total: number;
+  onClick: () => void;
+}>) {
+  if (cartCount <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-x-0 bottom-4 z-40 px-4 lg:hidden">
+      <button className="mx-auto flex h-14 w-full max-w-md items-center justify-between rounded-full bg-[var(--store-primary)] px-5 text-sm font-semibold text-white shadow-[0_24px_60px_-26px_rgba(15,23,42,0.55)]" type="button" onClick={onClick}>
+        <span className="flex items-center gap-3">
+          <ShoppingBag className="h-5 w-5" />
+          {cartCount} item{cartCount === 1 ? "" : "s"}
+        </span>
+        <span>{money(total)}</span>
+      </button>
+    </div>
+  );
+}
+
+function CountBadge({ count, inset = false }: Readonly<{ count: number; inset?: boolean }>) {
+  return (
+    <span className={`absolute grid min-h-5 min-w-5 place-items-center rounded-full bg-[#ff5d4a] px-1 text-[11px] font-bold text-white ${inset ? "-right-1 -top-1" : "-right-1 -top-1"}`}>
+      {count}
+    </span>
   );
 }
 
@@ -1331,7 +2805,6 @@ interface StoreTheme {
   topBar: string;
   panel: string;
   panelDivider: string;
-  hero: string;
   heroMuted: string;
   heroButton: string;
   heroShowcase: string;
@@ -1348,15 +2821,13 @@ interface StoreTheme {
   accentText: string;
   softBg: string;
   outline: string;
+  outlineActive: string;
   summary: string;
   line: string;
   empty: string;
   imageBg: string;
   productStage: string;
-  categoryTile: string;
-  categoryActive: string;
   stockBadge: string;
-  outBadge: string;
   progressTrack: string;
   quantity: string;
   activePayment: string;
@@ -1368,38 +2839,35 @@ interface StoreTheme {
 function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): StoreTheme {
   if (storefront?.theme === "PREMIUM_BRAND") {
     return {
-      page: "bg-[#f8fafc]",
+      page: "bg-[#f5f3ef]",
       ink: "text-slate-950",
-      header: "border-slate-800 bg-slate-950 text-white shadow-sm shadow-slate-950/10",
+      header: "border-slate-800/80 bg-slate-950/96 text-white shadow-sm shadow-slate-950/10",
       topBar: "border-amber-400/20 bg-slate-900 text-amber-100",
-      panel: "border-slate-200 bg-white",
+      panel: "bg-white",
       panelDivider: "border-slate-200",
-      hero: "bg-slate-50",
       heroMuted: "text-slate-600",
       heroButton: "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50",
       heroShowcase: "border-slate-200 bg-white",
       heroShelf: "border-slate-200 bg-white",
       muted: "text-slate-500",
-      iconMuted: "text-slate-300",
-      primary: "#0f172a",
-      accent: "#f59e0b",
+      iconMuted: "text-slate-400",
+      primary: "#1e293b",
+      accent: "#d97706",
       primaryBg: "bg-slate-950",
       accentBg: "bg-[var(--store-accent)]",
-      ctaBg: "bg-amber-500 hover:bg-amber-400 text-slate-950",
+      ctaBg: "bg-amber-500 text-slate-950 hover:bg-amber-400",
       cartButton: "bg-amber-500 text-slate-950 hover:bg-amber-400",
       productButton: "bg-slate-950 text-white hover:bg-slate-800",
       accentText: "text-[var(--store-accent)]",
       softBg: "bg-amber-50 text-amber-700",
       outline: "border-slate-200 bg-white text-slate-700",
+      outlineActive: "border-slate-950 bg-slate-100 text-slate-950",
       summary: "border-slate-200 bg-slate-50 text-slate-700",
       line: "border-slate-100 bg-white",
       empty: "border-slate-300 bg-slate-50 text-slate-500",
       imageBg: "bg-slate-100",
       productStage: "bg-white",
-      categoryTile: "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-950",
-      categoryActive: "border-slate-950 text-slate-950",
       stockBadge: "bg-amber-50 text-amber-700",
-      outBadge: "bg-red-50 text-red-700",
       progressTrack: "bg-slate-100",
       quantity: "border-slate-950 bg-white",
       activePayment: "border-slate-950 bg-slate-100 text-slate-950",
@@ -1410,45 +2878,50 @@ function themeFor(storefront: StorefrontBootstrap["storefront"] | undefined): St
   }
 
   return {
-    page: "bg-[#f7f8f6]",
+    page: "bg-[#f6f4ef]",
     ink: "text-slate-950",
-    header: "border-slate-200 bg-white/95 shadow-sm shadow-slate-200/50 backdrop-blur",
+    header: "border-white/70 bg-[#f8f6f1]/90 shadow-sm shadow-slate-200/50",
     topBar: "border-emerald-100 bg-emerald-50 text-emerald-800",
-    panel: "border-slate-200 bg-white",
+    panel: "bg-white",
     panelDivider: "border-slate-200",
-    hero: "bg-white",
     heroMuted: "text-slate-600",
     heroButton: "border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50",
-    heroShowcase: "border-slate-200 bg-white",
-    heroShelf: "border-slate-200 bg-white",
+    heroShowcase: "border-white/70 bg-white/88",
+    heroShelf: "border-white/70 bg-white/88",
     muted: "text-slate-500",
     iconMuted: "text-slate-400",
-    primary: "#166534",
-    accent: "#f97316",
+    primary: "#234239",
+    accent: "#de6d2d",
     primaryBg: "bg-[var(--store-primary)]",
     accentBg: "bg-[var(--store-accent)]",
-    ctaBg: "bg-[#ff4b3e] text-white hover:bg-[#e83d31]",
-    cartButton: "bg-emerald-700 text-white hover:bg-emerald-800",
-    productButton: "bg-emerald-700 text-white hover:bg-emerald-800",
+    ctaBg: "bg-[var(--store-primary)] text-white hover:brightness-110",
+    cartButton: "bg-[var(--store-primary)] text-white hover:brightness-110",
+    productButton: "bg-[var(--store-primary)] text-white hover:brightness-110",
     accentText: "text-[var(--store-accent)]",
-    softBg: "bg-emerald-50 text-[var(--store-primary)]",
+    softBg: "bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]",
     outline: "border-slate-200 bg-white text-slate-700",
+    outlineActive: "border-[var(--store-primary)] bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]",
     summary: "border-slate-200 bg-slate-50 text-slate-700",
     line: "border-slate-100 bg-white",
     empty: "border-slate-300 bg-slate-50 text-slate-500",
-    imageBg: "bg-slate-100",
-    productStage: "bg-[#f6faf8]",
-    categoryTile: "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-950",
-    categoryActive: "border-[var(--store-primary)] text-[var(--store-primary)]",
-    stockBadge: "bg-emerald-50 text-emerald-700",
-    outBadge: "bg-red-50 text-red-700",
+    imageBg: "bg-[#eef3ef]",
+    productStage: "bg-[linear-gradient(180deg,#f3faf5_0%,#eaf5ee_100%)]",
+    stockBadge: "bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]",
     progressTrack: "bg-slate-100",
     quantity: "border-[var(--store-primary)] bg-white",
-    activePayment: "border-[var(--store-primary)] bg-emerald-50 text-[var(--store-primary)]",
+    activePayment: "border-[var(--store-primary)] bg-[rgba(35,66,57,0.08)] text-[var(--store-primary)]",
     inactivePayment: "border-slate-200 bg-white text-slate-600",
     errorBg: "bg-red-50",
     skeleton: "bg-slate-200",
   };
+}
+
+function discountPercent(product: StorefrontProduct): number {
+  if (product.mrp <= product.sellingPrice || product.mrp <= 0) {
+    return 0;
+  }
+
+  return Math.round(((product.mrp - product.sellingPrice) / product.mrp) * 100);
 }
 
 function productPackageKind(product: StorefrontProduct): "bottle" | "tin" | "pouch" | "jar" {
@@ -1486,25 +2959,19 @@ function productAccent(product: StorefrontProduct): string {
 }
 
 function outlineButtonClass(theme: StoreTheme): string {
-  return `inline-flex h-10 items-center gap-2 rounded-md border px-3 font-medium ${theme.outline}`;
+  return `inline-flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold ${theme.outline}`;
 }
 
 function iconButtonClass(theme: StoreTheme): string {
-  return `grid h-11 w-11 place-items-center rounded-md border ${theme.outline}`;
+  return `grid h-11 w-11 place-items-center rounded-full border ${theme.outline}`;
 }
 
 function inputClass(theme: StoreTheme, extra: string): string {
-  return `${extra} rounded-md border ${theme.outline} text-sm outline-none transition focus:border-[var(--store-primary)] focus:bg-white`;
-}
-
-function categoryClass(active: boolean, theme: StoreTheme): string {
-  return `h-10 shrink-0 self-start rounded-md border px-3 text-sm font-semibold ${
-    active ? `border-[var(--store-primary)] ${theme.primaryBg} text-white` : theme.outline
-  }`;
+  return `${extra} rounded-2xl border ${theme.outline} text-sm outline-none transition focus:border-[var(--store-primary)] focus:bg-white`;
 }
 
 function modeButtonClass(active: boolean, theme: StoreTheme): string {
-  return `h-9 rounded-md border text-sm font-semibold ${active ? `border-[var(--store-primary)] ${theme.primaryBg} text-white` : theme.outline}`;
+  return `h-10 rounded-full border text-sm font-semibold ${active ? `border-[var(--store-primary)] ${theme.primaryBg} text-white` : theme.outline}`;
 }
 
 function money(value: number): string {
@@ -1519,6 +2986,18 @@ function money(value: number): string {
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function recentlyViewedKey(tenantSlug: string): string {
+  return `bizbil:storefront:recent:${tenantSlug}`;
+}
+
+function recentSearchesKey(tenantSlug: string): string {
+  return `bizbil:storefront:search:${tenantSlug}`;
+}
+
+function wishlistKey(tenantSlug: string): string {
+  return `bizbil:storefront:wishlist:${tenantSlug}`;
 }
 
 function initials(value: string): string {

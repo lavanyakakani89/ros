@@ -25,16 +25,37 @@ import { BillingError, BillingService } from "../billing/billing.service.js";
 import { DeliveryError, DeliveryService } from "../delivery/delivery.service.js";
 import { decryptStorefrontSecret, encryptStorefrontSecret } from "./storefront.credentials.js";
 import {
+  asRecord,
+  buildFamilyProductMap,
+  buildProductFamilySuggestions,
+  chooseDefaultFamilyProduct,
+  ecommerceProductFamilyInclude,
+  extractVariantCandidate,
+  listEligibleFamilyProducts,
+  listTenantProductFamilies,
+  readText,
+  slugifyFamilyName,
+  sortVariantLabel,
+} from "./storefront.families.js";
+import {
+  storefrontAddFamilyItemsSchema,
   storefrontCatalogQuerySchema,
+  storefrontCategoryProductsParamsSchema,
   storefrontCheckoutSchema,
+  storefrontCreateProductFamilySchema,
   storefrontCouponSchema,
   storefrontCustomerLoginSchema,
   storefrontCustomerRegisterSchema,
+  storefrontProductListQuerySchema,
   storefrontDomainRequestSchema,
+  storefrontFamilyItemParamsSchema,
+  storefrontFamilyParamsSchema,
   storefrontProductParamsSchema,
   storefrontRazorpayVerifySchema,
+  storefrontSearchQuerySchema,
   storefrontSettingsRequestSchema,
   storefrontTenantParamsSchema,
+  storefrontUpdateProductFamilySchema,
 } from "./storefront.schema.js";
 
 const storefrontCustomerCookie = "storefront_customer_token";
@@ -89,6 +110,60 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
       const query = storefrontCatalogQuerySchema.parse(request.query);
       const context = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: query.host ?? forwardedHost(request) });
       return buildStorefrontBootstrap(fastify, context, query);
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/categories", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontTenantParamsSchema.parse(request.params);
+      const { tenant } = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: forwardedHost(request) });
+      await setTenantContext(fastify, tenant.id);
+      return {
+        categories: await listCategories(fastify, tenant.id),
+      };
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/categories/:categoryId/products", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontCategoryProductsParamsSchema.parse(request.params);
+      const query = storefrontProductListQuerySchema.parse(request.query);
+      const context = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: query.host ?? forwardedHost(request) });
+      await setTenantContext(fastify, context.tenant.id);
+      const result = await listProducts(fastify, context.tenant.slug, context.tenant.id, {
+        ...query,
+        categoryId: params.categoryId,
+      });
+      return result;
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/products", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontTenantParamsSchema.parse(request.params);
+      const query = storefrontProductListQuerySchema.parse(request.query);
+      const context = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: query.host ?? forwardedHost(request) });
+      await setTenantContext(fastify, context.tenant.id);
+      return listProducts(fastify, context.tenant.slug, context.tenant.id, query);
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/products/:productId", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontProductParamsSchema.parse(request.params);
+      const { tenant } = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: forwardedHost(request) });
+      await setTenantContext(fastify, tenant.id);
+      return getStorefrontProductDetail(fastify, tenant.id, tenant.slug, params.productId);
+    });
+  });
+
+  fastify.get("/api/public/storefront/:tenantSlug/search", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      const params = storefrontTenantParamsSchema.parse(request.params);
+      const query = storefrontSearchQuerySchema.parse(request.query);
+      const { tenant } = await resolveStorefrontContext(fastify, { tenantSlug: params.tenantSlug, host: query.host ?? forwardedHost(request) });
+      await setTenantContext(fastify, tenant.id);
+      return searchStorefrontProducts(fastify, tenant.id, tenant.slug, query);
     });
   });
 
@@ -714,6 +789,329 @@ export const storefrontRoutes: FastifyPluginCallback = (fastify, _options, done)
     });
   });
 
+  fastify.get("/api/storefront/product-families", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const [families, products] = await Promise.all([
+        listTenantProductFamilies(fastify, request.tenant.id),
+        listEligibleFamilyProducts(fastify, request.tenant.id),
+      ]);
+      const groupedProductIds = new Set(families.flatMap((family) => family.items.map((item) => item.productId)));
+
+      return {
+        families: families.map((family) => ({
+          id: family.id,
+          name: family.name,
+          slug: family.slug,
+          attributeLabel: family.attributeLabel,
+          source: family.source,
+          isActive: family.isActive,
+          items: family.items.map((item) => ({
+            id: item.id,
+            productId: item.productId,
+            productName: item.product.name,
+            sku: item.product.sku,
+            barcode: item.product.barcode,
+            imageUrl: item.product.imageUrl ? `/api/inventory/products/${item.productId}/image` : null,
+            currentStock: item.product.currentStock.toNumber(),
+            mrp: item.product.mrp.toNumber(),
+            sellingPrice: item.product.sellingPrice.toNumber(),
+            categoryName: item.product.category?.name ?? "Featured",
+            brand: readText(item.product.verticalData, "brand"),
+            size: readText(item.product.verticalData, "size"),
+            variantLabel: item.variantLabel,
+            sortOrder: item.sortOrder,
+            isDefault: item.isDefault,
+          })),
+        })),
+        suggestions: buildProductFamilySuggestions(products, groupedProductIds),
+        ungroupedProducts: products
+          .filter((product) => !groupedProductIds.has(product.id))
+          .map((product) => ({
+            id: product.id,
+            name: product.name,
+            sku: product.sku,
+            barcode: product.barcode,
+            imageUrl: product.imageUrl ? `/api/inventory/products/${product.id}/image` : null,
+            currentStock: product.currentStock.toNumber(),
+            mrp: product.mrp.toNumber(),
+            sellingPrice: product.sellingPrice.toNumber(),
+            categoryName: product.category?.name ?? "Featured",
+            brand: readText(product.verticalData, "brand"),
+            size: readText(product.verticalData, "size"),
+            suggestedVariantLabel: extractVariantCandidate(product)?.variantLabel ?? null,
+          })),
+      };
+    });
+  });
+
+  fastify.post("/api/storefront/product-families", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const input = storefrontCreateProductFamilySchema.parse(request.body);
+      const productIds = input.items.map((item) => item.productId);
+      const products = await fastify.prisma.product.findMany({
+        where: {
+          tenantId: request.tenant.id,
+          id: { in: productIds },
+          isActive: true,
+          ecommerceDisabled: false,
+        },
+        include: {
+          category: {
+            select: {
+              id: true,
+              name: true,
+              parentId: true,
+            },
+          },
+        },
+      });
+      if (products.length !== productIds.length) {
+        throw new StorefrontError("Some selected products are not available for ecommerce grouping", 400);
+      }
+
+      const existingItems = await fastify.prisma.ecommerceProductFamilyItem.findMany({
+        where: {
+          tenantId: request.tenant.id,
+          productId: { in: productIds },
+        },
+        select: {
+          productId: true,
+        },
+      });
+      if (existingItems.length > 0) {
+        throw new StorefrontError("One or more selected products already belong to another ecommerce family", 409);
+      }
+
+      const nextSlug = await uniqueFamilySlug(fastify, request.tenant.id, input.name);
+      const created = await fastify.prisma.ecommerceProductFamily.create({
+        data: {
+          tenantId: request.tenant.id,
+          name: input.name,
+          slug: nextSlug,
+          attributeLabel: input.attributeLabel,
+          source: input.source,
+          items: {
+            create: input.items.map((item, index) => {
+              const product = products.find((candidate) => candidate.id === item.productId);
+              return {
+                tenantId: request.tenant.id,
+                productId: item.productId,
+                variantLabel: item.variantLabel?.trim() || extractVariantCandidate(product ?? { name: "", verticalData: null })?.variantLabel || product?.name || `Variant ${String(index + 1)}`,
+                sortOrder: item.sortOrder ?? sortVariantLabel(item.variantLabel?.trim() || extractVariantCandidate(product ?? { name: "", verticalData: null })?.variantLabel || product?.name || ""),
+                isDefault: item.isDefault ?? index === 0,
+              };
+            }),
+          },
+        },
+        include: ecommerceProductFamilyInclude,
+      });
+
+      await normalizeFamilyDefaults(fastify, request.tenant.id, created.id);
+      return { family: created };
+    });
+  });
+
+  fastify.patch("/api/storefront/product-families/:familyId", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = storefrontFamilyParamsSchema.parse(request.params);
+      const input = storefrontUpdateProductFamilySchema.parse(request.body);
+
+      const family = await fastify.prisma.ecommerceProductFamily.findFirst({
+        where: {
+          id: params.familyId,
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+        include: ecommerceProductFamilyInclude,
+      });
+      if (!family) {
+        throw new StorefrontError("Ecommerce family not found", 404);
+      }
+
+      await fastify.prisma.$transaction(async (tx) => {
+        await tx.ecommerceProductFamily.update({
+          where: {
+            id: family.id,
+          },
+          data: {
+            ...(input.name ? { name: input.name, slug: await uniqueFamilySlug(fastify, request.tenant.id, input.name, family.id) } : {}),
+            ...(input.attributeLabel ? { attributeLabel: input.attributeLabel } : {}),
+          },
+        });
+
+        if (input.items) {
+          for (const item of input.items) {
+            await tx.ecommerceProductFamilyItem.update({
+              where: {
+                id: item.id,
+              },
+              data: {
+                variantLabel: item.variantLabel,
+                sortOrder: item.sortOrder,
+                isDefault: item.isDefault,
+              },
+            });
+          }
+        }
+      });
+
+      await normalizeFamilyDefaults(fastify, request.tenant.id, family.id);
+      return {
+        family: await fastify.prisma.ecommerceProductFamily.findUnique({
+          where: {
+            id: family.id,
+          },
+          include: ecommerceProductFamilyInclude,
+        }),
+      };
+    });
+  });
+
+  fastify.post("/api/storefront/product-families/:familyId/items", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = storefrontFamilyParamsSchema.parse(request.params);
+      const input = storefrontAddFamilyItemsSchema.parse(request.body);
+
+      const family = await fastify.prisma.ecommerceProductFamily.findFirst({
+        where: {
+          id: params.familyId,
+          tenantId: request.tenant.id,
+          isActive: true,
+        },
+      });
+      if (!family) {
+        throw new StorefrontError("Ecommerce family not found", 404);
+      }
+
+      const productIds = input.items.map((item) => item.productId);
+      const [products, existingItems] = await Promise.all([
+        fastify.prisma.product.findMany({
+          where: {
+            tenantId: request.tenant.id,
+            id: { in: productIds },
+            isActive: true,
+            ecommerceDisabled: false,
+          },
+        }),
+        fastify.prisma.ecommerceProductFamilyItem.findMany({
+          where: {
+            tenantId: request.tenant.id,
+            productId: { in: productIds },
+          },
+          select: {
+            productId: true,
+            familyId: true,
+          },
+        }),
+      ]);
+      if (products.length !== productIds.length) {
+        throw new StorefrontError("Some selected products are not available for ecommerce grouping", 400);
+      }
+      if (existingItems.some((item) => item.familyId !== family.id)) {
+        throw new StorefrontError("One or more selected products already belong to another ecommerce family", 409);
+      }
+
+      await fastify.prisma.ecommerceProductFamilyItem.createMany({
+        data: input.items
+          .filter((item) => !existingItems.some((existing) => existing.productId === item.productId))
+          .map((item, index) => {
+            const product = products.find((candidate) => candidate.id === item.productId);
+            const derivedLabel = extractVariantCandidate(product ?? { name: "", verticalData: null })?.variantLabel;
+            return {
+              tenantId: request.tenant.id,
+              familyId: family.id,
+              productId: item.productId,
+              variantLabel: item.variantLabel?.trim() || derivedLabel || product?.name || `Variant ${String(index + 1)}`,
+              sortOrder: item.sortOrder ?? sortVariantLabel(item.variantLabel?.trim() || derivedLabel || product?.name || ""),
+              isDefault: item.isDefault ?? false,
+            };
+          }),
+      });
+
+      await normalizeFamilyDefaults(fastify, request.tenant.id, family.id);
+      return {
+        family: await fastify.prisma.ecommerceProductFamily.findUnique({
+          where: {
+            id: family.id,
+          },
+          include: ecommerceProductFamilyInclude,
+        }),
+      };
+    });
+  });
+
+  fastify.delete("/api/storefront/product-families/:familyId/items/:itemId", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = storefrontFamilyItemParamsSchema.parse(request.params);
+      const item = await fastify.prisma.ecommerceProductFamilyItem.findFirst({
+        where: {
+          id: params.itemId,
+          familyId: params.familyId,
+          tenantId: request.tenant.id,
+        },
+      });
+      if (!item) {
+        throw new StorefrontError("Ecommerce family item not found", 404);
+      }
+
+      await fastify.prisma.ecommerceProductFamilyItem.delete({
+        where: {
+          id: item.id,
+        },
+      });
+
+      const remaining = await fastify.prisma.ecommerceProductFamilyItem.count({
+        where: {
+          familyId: params.familyId,
+          tenantId: request.tenant.id,
+        },
+      });
+      if (remaining < 2) {
+        await fastify.prisma.ecommerceProductFamily.update({
+          where: {
+            id: params.familyId,
+          },
+          data: {
+            isActive: false,
+          },
+        });
+        return { family: null, archived: true };
+      }
+
+      await normalizeFamilyDefaults(fastify, request.tenant.id, params.familyId);
+      return {
+        family: await fastify.prisma.ecommerceProductFamily.findUnique({
+          where: {
+            id: params.familyId,
+          },
+          include: ecommerceProductFamilyInclude,
+        }),
+      };
+    });
+  });
+
+  fastify.delete("/api/storefront/product-families/:familyId", async (request, reply) => {
+    return handleStorefront(reply, async () => {
+      ensureStorefrontMediaManager(request.user.role);
+      const params = storefrontFamilyParamsSchema.parse(request.params);
+      await fastify.prisma.ecommerceProductFamily.updateMany({
+        where: {
+          id: params.familyId,
+          tenantId: request.tenant.id,
+        },
+        data: {
+          isActive: false,
+        },
+      });
+      return { status: "ok" };
+    });
+  });
+
   done();
 };
 
@@ -725,7 +1123,7 @@ async function buildStorefrontBootstrap(
   const { tenant, settings, defaultHostname } = context;
   await setTenantContext(fastify, tenant.id);
 
-  const [categories, products] = await Promise.all([
+  const [categories, productResult] = await Promise.all([
     listCategories(fastify, tenant.id),
     listProducts(fastify, tenant.slug, tenant.id, query),
   ]);
@@ -762,7 +1160,8 @@ async function buildStorefrontBootstrap(
       banners: storefrontBannerUrls(settings, tenant.slug),
     },
     categories,
-    products,
+    products: productResult.data,
+    productFilters: productResult.filters,
     checkout: {
       deliveryCharge: settings.deliveryCharge.toNumber(),
       freeDeliveryAbove: settings.freeDeliveryAbove.toNumber(),
@@ -903,13 +1302,322 @@ async function setTenantContext(fastify: FastifyInstance, tenantId: string): Pro
 }
 
 async function listCategories(fastify: FastifyInstance, tenantId: string) {
-  return fastify.prisma.category.findMany({
+  const categories = await fastify.prisma.category.findMany({
     where: {
       tenantId,
       isActive: true,
-      parentId: null,
-      OR: [
-        {
+      OR: visibleCategoryProductScope(tenantId),
+    },
+    orderBy: [
+      { parentId: "asc" },
+      { sortOrder: "asc" },
+      { name: "asc" },
+    ],
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      parentId: true,
+    },
+  });
+
+  const counts = await fastify.prisma.product.groupBy({
+    by: ["categoryId"],
+    where: {
+      tenantId,
+      isActive: true,
+      ecommerceDisabled: false,
+      currentStock: {
+        gt: 0,
+      },
+      categoryId: {
+        not: null,
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+  const countByCategoryId = new Map(counts.map((item) => [item.categoryId ?? "", item._count._all]));
+
+  const topLevel = categories.filter((category) => !category.parentId);
+  return topLevel
+    .map((category) => {
+      const children = categories
+        .filter((candidate) => candidate.parentId === category.id)
+        .map((child) => ({
+          id: child.id,
+          name: child.name,
+          code: child.code,
+          parentId: child.parentId,
+          productCount: countByCategoryId.get(child.id) ?? 0,
+        }))
+        .filter((child) => child.productCount > 0);
+      const directCount = countByCategoryId.get(category.id) ?? 0;
+      const childCount = children.reduce((sum, child) => sum + child.productCount, 0);
+      return {
+        id: category.id,
+        name: category.name,
+        code: category.code,
+        parentId: null,
+        productCount: directCount + childCount,
+        children,
+      };
+    })
+    .filter((category) => category.productCount > 0);
+}
+
+async function listProducts(
+  fastify: FastifyInstance,
+  tenantSlug: string,
+  tenantId: string,
+  query: z.infer<typeof storefrontCatalogQuerySchema> | z.infer<typeof storefrontProductListQuerySchema>,
+) {
+  const categoryIds = query.categoryId ? await storefrontCategoryScope(fastify, tenantId, query.categoryId) : null;
+  const search = "search" in query ? query.search : undefined;
+  const page = "page" in query ? query.page : 1;
+  const pageSize = "pageSize" in query ? query.pageSize : query.limit;
+  const sort = "sort" in query ? query.sort : "FEATURED";
+  const filterBrand = "brand" in query ? query.brand : undefined;
+  const filterSize = "size" in query ? query.size : undefined;
+  const filterColor = "color" in query ? query.color : undefined;
+  const discountOnly = "discountOnly" in query ? query.discountOnly : false;
+  const minPrice = "minPrice" in query ? query.minPrice : undefined;
+  const maxPrice = "maxPrice" in query ? query.maxPrice : undefined;
+
+  const products = await fastify.prisma.product.findMany({
+    where: {
+      tenantId,
+      isActive: true,
+      ecommerceDisabled: false,
+      currentStock: {
+        gt: 0,
+      },
+      ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: "insensitive" } },
+              { description: { contains: search, mode: "insensitive" } },
+              { sku: { contains: search, mode: "insensitive" } },
+              { barcode: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(discountOnly
+        ? {
+            mrp: {
+              gt: 0,
+            },
+          }
+        : {}),
+      ...(minPrice !== undefined || maxPrice !== undefined
+        ? {
+            sellingPrice: {
+              ...(minPrice !== undefined ? { gte: minPrice } : {}),
+              ...(maxPrice !== undefined ? { lte: maxPrice } : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      category: {
+        select: {
+          id: true,
+          name: true,
+          parentId: true,
+        },
+      },
+      variants: {
+        where: {
+          isActive: true,
+          currentStock: {
+            gt: 0,
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+    },
+  });
+
+  const [families, shaped] = await Promise.all([
+    listTenantProductFamilies(fastify, tenantId),
+    Promise.resolve(products.map((product) => storefrontProductCard(product, tenantSlug))),
+  ]);
+  const familyMap = buildFamilyProductMap(families);
+  const grouped = groupStorefrontProducts(shaped, familyMap);
+  const filtered = grouped.filter((product) => {
+    if (filterBrand && normalizeSearchValue(product.brand) !== normalizeSearchValue(filterBrand)) {
+      return false;
+    }
+    if (filterSize && !product.variantLabels.some((label) => normalizeSearchValue(label) === normalizeSearchValue(filterSize))) {
+      return false;
+    }
+    if (filterColor && normalizeSearchValue(product.color) !== normalizeSearchValue(filterColor)) {
+      return false;
+    }
+    if (discountOnly && product.discountPercent <= 0) {
+      return false;
+    }
+    return true;
+  });
+  const sorted = sortStorefrontProducts(filtered, sort);
+  const total = sorted.length;
+  const start = (page - 1) * pageSize;
+  const data = sorted.slice(start, start + pageSize);
+
+  return {
+    data,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(Math.ceil(total / pageSize), 1),
+    filters: collectStorefrontFilters(sorted),
+  };
+}
+
+async function getStorefrontProductDetail(
+  fastify: FastifyInstance,
+  tenantId: string,
+  tenantSlug: string,
+  productId: string,
+) {
+  const familyItem = await fastify.prisma.ecommerceProductFamilyItem.findFirst({
+    where: {
+      tenantId,
+      productId,
+      family: {
+        isActive: true,
+      },
+    },
+    include: {
+      family: {
+        include: ecommerceProductFamilyInclude,
+      },
+    },
+  });
+
+  if (familyItem?.family) {
+    const family = familyItem.family;
+    const visibleItems = family.items.filter((item) =>
+      item.product.isActive &&
+      !item.product.ecommerceDisabled &&
+      item.product.currentStock.toNumber() > 0);
+    const defaultItem = chooseDefaultFamilyProduct(visibleItems.length > 0 ? visibleItems : family.items);
+    const primaryProduct = defaultItem.product;
+    const relatedProducts = await relatedStorefrontProducts(fastify, tenantId, tenantSlug, primaryProduct.id, primaryProduct.categoryId, readText(primaryProduct.verticalData, "brand"));
+
+    return {
+      product: storefrontProductDetail({
+        ...primaryProduct,
+        category: primaryProduct.category,
+        variants: primaryProduct.variants,
+      }, tenantSlug, {
+        familyId: family.id,
+        familyName: family.name,
+        attributeLabel: family.attributeLabel,
+        familyItems: visibleItems.length > 0 ? visibleItems : family.items,
+      }),
+      relatedProducts: relatedProducts
+        .slice(0, 4),
+      frequentlyBoughtTogether: relatedProducts
+        .slice(4, 8),
+    };
+  }
+
+  const product = await fastify.prisma.product.findFirst({
+    where: {
+      id: productId,
+      tenantId,
+      isActive: true,
+      ecommerceDisabled: false,
+      currentStock: {
+        gt: 0,
+      },
+    },
+    include: {
+      category: {
+        select: {
+          id: true,
+          name: true,
+          parentId: true,
+        },
+      },
+      variants: {
+        where: {
+          isActive: true,
+          currentStock: {
+            gt: 0,
+          },
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+    },
+  });
+
+  if (!product) {
+    throw new StorefrontError("Product not found", 404);
+  }
+
+  const relatedProducts = await relatedStorefrontProducts(fastify, tenantId, tenantSlug, product.id, product.categoryId, readText(product.verticalData, "brand"));
+
+  return {
+    product: storefrontProductDetail(product, tenantSlug),
+    relatedProducts: relatedProducts
+      .slice(0, 4),
+    frequentlyBoughtTogether: relatedProducts
+      .slice(4, 8),
+  };
+}
+
+async function searchStorefrontProducts(
+  fastify: FastifyInstance,
+  tenantId: string,
+  tenantSlug: string,
+  query: z.infer<typeof storefrontSearchQuerySchema>,
+) {
+  const result = await listProducts(fastify, tenantSlug, tenantId, {
+    search: query.query,
+    limit: query.limit,
+    page: 1,
+    pageSize: query.limit,
+    sort: "FEATURED",
+    discountOnly: false,
+  });
+
+  const normalizedQuery = normalizeSearchValue(query.query);
+  const suggestions = result.data
+    .sort((left, right) => storefrontSearchRank(left, normalizedQuery) - storefrontSearchRank(right, normalizedQuery))
+    .slice(0, query.limit);
+
+  return {
+    query: query.query,
+    suggestions,
+  };
+}
+
+function visibleCategoryProductScope(tenantId: string): Prisma.CategoryWhereInput[] {
+  return [
+    {
+      products: {
+        some: {
+          tenantId,
+          isActive: true,
+          ecommerceDisabled: false,
+          currentStock: {
+            gt: 0,
+          },
+        },
+      },
+    },
+    {
+      children: {
+        some: {
+          isActive: true,
           products: {
             some: {
               tenantId,
@@ -921,45 +1629,300 @@ async function listCategories(fastify: FastifyInstance, tenantId: string) {
             },
           },
         },
-        {
-          children: {
-            some: {
-              isActive: true,
-              products: {
-                some: {
-                  tenantId,
-                  isActive: true,
-                  ecommerceDisabled: false,
-                  currentStock: {
-                    gt: 0,
-                  },
-                },
-              },
-            },
-          },
-        },
-      ],
+      },
     },
-    orderBy: [
-      { sortOrder: "asc" },
-      { name: "asc" },
-    ],
-    select: {
-      id: true,
-      name: true,
-      code: true,
-    },
-  });
+  ];
 }
 
-async function listProducts(
-  fastify: FastifyInstance,
+type StorefrontCatalogProduct = {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  description: string | null;
+  categoryId: string | null;
+  categoryName: string;
+  categoryParentId: string | null;
+  unit: string;
+  mrp: number;
+  sellingPrice: number;
+  defaultDiscountPercent: number | null;
+  discountPercent: number;
+  gstRate: number;
+  hsnCode: string | null;
+  currentStock: number;
+  imageUrl: string | null;
+  brand: string | null;
+  size: string | null;
+  color: string | null;
+  hasVariants: boolean;
+  grouped: boolean;
+  groupId: string | null;
+  groupName: string | null;
+  variantAttributeLabel: string | null;
+  variantCount: number;
+  variantLabels: string[];
+  defaultVariantLabel: string | null;
+};
+
+function storefrontProductCard(
+  product: {
+    id: string;
+    name: string;
+    sku: string | null;
+    barcode: string | null;
+    description: string | null;
+    unit: string;
+    mrp: { toNumber(): number };
+    sellingPrice: { toNumber(): number };
+    defaultDiscountPercent: { toNumber(): number } | null;
+    gstRate: { toNumber(): number };
+    hsnCode: string | null;
+    currentStock: { toNumber(): number };
+    imageUrl: string | null;
+    verticalData: unknown;
+    categoryId: string | null;
+    category: { id: string; name: string; parentId: string | null } | null;
+    variants: Array<{
+      id: string;
+      name: string;
+      sku: string | null;
+      barcode: string | null;
+      sellingPrice: { toNumber(): number };
+      mrp: { toNumber(): number };
+      currentStock: { toNumber(): number };
+      attributes: unknown;
+    }>;
+  },
   tenantSlug: string,
-  tenantId: string,
-  query: z.infer<typeof storefrontCatalogQuerySchema>,
+): StorefrontCatalogProduct {
+  const brand = readText(product.verticalData, "brand");
+  const size = readText(product.verticalData, "size");
+  const color = readText(product.verticalData, "color");
+  const mrp = product.mrp.toNumber();
+  const sellingPrice = product.sellingPrice.toNumber();
+  return {
+    id: product.id,
+    name: product.name,
+    sku: product.sku,
+    barcode: product.barcode,
+    description: product.description,
+    categoryId: product.categoryId,
+    categoryName: product.category?.name ?? "Featured",
+    categoryParentId: product.category?.parentId ?? null,
+    unit: product.unit,
+    mrp,
+    sellingPrice,
+    defaultDiscountPercent: product.defaultDiscountPercent?.toNumber() ?? null,
+    discountPercent: mrp > sellingPrice && mrp > 0 ? Math.round(((mrp - sellingPrice) / mrp) * 100) : 0,
+    gstRate: product.gstRate.toNumber(),
+    hsnCode: product.hsnCode,
+    currentStock: product.currentStock.toNumber(),
+    imageUrl: product.imageUrl ? `/api/public/storefront/${tenantSlug}/products/${product.id}/image` : null,
+    brand,
+    size,
+    color,
+    hasVariants: product.variants.length > 0,
+    grouped: false,
+    groupId: null,
+    groupName: null,
+    variantAttributeLabel: null,
+    variantCount: product.variants.length,
+    variantLabels: size ? [size] : [],
+    defaultVariantLabel: size,
+  };
+}
+
+function storefrontProductDetail(
+  product: Parameters<typeof storefrontProductCard>[0],
+  tenantSlug: string,
+  family?: {
+    familyId: string;
+    familyName: string;
+    attributeLabel: string;
+    familyItems: Array<{
+      id: string;
+      productId: string;
+      variantLabel: string;
+      sortOrder: number;
+      isDefault: boolean;
+      product: {
+        id: string;
+        name: string;
+        sku: string | null;
+        barcode: string | null;
+        unit: string;
+        mrp: { toNumber(): number };
+        sellingPrice: { toNumber(): number };
+        currentStock: { toNumber(): number };
+        imageUrl: string | null;
+      };
+    }>;
+  },
 ) {
-  const categoryIds = query.categoryId ? await storefrontCategoryScope(fastify, tenantId, query.categoryId) : null;
-  const products = await fastify.prisma.product.findMany({
+  const base = storefrontProductCard(product, tenantSlug);
+  const familyVariants = family?.familyItems.map((item) => ({
+    id: item.id,
+    productId: item.productId,
+    label: item.variantLabel,
+    name: item.product.name,
+    sku: item.product.sku,
+    barcode: item.product.barcode,
+    sellingPrice: item.product.sellingPrice.toNumber(),
+    mrp: item.product.mrp.toNumber(),
+    currentStock: item.product.currentStock.toNumber(),
+    imageUrl: item.product.imageUrl ? `/api/public/storefront/${tenantSlug}/products/${item.productId}/image` : null,
+    unit: item.product.unit,
+    attributes: {
+      [family.attributeLabel.toLowerCase()]: item.variantLabel,
+    },
+  })) ?? [];
+
+  return {
+    ...base,
+    ...(family ? {
+      grouped: true,
+      groupId: family.familyId,
+      groupName: family.familyName,
+      variantAttributeLabel: family.attributeLabel,
+      variantCount: family.familyItems.length,
+      variantLabels: family.familyItems.map((item) => item.variantLabel),
+      defaultVariantLabel: family.familyItems.find((item) => item.isDefault)?.variantLabel ?? family.familyItems[0]?.variantLabel ?? null,
+    } : {}),
+    variants: familyVariants.length > 0
+      ? familyVariants
+      : product.variants.map((variant) => ({
+        id: variant.id,
+        productId: product.id,
+        label: variant.name,
+        name: variant.name,
+        sku: variant.sku,
+        barcode: variant.barcode,
+        sellingPrice: variant.sellingPrice.toNumber(),
+        mrp: variant.mrp.toNumber(),
+        currentStock: variant.currentStock.toNumber(),
+        imageUrl: product.imageUrl ? `/api/public/storefront/${tenantSlug}/products/${product.id}/image` : null,
+        unit: product.unit,
+        attributes: asRecord(variant.attributes),
+      })),
+    specifications: [
+      { label: "Brand", value: readText(product.verticalData, "brand") },
+      { label: "Size", value: readText(product.verticalData, "size") },
+      { label: "Color", value: readText(product.verticalData, "color") },
+      ...(familyVariants.length > 0 ? [{ label: family?.attributeLabel ?? "Variants", value: familyVariants.map((variant) => variant.label).join(", ") }] : []),
+      { label: "HSN", value: product.hsnCode },
+      { label: "GST", value: `${String(product.gstRate.toNumber())}%` },
+      { label: "Barcode", value: product.barcode },
+      { label: "SKU", value: product.sku },
+    ].filter((item): item is { label: string; value: string } => Boolean(item.value)),
+  };
+}
+
+function collectStorefrontFilters(products: Array<ReturnType<typeof storefrontProductCard>>) {
+  return {
+    brands: uniqueValues(products.map((product) => product.brand)),
+    sizes: uniqueValues(products.flatMap((product) => product.variantLabels.length > 0 ? product.variantLabels : [product.size])),
+    colors: uniqueValues(products.map((product) => product.color)),
+    priceRange: {
+      min: products.reduce((min, product) => Math.min(min, product.sellingPrice), products[0]?.sellingPrice ?? 0),
+      max: products.reduce((max, product) => Math.max(max, product.sellingPrice), products[0]?.sellingPrice ?? 0),
+    },
+  };
+}
+
+function uniqueValues(values: Array<string | null>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value?.trim())).map((value) => value.trim()))].sort((left, right) => left.localeCompare(right));
+}
+
+function groupStorefrontProducts(
+  products: Array<ReturnType<typeof storefrontProductCard>>,
+  familyMap: ReturnType<typeof buildFamilyProductMap>,
+) {
+  const groupedProducts: Array<ReturnType<typeof storefrontProductCard>> = [];
+  const seenFamilies = new Set<string>();
+
+  for (const product of products) {
+    const family = familyMap.get(product.id);
+    if (!family) {
+      groupedProducts.push(product);
+      continue;
+    }
+    if (seenFamilies.has(family.familyId)) {
+      continue;
+    }
+
+    const visibleItems = family.items.filter((item) =>
+      item.product.isActive &&
+      !item.product.ecommerceDisabled &&
+      item.product.currentStock.toNumber() > 0);
+    if (visibleItems.length === 0) {
+      continue;
+    }
+
+    const defaultItem = chooseDefaultFamilyProduct(visibleItems);
+    const representative = products.find((candidate) => candidate.id === defaultItem.productId) ?? product;
+    const variantLabels = visibleItems
+      .map((item) => item.variantLabel)
+      .filter((value, index, list) => list.indexOf(value) === index)
+      .sort((left, right) => sortVariantLabel(left) - sortVariantLabel(right) || left.localeCompare(right));
+
+    groupedProducts.push({
+      ...representative,
+      name: family.familyName,
+      grouped: true,
+      groupId: family.familyId,
+      groupName: family.familyName,
+      hasVariants: visibleItems.length > 1,
+      variantAttributeLabel: family.attributeLabel,
+      variantCount: visibleItems.length,
+      variantLabels,
+      defaultVariantLabel: defaultItem.variantLabel,
+      size: defaultItem.variantLabel,
+      currentStock: visibleItems.reduce((sum, item) => sum + item.product.currentStock.toNumber(), 0),
+    });
+    seenFamilies.add(family.familyId);
+  }
+
+  return groupedProducts;
+}
+
+function sortStorefrontProducts(
+  products: Array<ReturnType<typeof storefrontProductCard>>,
+  sort: "DISCOUNT" | "FEATURED" | "NAME" | "NEWEST" | "PRICE_ASC" | "PRICE_DESC",
+) {
+  const sorted = [...products];
+  if (sort === "PRICE_ASC") {
+    return sorted.sort((left, right) => left.sellingPrice - right.sellingPrice || left.name.localeCompare(right.name));
+  }
+  if (sort === "PRICE_DESC") {
+    return sorted.sort((left, right) => right.sellingPrice - left.sellingPrice || left.name.localeCompare(right.name));
+  }
+  if (sort === "DISCOUNT") {
+    return sorted.sort((left, right) => right.discountPercent - left.discountPercent || left.name.localeCompare(right.name));
+  }
+  if (sort === "NAME") {
+    return sorted.sort((left, right) => left.name.localeCompare(right.name));
+  }
+  if (sort === "NEWEST") {
+    return sorted.sort((left, right) => right.id.localeCompare(left.id));
+  }
+
+  return sorted.sort((left, right) =>
+    right.discountPercent - left.discountPercent ||
+    right.currentStock - left.currentStock ||
+    left.name.localeCompare(right.name));
+}
+
+async function relatedStorefrontProducts(
+  fastify: FastifyInstance,
+  tenantId: string,
+  tenantSlug: string,
+  productId: string,
+  categoryId: string | null,
+  brand: string | null,
+) {
+  const categoryIds = categoryId ? await storefrontCategoryScope(fastify, tenantId, categoryId) : [];
+  const relatedCandidates = await fastify.prisma.product.findMany({
     where: {
       tenantId,
       isActive: true,
@@ -967,47 +1930,81 @@ async function listProducts(
       currentStock: {
         gt: 0,
       },
-      ...(categoryIds ? { categoryId: { in: categoryIds } } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { name: { contains: query.search, mode: "insensitive" } },
-              { description: { contains: query.search, mode: "insensitive" } },
-              { sku: { contains: query.search, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      id: {
+        not: productId,
+      },
     },
     include: {
       category: {
         select: {
           id: true,
           name: true,
+          parentId: true,
+        },
+      },
+      variants: {
+        where: {
+          isActive: true,
+          currentStock: {
+            gt: 0,
+          },
         },
       },
     },
-    orderBy: [
-      { category: { sortOrder: "asc" } },
-      { name: "asc" },
-    ],
-    take: query.limit,
+    take: 24,
+    orderBy: {
+      name: "asc",
+    },
   });
 
-  return products.map((product) => ({
-    id: product.id,
-    name: product.name,
-    sku: product.sku,
-    description: product.description,
-    categoryId: product.categoryId,
-    categoryName: product.category?.name ?? "Featured",
-    unit: product.unit,
-    mrp: product.mrp.toNumber(),
-    sellingPrice: product.sellingPrice.toNumber(),
-    defaultDiscountPercent: product.defaultDiscountPercent?.toNumber() ?? null,
-    gstRate: product.gstRate.toNumber(),
-    currentStock: product.currentStock.toNumber(),
-    imageUrl: product.imageUrl ? `/api/public/storefront/${tenantSlug}/products/${product.id}/image` : null,
-  }));
+  const families = await listTenantProductFamilies(fastify, tenantId);
+  const familyMap = buildFamilyProductMap(families);
+  return groupStorefrontProducts(
+    relatedCandidates
+      .map((item) => storefrontProductCard(item, tenantSlug))
+      .map((item) => ({
+        ...item,
+        _score: (
+          (item.categoryId && categoryIds.includes(item.categoryId) ? 4 : 0) +
+          (brand && item.brand === brand ? 3 : 0) +
+          (item.hasVariants ? 1 : 0)
+        ),
+      }))
+      .filter((candidate) => candidate._score > 0)
+      .sort((left, right) => right._score - left._score || left.name.localeCompare(right.name))
+      .map((candidate) => {
+        const next = { ...candidate };
+        delete (next as { _score?: number })._score;
+        return next;
+      }),
+    familyMap,
+  ).slice(0, 8);
+}
+
+function storefrontSearchRank(product: ReturnType<typeof storefrontProductCard>, normalizedQuery: string): number {
+  const name = normalizeSearchValue(product.name);
+  const brand = normalizeSearchValue(product.brand);
+  const sku = normalizeSearchValue(product.sku);
+  const barcode = normalizeSearchValue(product.barcode);
+  const category = normalizeSearchValue(product.categoryName);
+  const variants = product.variantLabels.map((value) => normalizeSearchValue(value));
+
+  if (barcode === normalizedQuery) return 0;
+  if (sku === normalizedQuery) return 1;
+  if (name === normalizedQuery) return 2;
+  if (name.startsWith(normalizedQuery)) return 3;
+  if (brand.startsWith(normalizedQuery)) return 4;
+  if (category.startsWith(normalizedQuery)) return 5;
+  if (variants.some((value) => value === normalizedQuery)) return 6;
+  if (variants.some((value) => value.startsWith(normalizedQuery))) return 7;
+  if (name.includes(normalizedQuery)) return 6;
+  if (brand.includes(normalizedQuery)) return 7;
+  if (category.includes(normalizedQuery)) return 8;
+  return 9;
+}
+
+function normalizeSearchValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
 }
 
 async function storefrontCategoryScope(fastify: FastifyInstance, tenantId: string, categoryId: string): Promise<string[]> {
@@ -1685,6 +2682,72 @@ function calculateDeliveryCharge(orderTotal: number, settings: StorefrontSetting
   return freeAbove > 0 && orderTotal >= freeAbove ? 0 : charge;
 }
 
+async function uniqueFamilySlug(
+  fastify: FastifyInstance,
+  tenantId: string,
+  name: string,
+  ignoreFamilyId?: string,
+): Promise<string> {
+  const base = slugifyFamilyName(name) || "product-family";
+  let candidate = base;
+  let attempt = 1;
+
+  for (;;) {
+    const existing = await fastify.prisma.ecommerceProductFamily.findFirst({
+      where: {
+        tenantId,
+        slug: candidate,
+        ...(ignoreFamilyId ? { id: { not: ignoreFamilyId } } : {}),
+      },
+      select: {
+        id: true,
+      },
+    });
+    if (!existing) {
+      return candidate;
+    }
+    attempt += 1;
+    candidate = `${base}-${String(attempt)}`;
+  }
+}
+
+async function normalizeFamilyDefaults(fastify: FastifyInstance, tenantId: string, familyId: string): Promise<void> {
+  const items = await fastify.prisma.ecommerceProductFamilyItem.findMany({
+    where: {
+      tenantId,
+      familyId,
+    },
+    include: {
+      product: true,
+    },
+    orderBy: [
+      { sortOrder: "asc" },
+      { createdAt: "asc" },
+    ],
+  });
+  if (items.length === 0) {
+    return;
+  }
+
+  const defaultItem = items.find((item) => item.isDefault && item.product.currentStock.toNumber() > 0)
+    ?? items.find((item) => item.isDefault)
+    ?? items.find((item) => item.product.currentStock.toNumber() > 0)
+    ?? items[0];
+  if (!defaultItem) {
+    return;
+  }
+
+  await fastify.prisma.$transaction(items.map((item) =>
+    fastify.prisma.ecommerceProductFamilyItem.update({
+      where: {
+        id: item.id,
+      },
+      data: {
+        isDefault: item.id === defaultItem.id,
+      },
+    })));
+}
+
 function storefrontRootDomain(): string {
   return normalizeHost(process.env.STOREFRONT_ROOT_DOMAIN ?? "bizbil.com") ?? "bizbil.com";
 }
@@ -1861,10 +2924,6 @@ function roundMoney(value: number): number {
 
 function roundQuantity(value: number): number {
   return Math.round((value + Number.EPSILON) * 1000) / 1000;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function readString(record: unknown, key: string): string | undefined {

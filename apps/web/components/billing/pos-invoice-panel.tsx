@@ -2211,11 +2211,21 @@ function coercePaymentMode(value: string): PaymentMode {
 }
 
 function paymentMethodToMode(method: PaymentMethodRecord): PaymentMode {
-  const code = method.short_code === "CRED" ? "CREDIT" : method.short_code;
-  if (PAYMENT_MODES.includes(code as PaymentMode)) return code as PaymentMode;
+  const shortCode = method.short_code.trim().toUpperCase();
+  if (shortCode === "CRED") return "CREDIT";
+  if (shortCode === "CASH") return "CASH";
+  if (shortCode === "UPI") return "UPI";
+  if (shortCode === "CARD") return "CARD";
+  if (shortCode === "NEFT" || shortCode === "IMPS" || shortCode === "RTGS" || shortCode === "NETBANKING" || shortCode === "BANK") return "NETBANKING";
+
+  if (PAYMENT_MODES.includes(shortCode as PaymentMode)) {
+    return shortCode as PaymentMode;
+  }
+
   if (method.type === "upi") return "UPI";
   if (method.type === "card") return "CARD";
   if (method.type === "credit") return "CREDIT";
+  if (method.type === "cash") return "CASH";
   return "CASH";
 }
 

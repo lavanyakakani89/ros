@@ -218,7 +218,8 @@ export class BillingRepository {
           ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
         });
         if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
-        if (paymentMethod.type === PaymentMethodType.CREDIT) {
+        const resolvedMode = resolvePaymentMode(payment.mode, paymentMethod);
+        if (resolvedMode === PaymentMode.CREDIT) {
           throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
         }
         if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
@@ -230,7 +231,7 @@ export class BillingRepository {
           invoiceId: invoice.id,
           amount: payment.amount ?? 0,
           paymentMethodId: paymentMethod.id,
-          mode: payment.mode,
+          mode: resolvedMode,
           createdBy: input.confirmedBy,
           cashierId: input.confirmedBy,
           ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
@@ -246,7 +247,7 @@ export class BillingRepository {
         : amountPaid > 0
           ? InvoiceStatus.PARTIAL
           : InvoiceStatus.CONFIRMED;
-      const firstMode = payablePayments[0]?.mode ?? normalizedPayments[0]?.mode ?? input.invoice.paymentMode;
+      const firstMode = paymentRows[0]?.mode ?? input.invoice.paymentMode;
 
       await tx.invoice.update({
         where: {
@@ -577,21 +578,27 @@ export class BillingRepository {
       if (splitAmountPaid > invoice.grandTotal.toNumber() + 0.01) {
         throw new Error("Split payment amount cannot exceed invoice total");
       }
+      const splitPaymentModes: PaymentMode[] = [];
 
       if (payableSplitPayments.length > 0) {
         const paymentRows = [];
         for (const payment of payableSplitPayments) {
           const paymentMethod = await findMethodForPayment(tx, tenantId, invoice.storeId, payment);
           if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          const resolvedMode = resolvePaymentMode(payment.mode, paymentMethod);
+          if (resolvedMode === PaymentMode.CREDIT) {
+            throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+          }
           if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
             throw new Error(`Reference required for ${paymentMethod.name}`);
           }
+          splitPaymentModes.push(resolvedMode);
           paymentRows.push({
             tenantId,
             invoiceId,
             amount: payment.amount,
             paymentMethodId: paymentMethod.id,
-            mode: payment.mode,
+            mode: resolvedMode,
             createdBy: confirmedBy,
             cashierId: confirmedBy,
             ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
@@ -600,7 +607,7 @@ export class BillingRepository {
         await tx.payment.createMany({ data: paymentRows });
       }
 
-      const splitPaymentMode = payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode;
+      const splitPaymentMode = splitPaymentModes[0] ?? splitPayments[0]?.mode;
       const splitAmountDue = splitPayments.length > 0
         ? Math.max(roundMoney(invoice.grandTotal.toNumber() - splitAmountPaid), 0)
         : invoice.amountDue.toNumber();
@@ -766,6 +773,7 @@ async function reconcileEditedInvoicePayments(
     if (amountPaid > input.grandTotal + 0.01) {
       throw new Error("Split payment amount cannot exceed invoice total");
     }
+    const splitPaymentModes: PaymentMode[] = [];
 
     await tx.payment.deleteMany({
       where: {
@@ -779,26 +787,31 @@ async function reconcileEditedInvoicePayments(
         data: await Promise.all(payableSplitPayments.map(async (payment) => {
           const paymentMethod = await findMethodForPayment(tx, input.tenantId, null, payment);
           if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          const resolvedMode = resolvePaymentMode(payment.mode, paymentMethod);
+          if (resolvedMode === PaymentMode.CREDIT) {
+            throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+          }
           if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
             throw new Error(`Reference required for ${paymentMethod.name}`);
           }
+          splitPaymentModes.push(resolvedMode);
           return {
-          tenantId: input.tenantId,
-          invoiceId: input.invoiceId,
-          amount: payment.amount,
-          paymentMethodId: paymentMethod.id,
-          mode: payment.mode,
-          createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
-          cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
-          ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
-        };
+            tenantId: input.tenantId,
+            invoiceId: input.invoiceId,
+            amount: payment.amount,
+            paymentMethodId: paymentMethod.id,
+            mode: resolvedMode,
+            createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
+            cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
+            ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
+          };
         })),
       });
     }
 
     const amountDue = Math.max(roundMoney(input.grandTotal - amountPaid), 0);
     return {
-      paymentMode: payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode ?? input.selectedPaymentMode,
+      paymentMode: splitPaymentModes[0] ?? payableSplitPayments[0]?.mode ?? splitPayments[0]?.mode ?? input.selectedPaymentMode,
       amountPaid,
       amountDue,
       status: amountDue <= 0.01
@@ -830,6 +843,10 @@ async function reconcileEditedInvoicePayments(
       const existingPayment = input.existingPayments[0];
       const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
       if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
+      const resolvedMode = resolvePaymentMode(input.selectedPaymentMode, paymentMethod);
+      if (resolvedMode === PaymentMode.CREDIT) {
+        throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+      }
       await tx.payment.update({
       where: {
         id: existingPayment.id,
@@ -837,7 +854,7 @@ async function reconcileEditedInvoicePayments(
         data: {
           amount: amountPaid,
           paymentMethodId: paymentMethod.id,
-          mode: input.selectedPaymentMode,
+          mode: resolvedMode,
         ...(existingPayment.mode !== input.selectedPaymentMode
           ? {
               referenceNumber: null,
@@ -855,13 +872,17 @@ async function reconcileEditedInvoicePayments(
     });
     const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
     if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
+    const resolvedMode = resolvePaymentMode(input.selectedPaymentMode, paymentMethod);
+    if (resolvedMode === PaymentMode.CREDIT) {
+      throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+    }
     await tx.payment.create({
       data: {
         tenantId: input.tenantId,
         invoiceId: input.invoiceId,
         amount: amountPaid,
         paymentMethodId: paymentMethod.id,
-        mode: input.selectedPaymentMode,
+        mode: resolvedMode,
         createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
         cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
       },
@@ -880,6 +901,24 @@ function parsePaymentMode(value: unknown): PaymentMode | undefined {
   return typeof value === "string" && Object.values(PaymentMode).includes(value as PaymentMode)
     ? value as PaymentMode
     : undefined;
+}
+
+function mapShortCodeToPaymentMode(shortCode: string): PaymentMode | undefined {
+  const normalized = shortCode.trim().toUpperCase();
+  if (normalized === "CRED") return PaymentMode.CREDIT;
+  if (normalized === "CASH") return PaymentMode.CASH;
+  if (normalized === "UPI") return PaymentMode.UPI;
+  if (normalized === "CARD") return PaymentMode.CARD;
+  if (normalized === "NEFT" || normalized === "IMPS" || normalized === "RTGS" || normalized === "BANK" || normalized === "NETBANKING") return PaymentMode.NETBANKING;
+  return Object.values(PaymentMode).includes(normalized as PaymentMode) ? normalized as PaymentMode : undefined;
+}
+
+function resolvePaymentMode(inputMode: PaymentMode, paymentMethod: { shortCode: string; type: PaymentMethodType }): PaymentMode {
+  if (paymentMethod.type === PaymentMethodType.CASH) return PaymentMode.CASH;
+  if (paymentMethod.type === PaymentMethodType.UPI) return PaymentMode.UPI;
+  if (paymentMethod.type === PaymentMethodType.CARD) return PaymentMode.CARD;
+  if (paymentMethod.type === PaymentMethodType.CREDIT) return PaymentMode.CREDIT;
+  return mapShortCodeToPaymentMode(paymentMethod.shortCode) ?? inputMode;
 }
 
 function normalizePosPayments(payments: PosPaymentInput[], grandTotal: number): PosPaymentInput[] {

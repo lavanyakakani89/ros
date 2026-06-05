@@ -14,11 +14,48 @@ export const storefrontProductParamsSchema = storefrontTenantParamsSchema.extend
   productId: z.string().trim().min(1),
 });
 
+export const storefrontCategoryProductsParamsSchema = storefrontTenantParamsSchema.extend({
+  categoryId: z.string().trim().min(1),
+});
+
+export const storefrontFamilyParamsSchema = z.object({
+  familyId: z.string().trim().min(1),
+});
+
+export const storefrontFamilyItemParamsSchema = storefrontFamilyParamsSchema.extend({
+  itemId: z.string().trim().min(1),
+});
+
 export const storefrontCatalogQuerySchema = z.object({
   host: z.string().trim().min(1).max(255).optional(),
   search: z.string().trim().min(1).max(80).optional(),
   categoryId: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().positive().max(1000).default(1000),
+});
+
+export const storefrontProductListQuerySchema = z.object({
+  host: z.string().trim().min(1).max(255).optional(),
+  search: z.string().trim().min(1).max(80).optional(),
+  categoryId: z.string().trim().min(1).optional(),
+  brand: z.string().trim().min(1).max(80).optional(),
+  size: z.string().trim().min(1).max(80).optional(),
+  color: z.string().trim().min(1).max(80).optional(),
+  minPrice: z.coerce.number().nonnegative().optional(),
+  maxPrice: z.coerce.number().nonnegative().optional(),
+  discountOnly: z.preprocess((value) => {
+    if (value === undefined) return false;
+    if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());
+    return value;
+  }, z.boolean()).default(false),
+  sort: z.enum(["FEATURED", "PRICE_ASC", "PRICE_DESC", "NEWEST", "DISCOUNT", "NAME"]).default("FEATURED"),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(60).default(24),
+});
+
+export const storefrontSearchQuerySchema = z.object({
+  host: z.string().trim().min(1).max(255).optional(),
+  query: z.string().trim().min(1).max(80),
+  limit: z.coerce.number().int().positive().max(20).default(8),
 });
 
 export const storefrontCouponSchema = z.object({
@@ -98,4 +135,36 @@ export const storefrontDomainRequestSchema = z.object({
     .toLowerCase()
     .regex(/^(?!-)[a-z0-9-]+(?:\.[a-z0-9-]+)+$/, "Enter a valid domain name"),
   notes: z.string().trim().max(500).optional(),
+});
+
+export const storefrontCreateProductFamilySchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  attributeLabel: z.string().trim().min(2).max(40).default("Size"),
+  source: z.enum(["MANUAL", "SUGGESTED"]).default("MANUAL"),
+  items: z.array(z.object({
+    productId: z.string().trim().min(1),
+    variantLabel: z.string().trim().min(1).max(80).optional(),
+    sortOrder: z.coerce.number().int().min(0).max(100000).optional(),
+    isDefault: z.coerce.boolean().optional(),
+  })).min(2).max(50),
+});
+
+export const storefrontUpdateProductFamilySchema = z.object({
+  name: z.string().trim().min(2).max(120).optional(),
+  attributeLabel: z.string().trim().min(2).max(40).optional(),
+  items: z.array(z.object({
+    id: z.string().trim().min(1),
+    variantLabel: z.string().trim().min(1).max(80),
+    sortOrder: z.coerce.number().int().min(0).max(100000).default(0),
+    isDefault: z.coerce.boolean().default(false),
+  })).max(50).optional(),
+});
+
+export const storefrontAddFamilyItemsSchema = z.object({
+  items: z.array(z.object({
+    productId: z.string().trim().min(1),
+    variantLabel: z.string().trim().min(1).max(80).optional(),
+    sortOrder: z.coerce.number().int().min(0).max(100000).optional(),
+    isDefault: z.coerce.boolean().optional(),
+  })).min(1).max(50),
 });

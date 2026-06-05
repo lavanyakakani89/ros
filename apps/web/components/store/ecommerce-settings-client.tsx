@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, Globe, Image, Loader2, Palette, RefreshCw, Save, ShieldCheck, ShoppingBag, Trash2, Upload } from "lucide-react";
+import { CheckCircle2, Globe, Image, Loader2, Palette, Plus, RefreshCw, Save, ShieldCheck, ShoppingBag, Sparkles, Trash2, Upload } from "lucide-react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 
@@ -61,6 +61,73 @@ interface EcommerceSettingsResponse {
   defaultHostname: string;
 }
 
+interface EcommerceFamilyCatalogResponse {
+  families: EcommerceFamilyRecord[];
+  suggestions: EcommerceFamilySuggestion[];
+  ungroupedProducts: EcommerceFamilyProduct[];
+}
+
+interface EcommerceFamilyRecord {
+  id: string;
+  name: string;
+  slug: string;
+  attributeLabel: string;
+  source: "MANUAL" | "SUGGESTED";
+  isActive: boolean;
+  items: EcommerceFamilyItem[];
+}
+
+interface EcommerceFamilyItem {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string | null;
+  barcode: string | null;
+  imageUrl: string | null;
+  currentStock: number;
+  mrp: number;
+  sellingPrice: number;
+  categoryName: string;
+  brand: string | null;
+  size: string | null;
+  variantLabel: string;
+  sortOrder: number;
+  isDefault: boolean;
+}
+
+interface EcommerceFamilySuggestion {
+  key: string;
+  name: string;
+  attributeLabel: "Size";
+  items: Array<{
+    productId: string;
+    productName: string;
+    variantLabel: string;
+    sortOrder: number;
+    sku: string | null;
+    barcode: string | null;
+    currentStock: number;
+    categoryName: string;
+    brand: string | null;
+    imageUrl: string | null;
+  }>;
+}
+
+interface EcommerceFamilyProduct {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  imageUrl: string | null;
+  currentStock: number;
+  mrp: number;
+  sellingPrice: number;
+  categoryName: string;
+  brand: string | null;
+  size: string | null;
+  suggestedVariantLabel: string | null;
+}
+
 interface SettingsForm {
   theme: StorefrontTheme;
   displayName: string;
@@ -98,19 +165,30 @@ const emptyForm: SettingsForm = {
 export function EcommerceSettingsClient() {
   const api = createAuthenticatedApiClient();
   const [data, setData] = useState<EcommerceSettingsResponse | null>(null);
+  const [familyData, setFamilyData] = useState<EcommerceFamilyCatalogResponse | null>(null);
   const [form, setForm] = useState<SettingsForm>(emptyForm);
   const [domain, setDomain] = useState("");
   const [domainNotes, setDomainNotes] = useState("");
+  const [familyName, setFamilyName] = useState("");
+  const [familyAttributeLabel, setFamilyAttributeLabel] = useState("Size");
+  const [familySearch, setFamilySearch] = useState("");
+  const [selectedUngroupedProductIds, setSelectedUngroupedProductIds] = useState<string[]>([]);
+  const [selectedTargetFamilyId, setSelectedTargetFamilyId] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mediaBusy, setMediaBusy] = useState<string | null>(null);
+  const [familyBusy, setFamilyBusy] = useState(false);
 
   async function loadSettings() {
     setError("");
-    const response = await api.get<EcommerceSettingsResponse>("/storefront/settings");
+    const [response, families] = await Promise.all([
+      api.get<EcommerceSettingsResponse>("/storefront/settings"),
+      api.get<EcommerceFamilyCatalogResponse>("/storefront/product-families"),
+    ]);
     setData(response);
+    setFamilyData(families);
     setForm(formFromSettings(response));
     setLoading(false);
   }
@@ -124,6 +202,25 @@ export function EcommerceSettingsClient() {
 
   function updateField<Key extends keyof SettingsForm>(field: Key, value: SettingsForm[Key]) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function toggleUngroupedProduct(productId: string) {
+    setSelectedUngroupedProductIds((current) =>
+      current.includes(productId)
+        ? current.filter((value) => value !== productId)
+        : [...current, productId]);
+  }
+
+  function updateFamilyRecord(familyId: string, updater: (family: EcommerceFamilyRecord) => EcommerceFamilyRecord) {
+    setFamilyData((current) => current ? {
+      ...current,
+      families: current.families.map((family) => family.id === familyId ? updater(family) : family),
+    } : current);
+  }
+
+  async function reloadFamilies() {
+    const families = await api.get<EcommerceFamilyCatalogResponse>("/storefront/product-families");
+    setFamilyData(families);
   }
 
   async function requestEnable() {
@@ -228,6 +325,146 @@ export function EcommerceSettingsClient() {
     }
   }
 
+  async function createManualFamily() {
+    if (selectedUngroupedProductIds.length < 2) {
+      setError("Select at least two products to create a variant family.");
+      return;
+    }
+    if (!familyName.trim()) {
+      setError("Enter a family name.");
+      return;
+    }
+
+    setFamilyBusy(true);
+    setError("");
+    try {
+      const products = (familyData?.ungroupedProducts ?? []).filter((product) => selectedUngroupedProductIds.includes(product.id));
+      await api.post("/storefront/product-families", {
+        name: familyName.trim(),
+        attributeLabel: familyAttributeLabel.trim() || "Size",
+        source: "MANUAL",
+        items: products.map((product, index) => ({
+          productId: product.id,
+          variantLabel: product.suggestedVariantLabel ?? product.size ?? product.name,
+          sortOrder: index,
+          isDefault: index === 0,
+        })),
+      });
+      setNotice("Product family created.");
+      setFamilyName("");
+      setFamilyAttributeLabel("Size");
+      setSelectedUngroupedProductIds([]);
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
+  async function createSuggestedFamily(suggestion: EcommerceFamilySuggestion) {
+    setFamilyBusy(true);
+    setError("");
+    try {
+      await api.post("/storefront/product-families", {
+        name: suggestion.name,
+        attributeLabel: suggestion.attributeLabel,
+        source: "SUGGESTED",
+        items: suggestion.items.map((item, index) => ({
+          productId: item.productId,
+          variantLabel: item.variantLabel,
+          sortOrder: item.sortOrder,
+          isDefault: index === 0,
+        })),
+      });
+      setNotice(`${suggestion.name} family created.`);
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
+  async function addSelectedProductsToFamily() {
+    if (!selectedTargetFamilyId || selectedUngroupedProductIds.length === 0) {
+      setError("Choose a family and at least one ungrouped product.");
+      return;
+    }
+
+    setFamilyBusy(true);
+    setError("");
+    try {
+      const products = (familyData?.ungroupedProducts ?? []).filter((product) => selectedUngroupedProductIds.includes(product.id));
+      await api.post(`/storefront/product-families/${selectedTargetFamilyId}/items`, {
+        items: products.map((product, index) => ({
+          productId: product.id,
+          variantLabel: product.suggestedVariantLabel ?? product.size ?? product.name,
+          sortOrder: index,
+        })),
+      });
+      setNotice("Products added to family.");
+      setSelectedUngroupedProductIds([]);
+      setSelectedTargetFamilyId("");
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
+  async function saveFamily(family: EcommerceFamilyRecord) {
+    setFamilyBusy(true);
+    setError("");
+    try {
+      await api.patch(`/storefront/product-families/${family.id}`, {
+        name: family.name,
+        attributeLabel: family.attributeLabel,
+        items: family.items.map((item) => ({
+          id: item.id,
+          variantLabel: item.variantLabel,
+          sortOrder: item.sortOrder,
+          isDefault: item.isDefault,
+        })),
+      });
+      setNotice(`${family.name} updated.`);
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
+  async function removeFamilyItem(familyId: string, itemId: string) {
+    setFamilyBusy(true);
+    setError("");
+    try {
+      await api.delete(`/storefront/product-families/${familyId}/items/${itemId}`);
+      setNotice("Variant removed from family.");
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
+  async function archiveFamily(familyId: string) {
+    setFamilyBusy(true);
+    setError("");
+    try {
+      await api.delete(`/storefront/product-families/${familyId}`);
+      setNotice("Product family archived.");
+      await reloadFamilies();
+    } catch (familyError) {
+      setError(readError(familyError));
+    } finally {
+      setFamilyBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[360px] items-center justify-center rounded-md border border-border bg-white text-sm text-slate-500">
@@ -239,6 +476,15 @@ export function EcommerceSettingsClient() {
   const settings = data?.settings;
   const active = settings?.status === "ACTIVE";
   const pending = data?.approvals.filter((approval) => approval.status === "REQUESTED") ?? [];
+  const filteredUngroupedProducts = (familyData?.ungroupedProducts ?? []).filter((product) => {
+    const searchValue = familySearch.trim().toLowerCase();
+    if (!searchValue) {
+      return true;
+    }
+    return [product.name, product.sku, product.barcode, product.brand, product.categoryName, product.size]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLowerCase().includes(searchValue));
+  });
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -391,6 +637,165 @@ export function EcommerceSettingsClient() {
                   </div>
                   <div className="mt-1 text-xs text-slate-500">{formatDate(item.requestedAt)}</div>
                   {item.rejectionReason ? <div className="mt-1 text-xs text-red-600">{item.rejectionReason}</div> : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section className="rounded-md border border-border bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-semibold text-slate-950">
+              <Sparkles className="size-4 text-emerald-600" aria-hidden="true" />
+              Product variant families
+            </div>
+            <p className="mt-1 text-sm text-slate-500">Group separate POS products into one ecommerce product page with selectable variants. POS products remain unchanged.</p>
+          </div>
+          <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-medium text-slate-700 disabled:opacity-60" disabled={familyBusy} onClick={() => void reloadFamilies()}>
+            <RefreshCw className={`size-4 ${familyBusy ? "animate-spin" : ""}`} aria-hidden="true" />
+            Refresh families
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+          <div className="space-y-5">
+            <section className="rounded-md border border-border bg-slate-50 p-4">
+              <div className="font-semibold text-slate-950">Suggested groups</div>
+              <div className="mt-1 text-sm text-slate-500">We auto-detect likely size-based variants. Review and create only the groups you want online.</div>
+              <div className="mt-4 space-y-3">
+                {(familyData?.suggestions ?? []).length === 0 ? (
+                  <div className="rounded-md border border-dashed border-border bg-white p-4 text-sm text-slate-500">No suggestions available right now.</div>
+                ) : (familyData?.suggestions ?? []).map((suggestion) => (
+                  <div className="rounded-md border border-border bg-white p-4" key={suggestion.key}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-950">{suggestion.name}</div>
+                        <div className="mt-1 text-xs text-slate-500">{suggestion.items.length} products grouped by {suggestion.attributeLabel.toLowerCase()}</div>
+                      </div>
+                      <button className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-900 px-3 text-xs font-semibold text-white disabled:opacity-60" disabled={familyBusy} onClick={() => void createSuggestedFamily(suggestion)}>
+                        <Plus className="size-3.5" />
+                        Create
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {suggestion.items.map((item) => (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600" key={item.productId}>
+                          {item.variantLabel}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-md border border-border bg-slate-50 p-4">
+              <div className="font-semibold text-slate-950">Manual family builder</div>
+              <div className="mt-1 text-sm text-slate-500">Select ungrouped products, give the family a clean name, and optionally add products to an existing family.</div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <TextField label="Family name" value={familyName} onChange={setFamilyName} placeholder="Groundnut Oil" />
+                <TextField label="Variant label" value={familyAttributeLabel} onChange={setFamilyAttributeLabel} placeholder="Size" />
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-[1fr_240px_auto]">
+                <TextField label="Search products" value={familySearch} onChange={setFamilySearch} placeholder="Search by product, SKU, barcode, brand" />
+                <label className="block text-sm font-medium text-slate-700">
+                  Add selected to family
+                  <select
+                    className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-500"
+                    value={selectedTargetFamilyId}
+                    onChange={(event) => setSelectedTargetFamilyId(event.target.value)}
+                  >
+                    <option value="">Choose family</option>
+                    {(familyData?.families ?? []).map((family) => (
+                      <option key={family.id} value={family.id}>{family.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-end">
+                  <button className="h-10 w-full rounded-md border border-border bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-60" disabled={familyBusy || selectedUngroupedProductIds.length === 0 || !selectedTargetFamilyId} onClick={() => void addSelectedProductsToFamily()}>
+                    Add selected
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 max-h-[360px] overflow-y-auto rounded-md border border-border bg-white">
+                <div className="divide-y divide-border">
+                  {filteredUngroupedProducts.slice(0, 120).map((product) => (
+                    <label className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm" key={product.id}>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <input className="size-4 accent-emerald-600" type="checkbox" checked={selectedUngroupedProductIds.includes(product.id)} onChange={() => toggleUngroupedProduct(product.id)} />
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-slate-950">{product.name}</div>
+                          <div className="mt-1 text-xs text-slate-500">{[product.brand, product.categoryName, product.suggestedVariantLabel ?? product.size].filter(Boolean).join(" | ")}</div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="font-semibold text-slate-950">{formatCurrency(product.sellingPrice)}</div>
+                        <div className="text-xs text-slate-500">{product.currentStock} in stock</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={familyBusy || selectedUngroupedProductIds.length < 2} onClick={() => void createManualFamily()}>
+                  {familyBusy ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                  Create family from selected
+                </button>
+                <div className="text-sm text-slate-500">{selectedUngroupedProductIds.length} products selected</div>
+              </div>
+            </section>
+          </div>
+
+          <section className="rounded-md border border-border bg-slate-50 p-4">
+            <div className="font-semibold text-slate-950">Existing families</div>
+            <div className="mt-1 text-sm text-slate-500">Edit display names, variant labels, default option, or archive the family if you no longer need it.</div>
+            <div className="mt-4 space-y-4">
+              {(familyData?.families ?? []).length === 0 ? (
+                <div className="rounded-md border border-dashed border-border bg-white p-4 text-sm text-slate-500">No product families created yet.</div>
+              ) : (familyData?.families ?? []).map((family) => (
+                <div className="rounded-md border border-border bg-white p-4" key={family.id}>
+                  <div className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+                    <TextField label="Family name" value={family.name} onChange={(value) => updateFamilyRecord(family.id, (current) => ({ ...current, name: value }))} />
+                    <TextField label="Variant label" value={family.attributeLabel} onChange={(value) => updateFamilyRecord(family.id, (current) => ({ ...current, attributeLabel: value }))} />
+                    <div className="flex items-end gap-2">
+                      <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={familyBusy} onClick={() => void saveFamily(family)}>
+                        Save
+                      </button>
+                      <button className="inline-flex size-10 items-center justify-center rounded-md border border-red-100 bg-white text-red-600 disabled:opacity-60" disabled={familyBusy} onClick={() => void archiveFamily(family.id)} aria-label={`Archive ${family.name}`}>
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {family.items.map((item) => (
+                      <div className="grid gap-2 rounded-md border border-border bg-slate-50 p-3 md:grid-cols-[minmax(0,1fr)_160px_90px_90px_auto] md:items-center" key={item.id}>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-slate-950">{item.productName}</div>
+                          <div className="mt-1 text-xs text-slate-500">{[item.brand, item.categoryName, item.sku].filter(Boolean).join(" | ")}</div>
+                        </div>
+                        <TextField label="Variant" value={item.variantLabel} onChange={(value) => updateFamilyRecord(family.id, (current) => ({
+                          ...current,
+                          items: current.items.map((candidate) => candidate.id === item.id ? { ...candidate, variantLabel: value } : candidate),
+                        }))} />
+                        <TextField label="Order" type="number" value={String(item.sortOrder)} onChange={(value) => updateFamilyRecord(family.id, (current) => ({
+                          ...current,
+                          items: current.items.map((candidate) => candidate.id === item.id ? { ...candidate, sortOrder: Number(value || 0) } : candidate),
+                        }))} />
+                        <label className="flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                          <input className="size-4 accent-emerald-600" type="radio" name={`default-${family.id}`} checked={item.isDefault} onChange={() => updateFamilyRecord(family.id, (current) => ({
+                            ...current,
+                            items: current.items.map((candidate) => ({ ...candidate, isDefault: candidate.id === item.id })),
+                          }))} />
+                          Default
+                        </label>
+                        <button className="inline-flex h-10 items-center justify-center rounded-md border border-red-100 bg-white px-3 text-sm font-semibold text-red-600 disabled:opacity-60" disabled={familyBusy} onClick={() => void removeFamilyItem(family.id, item.id)}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -581,6 +986,14 @@ function formatDate(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function cleanPayload(input: Record<string, unknown>): Record<string, unknown> {

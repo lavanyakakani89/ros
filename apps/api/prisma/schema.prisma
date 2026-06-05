@@ -77,6 +77,8 @@ model Tenant {
   storefrontSettings StorefrontSettings?
   storefrontDomains  StorefrontDomain[]
   storefrontApprovals StorefrontApprovalRequest[]
+  ecommerceProductFamilies EcommerceProductFamily[]
+  ecommerceProductFamilyItems EcommerceProductFamilyItem[]
   moduleSubscriptions TenantModuleSubscription[]
   invoiceTemplates   InvoiceTemplate[]
   printerConfig      PrinterConfig?
@@ -287,6 +289,7 @@ model Product {
   purchaseOrderItems PurchaseOrderItem[]
   creditNoteItems    CreditNoteItem[]
   imageSuggestions    ProductImageSuggestion[]
+  ecommerceFamilyItems EcommerceProductFamilyItem[]
   recipesAsMenu      Recipe[]            @relation("RecipeProduct")
   recipesAsIngredient Recipe[]           @relation("RecipeIngredient")
 
@@ -1909,6 +1912,48 @@ model StorefrontApprovalRequest {
   @@index([tenantId, status])
   @@index([type, status])
   @@map("storefront_approval_requests")
+}
+
+enum EcommerceProductFamilySource {
+  MANUAL
+  SUGGESTED
+}
+
+model EcommerceProductFamily {
+  id             String                       @id @default(cuid())
+  tenantId       String                       @map("tenant_id")
+  tenant         Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  slug           String
+  attributeLabel String                       @default("Size") @map("attribute_label")
+  source         EcommerceProductFamilySource @default(MANUAL)
+  isActive       Boolean                      @default(true) @map("is_active")
+  createdAt      DateTime                     @default(now()) @map("created_at")
+  updatedAt      DateTime                     @updatedAt @map("updated_at")
+  items          EcommerceProductFamilyItem[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@map("ecommerce_product_families")
+}
+
+model EcommerceProductFamilyItem {
+  id           String                 @id @default(cuid())
+  tenantId     String                 @map("tenant_id")
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  familyId     String                 @map("family_id")
+  family       EcommerceProductFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  productId    String                 @unique @map("product_id")
+  product      Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantLabel String                 @map("variant_label")
+  sortOrder    Int                    @default(0) @map("sort_order")
+  isDefault    Boolean                @default(false) @map("is_default")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @updatedAt @map("updated_at")
+
+  @@unique([familyId, productId])
+  @@index([tenantId, familyId, sortOrder])
+  @@map("ecommerce_product_family_items")
 }
 
 enum LicensePlan {

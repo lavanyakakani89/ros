@@ -90,6 +90,17 @@ export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPric
   conversionValue?: number | string | null;
   defaultSaleQty?: number | string | null;
   imageUrl?: string | null;
+  ecommerceFamily?: {
+    itemId: string;
+    familyId: string;
+    familyName: string;
+    attributeLabel: string;
+    source: "MANUAL" | "SUGGESTED";
+    variantLabel: string;
+    sortOrder: number;
+    isDefault: boolean;
+    memberCount: number;
+  } | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

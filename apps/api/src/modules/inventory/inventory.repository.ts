@@ -2,6 +2,34 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 
 import type { AddBatchInput, CreateProductInput, ProductListQuery, StockAdjustmentInput, UpdateProductInput } from "./inventory.types.js";
 
+const productFamilyInclude = Prisma.validator<Prisma.ProductInclude>()({
+  ecommerceFamilyItems: {
+    where: {
+      family: {
+        isActive: true,
+      },
+    },
+    orderBy: [
+      { createdAt: "asc" },
+    ],
+    include: {
+      family: {
+        select: {
+          id: true,
+          name: true,
+          attributeLabel: true,
+          source: true,
+          _count: {
+            select: {
+              items: true,
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
 export class InventoryRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -92,11 +120,15 @@ export class InventoryRepository {
         ? []
         : await this.prisma.product.findMany({
             where: { tenantId, id: { in: ids }, isActive: true },
+            include: productFamilyInclude,
           });
       const productById = new Map(products.map((product) => [product.id, product]));
 
       return {
-        data: ids.flatMap((id) => productById.get(id) ?? []),
+        data: ids.flatMap((id) => {
+          const product = productById.get(id);
+          return product ? [withEcommerceFamily(product)] : [];
+        }),
         page: query.page,
         limit: query.limit,
         total: Number(countRows[0]?.count ?? 0),
@@ -107,6 +139,7 @@ export class InventoryRepository {
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
         where,
+        include: productFamilyInclude,
         orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -114,7 +147,7 @@ export class InventoryRepository {
     ]);
 
     return {
-      data: products,
+      data: products.map((product) => withEcommerceFamily(product)),
       page: query.page,
       limit: query.limit,
       total,
@@ -150,13 +183,17 @@ export class InventoryRepository {
   }
 
   async updateProduct(tenantId: string, productId: string, input: UpdateProductInput) {
+    const data = toProductUpdateInput(input);
+    if (input.currentStock !== undefined && input.currentStock <= 0) {
+      data.ecommerceDisabled = true;
+    }
     return this.prisma.product.updateMany({
       where: {
         id: productId,
         tenantId,
         isActive: true,
       },
-      data: toProductUpdateInput(input),
+      data,
     });
   }
 
@@ -270,6 +307,7 @@ export class InventoryRepository {
         },
       });
 
+      const nextStock = product.currentStock.toNumber() + input.quantityChange;
       const updatedProduct = await tx.product.update({
         where: {
           id: input.productId,
@@ -278,6 +316,7 @@ export class InventoryRepository {
           currentStock: {
             increment: input.quantityChange,
           },
+          ...(nextStock <= 0 ? { ecommerceDisabled: true } : {}),
         },
       });
 
@@ -319,5 +358,27 @@ function toProductUpdateInput(input: UpdateProductInput): Prisma.ProductUnchecke
     ...(input.ecommerceDisabled !== undefined ? { ecommerceDisabled: input.ecommerceDisabled } : {}),
     ...(input.supplierId !== undefined ? { supplierId: input.supplierId } : {}),
     ...(input.verticalData !== undefined ? { verticalData: input.verticalData as Prisma.InputJsonValue } : {}),
+  };
+}
+
+function withEcommerceFamily(product: Prisma.ProductGetPayload<{ include: typeof productFamilyInclude }>) {
+  const { ecommerceFamilyItems, ...baseProduct } = product;
+  const [familyItem] = ecommerceFamilyItems;
+
+  return {
+    ...baseProduct,
+    ecommerceFamily: familyItem
+      ? {
+          itemId: familyItem.id,
+          familyId: familyItem.family.id,
+          familyName: familyItem.family.name,
+          attributeLabel: familyItem.family.attributeLabel,
+          source: familyItem.family.source,
+          variantLabel: familyItem.variantLabel,
+          sortOrder: familyItem.sortOrder,
+          isDefault: familyItem.isDefault,
+          memberCount: familyItem.family._count.items,
+        }
+      : null,
   };
 }
