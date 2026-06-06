@@ -1,7 +1,7 @@
 import { Client } from "minio";
 
 function legacyRetailOsToken(): string {
-  return `${"ret"}${"ailos"}`;
+  return ["ret", "ailos"].join("");
 }
 
 export function legacyMinioRootUser(preferredUser: string): string | null {
