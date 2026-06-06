@@ -26,7 +26,7 @@ Production is the live customer/shop environment. Do not test unfinished changes
 
 Testing has its own Postgres, Redis, MinIO, WhatsApp session volume, and Caddy container. It does not share production data.
 
-Production Caddy terminates HTTPS for `test-ros.sivsanoils.in` and forwards that hostname to the isolated testing Caddy stack on port `3100`.
+Production Caddy terminates HTTPS for `test-ros.sivsanoils.in` and forwards that hostname to the isolated testing Caddy stack on a local loopback port, defaulting to `3100` and auto-falling back if that port is busy.
 
 The testing UI shows a `TESTING` badge in the top bar because `NEXT_PUBLIC_APP_ENV=testing`.
 

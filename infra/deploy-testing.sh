@@ -59,13 +59,44 @@ get_env_value() {
   printf '%s' "$line"
 }
 
+port_is_listening() {
+  local port="$1"
+
+  bash -c ":</dev/tcp/127.0.0.1/${port}" >/dev/null 2>&1
+}
+
+find_free_test_port() {
+  local preferred_port="$1"
+  local port
+
+  for ((port = preferred_port; port <= preferred_port + 99; port++)); do
+    if ! port_is_listening "$port"; then
+      printf '%s' "$port"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 TEST_HTTP_PORT_VALUE="$(get_env_value TEST_HTTP_PORT || true)"
-if [[ -z "$TEST_HTTP_PORT_VALUE" || "$TEST_HTTP_PORT_VALUE" == "80" ]]; then
-  echo "==> Setting test stack internal proxy port to 3100"
+TEST_HTTP_PORT_PREFERRED="${TEST_HTTP_PORT_VALUE:-3100}"
+if [[ "$TEST_HTTP_PORT_PREFERRED" == "80" ]]; then
+  TEST_HTTP_PORT_PREFERRED=3100
+fi
+
+TEST_HTTP_PORT_CHOSEN="$(find_free_test_port "$TEST_HTTP_PORT_PREFERRED" || true)"
+if [[ -z "$TEST_HTTP_PORT_CHOSEN" ]]; then
+  echo "Could not find a free test HTTP port starting from ${TEST_HTTP_PORT_PREFERRED}." >&2
+  exit 1
+fi
+
+if [[ -z "$TEST_HTTP_PORT_VALUE" || "$TEST_HTTP_PORT_VALUE" == "80" || "$TEST_HTTP_PORT_VALUE" != "$TEST_HTTP_PORT_CHOSEN" ]]; then
+  echo "==> Setting test stack internal proxy port to ${TEST_HTTP_PORT_CHOSEN}"
   {
     echo ""
     echo "# Managed override: host nginx owns public 80/443 and proxies to this local port."
-    echo "TEST_HTTP_PORT=3100"
+    echo "TEST_HTTP_PORT=${TEST_HTTP_PORT_CHOSEN}"
   } >> "$ENV_FILE"
 fi
 
@@ -80,7 +111,7 @@ configure_host_nginx() {
   port="$(get_env_value TEST_HTTP_PORT || true)"
 
   domain="${domain:-test.bizbil.com}"
-  port="${port:-3100}"
+  port="${port:-${TEST_HTTP_PORT_CHOSEN:-3100}}"
   cert_path="/etc/letsencrypt/live/${domain}/fullchain.pem"
   key_path="/etc/letsencrypt/live/${domain}/privkey.pem"
 
