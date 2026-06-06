@@ -54,25 +54,7 @@ export class BillingRepository {
     items: Prisma.InvoiceItemUncheckedCreateWithoutInvoiceInput[];
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.invoiceCounter.upsert({
-        where: {
-          tenantId_date: {
-            tenantId: input.tenantId,
-            date: input.datePart,
-          },
-        },
-        create: {
-          tenantId: input.tenantId,
-          date: input.datePart,
-          nextSeq: 2,
-        },
-        update: {
-          nextSeq: {
-            increment: 1,
-          },
-        },
-      });
-      const sequence = counter.nextSeq - 1;
+      const sequence = await allocateInvoiceSequence(tx, input.tenantId, input.datePart);
 
       return tx.invoice.create({
         data: {
@@ -112,25 +94,7 @@ export class BillingRepository {
     delivery?: CreateConfirmedPosInvoiceInput["delivery"] | undefined;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const counter = await tx.invoiceCounter.upsert({
-        where: {
-          tenantId_date: {
-            tenantId: input.tenantId,
-            date: input.datePart,
-          },
-        },
-        create: {
-          tenantId: input.tenantId,
-          date: input.datePart,
-          nextSeq: 2,
-        },
-        update: {
-          nextSeq: {
-            increment: 1,
-          },
-        },
-      });
-      const sequence = counter.nextSeq - 1;
+      const sequence = await allocateInvoiceSequence(tx, input.tenantId, input.datePart);
 
       const invoice = await tx.invoice.create({
         data: {
@@ -697,6 +661,72 @@ export class BillingRepository {
       },
     });
   }
+}
+
+async function allocateInvoiceSequence(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  datePart: string,
+): Promise<number> {
+  const prefix = `INV-${datePart}-`;
+  const [counter, latestInvoice] = await Promise.all([
+    tx.invoiceCounter.upsert({
+      where: {
+        tenantId_date: {
+          tenantId,
+          date: datePart,
+        },
+      },
+      create: {
+        tenantId,
+        date: datePart,
+        nextSeq: 1,
+      },
+      update: {},
+    }),
+    tx.invoice.findFirst({
+      where: {
+        tenantId,
+        invoiceNumber: {
+          startsWith: prefix,
+        },
+      },
+      select: {
+        invoiceNumber: true,
+      },
+      orderBy: {
+        invoiceNumber: "desc",
+      },
+    }),
+  ]);
+
+  const lastCounterSequence = Math.max(counter.nextSeq - 1, 0);
+  const lastInvoiceSequence = latestInvoice ? parseInvoiceSequence(latestInvoice.invoiceNumber, prefix) : 0;
+  const sequence = Math.max(lastCounterSequence, lastInvoiceSequence) + 1;
+
+  await tx.invoiceCounter.update({
+    where: {
+      tenantId_date: {
+        tenantId,
+        date: datePart,
+      },
+    },
+    data: {
+      nextSeq: sequence + 1,
+    },
+  });
+
+  return sequence;
+}
+
+function parseInvoiceSequence(invoiceNumber: string, prefix: string): number {
+  if (!invoiceNumber.startsWith(prefix)) {
+    return 0;
+  }
+
+  const rawSequence = invoiceNumber.slice(prefix.length);
+  const parsed = Number.parseInt(rawSequence, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export interface InvoiceTotals {

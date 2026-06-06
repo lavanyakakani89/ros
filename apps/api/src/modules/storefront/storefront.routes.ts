@@ -2547,6 +2547,7 @@ function orderResponse(
   invoice: {
     id: string;
     invoiceNumber: string;
+    verticalData?: unknown;
     status: InvoiceStatus;
     subtotal: { toNumber(): number };
     totalDiscount: { toNumber(): number };
