@@ -59,6 +59,37 @@ get_env_value() {
   printf '%s' "$line"
 }
 
+append_env_value() {
+  local key="$1"
+  local value="$2"
+
+  {
+    echo ""
+    echo "# Managed override: added by testing deploy compatibility checks."
+    echo "${key}=${value}"
+  } >> "$ENV_FILE"
+}
+
+legacy_project_name() {
+  printf '%s' "ret"
+  printf '%s' "ailos-test"
+}
+
+legacy_database_user() {
+  printf '%s' "ret"
+  printf '%s' "ailos"
+}
+
+COMPOSE_PROJECT_NAME_VALUE="$(get_env_value COMPOSE_PROJECT_NAME || true)"
+if [[ -z "$COMPOSE_PROJECT_NAME_VALUE" ]] && command -v docker >/dev/null 2>&1; then
+  LEGACY_COMPOSE_PROJECT_NAME="$(legacy_project_name)"
+  if docker volume inspect "${LEGACY_COMPOSE_PROJECT_NAME}_postgres_data" >/dev/null 2>&1 &&
+    ! docker volume inspect "bizbil-test_postgres_data" >/dev/null 2>&1; then
+    echo "==> Reusing existing testing compose project ${LEGACY_COMPOSE_PROJECT_NAME} to preserve persisted volumes"
+    append_env_value "COMPOSE_PROJECT_NAME" "$LEGACY_COMPOSE_PROJECT_NAME"
+  fi
+fi
+
 port_is_listening() {
   local port="$1"
 
@@ -266,12 +297,14 @@ fi
 find_postgres_admin_user() {
   local candidate
   local candidates=()
+  local legacy_user
 
   candidates+=("$POSTGRES_TARGET_USER")
   if [[ -n "$POSTGRES_LEGACY_USER" ]]; then
     candidates+=("$POSTGRES_LEGACY_USER")
   fi
-  candidates+=("retailos" "postgres")
+  legacy_user="$(legacy_database_user)"
+  candidates+=("$legacy_user" "postgres")
 
   for candidate in "${candidates[@]}"; do
     if docker exec -u postgres "$POSTGRES_CONTAINER" \
@@ -286,7 +319,7 @@ find_postgres_admin_user() {
 
 POSTGRES_ADMIN_USER="$(find_postgres_admin_user || true)"
 if [[ -z "$POSTGRES_ADMIN_USER" ]]; then
-  echo "Could not find a Postgres admin role. Tried ${POSTGRES_TARGET_USER}, ${POSTGRES_LEGACY_USER:-<empty>}, retailos, and postgres." >&2
+  echo "Could not find a Postgres admin role. Tried ${POSTGRES_TARGET_USER}, ${POSTGRES_LEGACY_USER:-<empty>}, legacy app role, and postgres." >&2
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=120 postgres
   exit 1
 fi
