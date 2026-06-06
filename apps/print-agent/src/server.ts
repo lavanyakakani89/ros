@@ -5,10 +5,24 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
-const host = process.env.BIZBIL_PRINT_AGENT_HOST ?? "127.0.0.1";
-const port = Number(process.env.BIZBIL_PRINT_AGENT_PORT ?? "9211");
-const agentKey = process.env.BIZBIL_PRINT_AGENT_KEY?.trim();
-const maxPayloadBytes = Number(process.env.BIZBIL_PRINT_AGENT_MAX_BYTES ?? "262144");
+const host =
+  process.env.BIZBIL_PRINT_AGENT_HOST ??
+  process.env.RETAILOS_PRINT_AGENT_HOST ??
+  "127.0.0.1";
+const port = Number(
+  process.env.BIZBIL_PRINT_AGENT_PORT ??
+    process.env.RETAILOS_PRINT_AGENT_PORT ??
+    "9211",
+);
+const agentKey = (
+  process.env.BIZBIL_PRINT_AGENT_KEY ??
+  process.env.RETAILOS_PRINT_AGENT_KEY
+)?.trim();
+const maxPayloadBytes = Number(
+  process.env.BIZBIL_PRINT_AGENT_MAX_BYTES ??
+    process.env.RETAILOS_PRINT_AGENT_MAX_BYTES ??
+    "262144",
+);
 const defaultTcpPort = 9100;
 
 type PrintConnection = "WINDOWS" | "NETWORK";
@@ -99,7 +113,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 function setCorsHeaders(response: ServerResponse): void {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-BizBil-Agent-Key");
+  response.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-BizBil-Agent-Key, X-RetailOS-Agent-Key",
+  );
   response.setHeader("Access-Control-Max-Age", "86400");
 }
 
@@ -108,7 +125,7 @@ function requireAgentKey(request: IncomingMessage): void {
     return;
   }
 
-  const value = request.headers["x-bizbil-agent-key"];
+  const value = request.headers["x-bizbil-agent-key"] ?? request.headers["x-retailos-agent-key"];
   if (typeof value !== "string" || value !== agentKey) {
     throw new HttpError(401, "Invalid print agent key.");
   }

@@ -7,6 +7,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose.test.yml}"
 ENV_FILE="${ENV_FILE:-.env.testing}"
 
 cd "$(dirname "$0")/.."
+# shellcheck source=lib/deploy-compat.sh
+source "$(dirname "$0")/lib/deploy-compat.sh"
 
 if [[ -z "$DEPLOY_SHA" ]]; then
   echo "DEPLOY_SHA is required for testing deployments." >&2
@@ -70,25 +72,7 @@ append_env_value() {
   } >> "$ENV_FILE"
 }
 
-legacy_project_name() {
-  printf '%s' "ret"
-  printf '%s' "ailos-test"
-}
-
-legacy_database_user() {
-  printf '%s' "ret"
-  printf '%s' "ailos"
-}
-
-COMPOSE_PROJECT_NAME_VALUE="$(get_env_value COMPOSE_PROJECT_NAME || true)"
-if [[ -z "$COMPOSE_PROJECT_NAME_VALUE" ]] && command -v docker >/dev/null 2>&1; then
-  LEGACY_COMPOSE_PROJECT_NAME="$(legacy_project_name)"
-  if docker volume inspect "${LEGACY_COMPOSE_PROJECT_NAME}_postgres_data" >/dev/null 2>&1 &&
-    ! docker volume inspect "bizbil-test_postgres_data" >/dev/null 2>&1; then
-    echo "==> Reusing existing testing compose project ${LEGACY_COMPOSE_PROJECT_NAME} to preserve persisted volumes"
-    append_env_value "COMPOSE_PROJECT_NAME" "$LEGACY_COMPOSE_PROJECT_NAME"
-  fi
-fi
+ensure_compose_project_volumes "bizbil-test" "$(legacy_compose_project_name "-test")"
 
 port_is_listening() {
   local port="$1"
@@ -228,6 +212,7 @@ POSTGRES_TARGET_USER="$(get_env_value POSTGRES_USER || true)"
 POSTGRES_TARGET_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
 POSTGRES_TARGET_DB="$(get_env_value POSTGRES_DB || true)"
 POSTGRES_LEGACY_USER="$(get_env_value POSTGRES_LEGACY_USER || true)"
+POSTGRES_LEGACY_DB="$(get_env_value POSTGRES_LEGACY_DB || true)"
 
 if [[ -z "$POSTGRES_TARGET_USER" ]]; then
   POSTGRES_TARGET_USER="bizbil"
@@ -235,6 +220,10 @@ fi
 
 if [[ -z "$POSTGRES_TARGET_DB" ]]; then
   POSTGRES_TARGET_DB="bizbil_test"
+fi
+
+if [[ -z "$POSTGRES_LEGACY_DB" ]]; then
+  POSTGRES_LEGACY_DB="$(legacy_database_name "_test")"
 fi
 
 if [[ -z "$POSTGRES_TARGET_PASSWORD" ]]; then
@@ -323,6 +312,12 @@ if [[ -z "$POSTGRES_ADMIN_USER" ]]; then
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=120 postgres
   exit 1
 fi
+
+reconcile_postgres_database_name \
+  "$POSTGRES_CONTAINER" \
+  "$POSTGRES_ADMIN_USER" \
+  "$POSTGRES_TARGET_DB" \
+  "$POSTGRES_LEGACY_DB"
 
 echo "==> Reconciling testing database credentials from $ENV_FILE"
 docker exec -i -u postgres "$POSTGRES_CONTAINER" \
