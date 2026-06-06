@@ -54,7 +54,29 @@ export async function expireLoyaltyPoints(): Promise<void> {
         }),
       ]);
     }
+  } catch (error) {
+    if (isMissingLoyaltyExpiryColumn(error)) {
+      console.warn(
+        "[BizBil] Loyalty expiry job skipped because loyalty_transactions.expires_at is missing in the current database.",
+      );
+      return;
+    }
+
+    throw error;
   } finally {
     await prisma.$disconnect();
   }
+}
+
+function isMissingLoyaltyExpiryColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const knownError = error as {
+    code?: string;
+    meta?: { column?: string };
+  };
+
+  return knownError.code === "P2022" && knownError.meta?.column === "loyalty_transactions.expires_at";
 }
