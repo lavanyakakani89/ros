@@ -196,6 +196,7 @@ NGINX
 POSTGRES_TARGET_USER="$(get_env_value POSTGRES_USER || true)"
 POSTGRES_TARGET_PASSWORD="$(get_env_value POSTGRES_PASSWORD || true)"
 POSTGRES_TARGET_DB="$(get_env_value POSTGRES_DB || true)"
+POSTGRES_LEGACY_USER="$(get_env_value POSTGRES_LEGACY_USER || true)"
 
 if [[ -z "$POSTGRES_TARGET_USER" ]]; then
   POSTGRES_TARGET_USER="bizbil"
@@ -248,7 +249,7 @@ fi
 echo "==> Waiting for testing postgres readiness"
 postgres_ready=false
 for attempt in {1..30}; do
-  if docker exec -u postgres "$POSTGRES_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+  if docker exec -u postgres "$POSTGRES_CONTAINER" pg_isready -d postgres >/dev/null 2>&1; then
     postgres_ready=true
     break
   fi
@@ -262,21 +263,44 @@ if [[ "$postgres_ready" != "true" ]]; then
   exit 1
 fi
 
+find_postgres_admin_user() {
+  local candidate
+  local candidates=()
+
+  candidates+=("$POSTGRES_TARGET_USER")
+  if [[ -n "$POSTGRES_LEGACY_USER" ]]; then
+    candidates+=("$POSTGRES_LEGACY_USER")
+  fi
+  candidates+=("retailos" "postgres")
+
+  for candidate in "${candidates[@]}"; do
+    if docker exec -u postgres "$POSTGRES_CONTAINER" \
+      psql -v ON_ERROR_STOP=1 -U "$candidate" -d postgres -tAc "SELECT 1" >/dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+POSTGRES_ADMIN_USER="$(find_postgres_admin_user || true)"
+if [[ -z "$POSTGRES_ADMIN_USER" ]]; then
+  echo "Could not find a Postgres admin role. Tried ${POSTGRES_TARGET_USER}, ${POSTGRES_LEGACY_USER:-<empty>}, retailos, and postgres." >&2
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=120 postgres
+  exit 1
+fi
+
 echo "==> Reconciling testing database credentials from $ENV_FILE"
 docker exec -i -u postgres "$POSTGRES_CONTAINER" \
-  psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_ADMIN_USER" -d postgres \
     -v target_user="${POSTGRES_TARGET_USER}" \
     -v target_password="${POSTGRES_TARGET_PASSWORD}" \
     -v target_database="${POSTGRES_TARGET_DB}" <<'SQL'
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'target_user') THEN
-    EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'target_user', :'target_password');
-  ELSE
-    EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', :'target_user', :'target_password');
-  END IF;
-END
-$$;
+SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'target_user', :'target_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'target_user')\gexec
+
+ALTER ROLE :"target_user" WITH LOGIN PASSWORD :'target_password';
 
 SELECT format('CREATE DATABASE %I OWNER %I', :'target_database', :'target_user')
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'target_database')\gexec
