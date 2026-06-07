@@ -21,6 +21,7 @@ export interface HeldBill {
 interface BillingState {
   lines: PosLine[];
   heldBills: HeldBill[];
+  autoPrint: boolean;
   setLines: (lines: PosLine[]) => void;
   setLine: (id: string, patch: Partial<PosLine>) => void;
   addLine: () => string;
@@ -29,6 +30,7 @@ interface BillingState {
   holdBill: (customerId: string, label?: string) => void;
   restoreHeld: (id: string) => void;
   deleteHeld: (id: string) => void;
+  setAutoPrint: (enabled: boolean) => void;
 }
 
 function createEmptyLine(): PosLine {
@@ -56,9 +58,20 @@ function saveHeldBills(bills: HeldBill[]): void {
   localStorage.setItem("held_bills", JSON.stringify(bills));
 }
 
+function loadAutoPrint(): boolean {
+  if (typeof window === "undefined") return true;
+  const stored = localStorage.getItem("auto_print");
+  return stored === null ? true : stored === "true";
+}
+
+function saveAutoPrint(enabled: boolean): void {
+  localStorage.setItem("auto_print", String(enabled));
+}
+
 export const useBillingStore = create<BillingState>((set, get) => ({
   lines: [],
   heldBills: loadHeldBills(),
+  autoPrint: loadAutoPrint(),
   setLines: (lines) => set({ lines }),
   setLine: (id, patch) =>
     set((state) => ({
@@ -101,5 +114,9 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     const updated = get().heldBills.filter((b) => b.id !== id);
     saveHeldBills(updated);
     set({ heldBills: updated });
+  },
+  setAutoPrint: (enabled) => {
+    saveAutoPrint(enabled);
+    set({ autoPrint: enabled });
   },
 }));

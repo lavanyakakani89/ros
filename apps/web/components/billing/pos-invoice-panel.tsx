@@ -134,7 +134,7 @@ interface PasteWhatsappOrderResponse {
 
 export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraftReady }: PosInvoicePanelProps) {
   const queryClient = useQueryClient();
-  const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills } = useBillingStore();
+  const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills, autoPrint, setAutoPrint } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
   const isEditMode = Boolean(editingInvoice);
   const [online, setOnline] = useState(true);
@@ -858,8 +858,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         pdfViewUrl,
       };
       setLastBill(nextBill);
-      const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
-      if (outputOk) {
+      if (autoPrint) {
+        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber);
+        if (outputOk) {
+          showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
+        }
+      } else {
         showStockWarnings(confirmed.stockWarnings ?? localStockWarnings);
       }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
@@ -1128,6 +1132,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <button className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-amber-700 disabled:opacity-50" onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")} disabled={lines.length === 0 || isEditMode}>
               <Pause className="size-4" aria-hidden="true" />
               Hold <span className="text-xs text-amber-600">Ctrl+H</span>
+            </button>
+            <button
+              className={`inline-flex h-9 items-center gap-3 rounded-md border px-3 text-sm font-medium transition ${
+                autoPrint ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-300 bg-slate-50 text-slate-700"
+              }`}
+              type="button"
+              onClick={() => setAutoPrint(!autoPrint)}
+              aria-pressed={autoPrint}
+              title={autoPrint ? "Auto print is on" : "Auto print is off"}
+            >
+              <span>Auto Print</span>
+              <span className={`relative inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${autoPrint ? "bg-emerald-500" : "bg-slate-300"}`}>
+                <span className={`h-5 w-5 rounded-full bg-white shadow transition ${autoPrint ? "translate-x-5" : "translate-x-0"}`} />
+              </span>
             </button>
             {isEditMode ? (
               <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700" onClick={clearBill}>
