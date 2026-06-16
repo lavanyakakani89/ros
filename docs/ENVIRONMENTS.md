@@ -79,7 +79,7 @@ DEPLOY_BRANCH=develop DEPLOY_REF=origin/develop bash infra/deploy-testing.sh
 Health check:
 
 ```bash
-curl -fsS http://66.42.79.12:3100/api/health
+curl -fsS http://<deploy-host>:3100/api/health
 curl -fsS https://test-ros.sivsanoils.in/api/health
 ```
 
@@ -88,7 +88,7 @@ curl -fsS https://test-ros.sivsanoils.in/api/health
 The testing workflow can reuse these existing repository secrets:
 
 - `DEPLOY_SSH_KEY`
-- `DEPLOY_HOST`
+- `DEPLOY_HOST` - set to the current VPS hostname or IP in GitHub Secrets
 - `DEPLOY_USER`
 - `DEPLOY_PATH`
 

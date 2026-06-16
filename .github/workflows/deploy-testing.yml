@@ -110,7 +110,10 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_TEST_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
         run: |
           set -Eeuo pipefail
-          DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
+          if [ -z "${DEPLOY_HOST:-}" ]; then
+            echo "::error::DEPLOY_HOST secret is empty. Set it in the testing environment to the test VPS hostname or IP."
+            exit 1
+          fi
           DEPLOY_USER="${DEPLOY_USER:-root}"
           PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/bizbil}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/bizbil-testing}"
