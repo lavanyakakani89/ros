@@ -129,11 +129,12 @@ jobs:
             exit 1
           fi
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
-          ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          : > ~/.ssh/known_hosts
 
       - name: Deploy latest develop on testing stack
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" "
             set -Eeuo pipefail
             if [ ! -d '$DEPLOY_TEST_PATH/.git' ]; then
               git clone '$PROD_DEPLOY_PATH' '$DEPLOY_TEST_PATH'
