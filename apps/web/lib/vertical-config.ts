@@ -9,6 +9,18 @@ let authSessionMemory: StoredAuthSession | null = null;
 let tenantMemory: StoredTenant | null = null;
 let verticalConfigMemory: VerticalConfig | null = null;
 
+function getStorage(): Storage | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export interface StoredAuthSession {
   user?: {
     id?: string;
@@ -29,11 +41,15 @@ export interface StoredTenant {
 export function storeAuthSession(input: StoredAuthSession) {
   const safeSession = toSafeAuthSession(input);
   authSessionMemory = safeSession;
-  window.localStorage.setItem(authStorageKey, JSON.stringify(safeSession));
+  getStorage()?.setItem(authStorageKey, JSON.stringify(safeSession));
 }
 
 export function hasStoredAuthSession(): boolean {
-  const raw = window.localStorage.getItem(authStorageKey);
+  if (authSessionMemory) {
+    return true;
+  }
+
+  const raw = getStorage()?.getItem(authStorageKey);
   return Boolean(raw);
 }
 
@@ -42,23 +58,32 @@ export function getStoredAuthSession(): StoredAuthSession | null {
     return authSessionMemory;
   }
 
-  const raw = window.localStorage.getItem(authStorageKey);
-  return raw ? toSafeAuthSession(JSON.parse(raw) as StoredAuthSession) : null;
+  const raw = getStorage()?.getItem(authStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return toSafeAuthSession(JSON.parse(raw) as StoredAuthSession);
+  } catch {
+    return null;
+  }
 }
 
 export function clearStoredSession() {
   authSessionMemory = null;
   tenantMemory = null;
   verticalConfigMemory = null;
-  window.localStorage.removeItem(authStorageKey);
-  window.localStorage.removeItem(verticalConfigStorageKey);
-  window.localStorage.removeItem(tenantStorageKey);
+  const storage = getStorage();
+  storage?.removeItem(authStorageKey);
+  storage?.removeItem(verticalConfigStorageKey);
+  storage?.removeItem(tenantStorageKey);
   clearStoredImpersonation();
 }
 
 export function storeTenant(tenant: StoredTenant) {
   tenantMemory = tenant;
-  window.localStorage.removeItem(tenantStorageKey);
+  getStorage()?.removeItem(tenantStorageKey);
 }
 
 export function getStoredTenant(): StoredTenant | null {
@@ -67,7 +92,7 @@ export function getStoredTenant(): StoredTenant | null {
 
 export function storeVerticalConfig(config: VerticalConfig) {
   verticalConfigMemory = config;
-  window.localStorage.removeItem(verticalConfigStorageKey);
+  getStorage()?.removeItem(verticalConfigStorageKey);
 }
 
 export function getStoredVerticalConfig(): VerticalConfig | null {
