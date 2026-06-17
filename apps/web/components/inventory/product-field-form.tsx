@@ -4,9 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import type { VerticalConfig, VerticalField } from "@bizbil/shared";
 import { pharmacyConfig } from "@bizbil/vertical-configs";
 import { ChevronDown, Loader2, Save } from "lucide-react";
-import { createAuthenticatedApiClient, createProduct, type ProductPayload } from "@/lib/api-client";
+import { useEffect, useMemo, useState } from "react";
+
+import { createAuthenticatedApiClient, createProduct, getNextProductId, type ProductPayload } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getNextProductId, createProduct, type ProductPayload } from "@/lib/api-client";
 import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface SupplierOption {
