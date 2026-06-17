@@ -9,7 +9,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface ProductBatch {
   id: string;
@@ -28,7 +28,9 @@ export function InventoryClient() {
   const pageSize = 25;
   const searchTerm = search.trim();
   const verticalConfig = getStoredVerticalConfig();
-  const supportsExpiryAlerts = Boolean(verticalConfig?.expiryAlerts?.enabled);
+  const role = getStoredAuthSession()?.user?.role;
+  const canManageProducts = role === "OWNER" || role === "MANAGER";
+  const supportsExpiryAlerts = verticalConfig?.vertical === "PHARMACY" && Boolean(verticalConfig?.expiryAlerts?.enabled);
   const productsQuery = useQuery({
     queryKey: ["products", lowStockOnly, searchTerm, page, pageSize],
     queryFn: () => listProducts({
