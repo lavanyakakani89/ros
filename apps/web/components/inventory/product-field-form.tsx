@@ -4,10 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import type { VerticalConfig, VerticalField } from "@bizbil/shared";
 import { pharmacyConfig } from "@bizbil/vertical-configs";
 import { ChevronDown, Loader2, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-
 import { createAuthenticatedApiClient, createProduct, type ProductPayload } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
+import { getNextProductId, createProduct, type ProductPayload } from "@/lib/api-client";
 import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface SupplierOption {
@@ -27,6 +26,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
     queryFn: () => createAuthenticatedApiClient().get<{ data: SupplierOption[] }>("/suppliers?limit=100"),
     staleTime: 60_000,
   });
+  const [nextProductId, setNextProductId] = useState("");
 
   useEffect(() => {
     const storedConfig = getStoredVerticalConfig();
@@ -34,6 +34,25 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
       setVerticalConfig(storedConfig);
     }
     setGstEnabled(getStoredTenant()?.gstEnabled ?? true);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getNextProductId()
+      .then((value) => {
+        if (active) {
+          setNextProductId(value);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setNextProductId("");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const activeProductFields = useMemo(
@@ -62,6 +81,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
       await createProduct(toProductPayload(form, activeProductFields, gstEnabled));
       formElement.reset();
       setStatus("Product saved.");
+      void getNextProductId().then(setNextProductId).catch(() => setNextProductId(""));
       onCreated?.();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save product");
@@ -85,7 +105,7 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
         </div>
         <div className="grid gap-4 p-4 lg:grid-cols-2">
           {groupedFields.required.map((field) => (
-            <DynamicField key={field.key} field={field} />
+            <DynamicField key={field.key === "sku" ? `${field.key}-${nextProductId}` : field.key} field={field} defaultValue={field.key === "sku" ? nextProductId : undefined} />
           ))}
           {groupedFields.optional.length > 0 ? (
             <details className="rounded-md border border-border bg-slate-50 lg:col-span-2">
@@ -126,7 +146,7 @@ function SupplierSelect({ suppliers, loading }: Readonly<{ suppliers: SupplierOp
   );
 }
 
-function DynamicField({ field }: Readonly<{ field: VerticalField }>) {
+function DynamicField({ field, defaultValue }: Readonly<{ field: VerticalField; defaultValue?: string }>) {
   const commonClass = "mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600";
 
   return (
@@ -150,7 +170,7 @@ function DynamicField({ field }: Readonly<{ field: VerticalField }>) {
         </div>
       ) : null}
       {field.type !== "select" && field.type !== "boolean" ? (
-        <input name={field.key} className={commonClass} type={inputTypeFor(field.type)} inputMode={inputModeFor(field.type)} required={field.required} step={field.type === "decimal" ? "0.01" : undefined} />
+        <input name={field.key} className={commonClass} type={inputTypeFor(field.type)} inputMode={inputModeFor(field.type)} defaultValue={defaultValue} required={field.required} step={field.type === "decimal" ? "0.01" : undefined} />
       ) : null}
     </label>
   );

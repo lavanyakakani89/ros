@@ -281,6 +281,11 @@ export async function listProducts(options: { lowStock?: boolean; page?: number;
   return createAuthenticatedApiClient().get<PaginatedResponse<ProductRecord>>(`/inventory/products?${query.toString()}`);
 }
 
+export async function getNextProductId(): Promise<string> {
+  const response = await createAuthenticatedApiClient().get<{ nextId: string }>("/inventory/products/next-id");
+  return response.nextId;
+}
+
 export async function lookupProductByCode(code: string): Promise<ProductRecord | null> {
   try {
     return await createAuthenticatedApiClient().get<ProductRecord>(`/inventory/products/lookup?code=${encodeURIComponent(code)}`);
