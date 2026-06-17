@@ -92,6 +92,29 @@ export class InventoryRepository {
     };
   }
 
+  async nextProductSku(tenantId: string) {
+    const products = await this.prisma.product.findMany({
+      where: {
+        tenantId,
+        isActive: true,
+      },
+      select: {
+        sku: true,
+      },
+    });
+
+    const next = products.reduce((highest, product) => {
+      const sku = product.sku?.trim();
+      if (!sku || !/^\d+$/.test(sku)) {
+        return highest;
+      }
+
+      return Math.max(highest, Number.parseInt(sku, 10));
+    }, 0) + 1;
+
+    return String(next);
+  }
+
   async findProduct(tenantId: string, productId: string) {
     return this.prisma.product.findFirst({
       where: {

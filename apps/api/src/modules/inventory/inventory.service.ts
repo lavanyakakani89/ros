@@ -28,6 +28,10 @@ export class InventoryService {
     return this.repository.listProducts(tenant.id, query);
   }
 
+  nextProductSku(tenant: Tenant) {
+    return this.repository.nextProductSku(tenant.id);
+  }
+
   async lookupProduct(tenant: Tenant, query: ProductLookupQuery) {
     const product = await this.repository.findProductByCode(tenant.id, query.code);
     if (!product) {

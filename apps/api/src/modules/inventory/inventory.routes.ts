@@ -28,6 +28,10 @@ export const inventoryRoutes: FastifyPluginCallback = (fastify, _options, done) 
     return handleInventory(reply, () => Promise.resolve(service.listProducts(request.tenant, query)));
   });
 
+  fastify.get("/api/inventory/products/next-id", async (request, reply) => {
+    return handleInventory(reply, async () => ({ nextId: await service.nextProductSku(request.tenant) }));
+  });
+
   fastify.get("/api/inventory/products/template", async (request, reply) => {
     return sendProductTemplate(request.tenant, reply);
   });
