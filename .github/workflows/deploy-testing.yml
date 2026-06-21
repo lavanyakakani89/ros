@@ -92,7 +92,7 @@ jobs:
     environment: testing
 
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST || secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER || secrets.DEPLOY_USER }}
       PROD_DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
       DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
