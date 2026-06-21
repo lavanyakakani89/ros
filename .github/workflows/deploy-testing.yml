@@ -156,3 +156,83 @@ jobs:
           done
           echo "Testing health check failed: $HEALTH_URL" >&2
           exit 1
+      - name: Verify deployment - route assertions
+        run: |
+          BASE="${HEALTH_URL%/api/health}"
+          FAIL=0
+
+          check_route() {
+            local url="$BASE$1"
+            local expected="$2"
+            local status=$(curl -Ls -o /dev/null -w "%{http_code}" \
+              --max-time 15 "$url")
+            if [ "$status" = "$expected" ]; then
+              echo "✅ $1 -> $status"
+            else
+              echo "❌ $1 -> $status (expected $expected)"
+              FAIL=1
+            fi
+          }
+
+          echo "Waiting 30s for containers to start..."
+          sleep 30
+
+          check_route "/api/health" "200"
+
+          VERSION_RESPONSE=$(curl -Ls "$BASE/api/version")
+          DEPLOYED_SHA=$(echo "$VERSION_RESPONSE" | grep -o '"commit":"[^"]*"' | cut -d'"' -f4)
+          if [ "$DEPLOYED_SHA" = "$DEPLOY_SHA" ]; then
+            echo "✅ /api/version -> correct SHA $DEPLOYED_SHA"
+          else
+            echo "❌ /api/version -> wrong SHA: $DEPLOYED_SHA (expected $DEPLOY_SHA)"
+            FAIL=1
+          fi
+
+          check_route "/login" "200"
+          check_route "/dashboard" "200"
+          check_route "/payroll" "200"
+          check_route "/settings/payment-methods" "200"
+
+          TITLE=$(curl -Ls "$BASE" | grep -o '<title>[^<]*</title>' | head -1)
+          if echo "$TITLE" | grep -qi "bizbil"; then
+            echo "✅ Page title contains BizBil"
+          else
+            echo "❌ Page title wrong: $TITLE (should contain BizBil)"
+            FAIL=1
+          fi
+
+          if [ "$FAIL" = "1" ]; then
+            echo ""
+            echo "❌ DEPLOYMENT VERIFICATION FAILED"
+            echo "The test server is not serving the correct code."
+            echo "Check the bootstrap and origin configuration."
+            exit 1
+          else
+            echo ""
+            echo "✅ ALL CHECKS PASSED - test server is correct"
+          fi
+
+      - name: Dump testing stack logs on failure
+        if: failure()
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER || secrets.DEPLOY_USER }}
+          DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
+        run: |
+          set -Eeuo pipefail
+          if [ -z "${DEPLOY_HOST:-}" ] || [ -z "${DEPLOY_USER:-}" ] || [ -z "${DEPLOY_TEST_PATH:-}" ]; then
+            echo "Skipping log dump because deploy host details are unavailable in this run."
+            exit 0
+          fi
+
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
+            set +e
+            cd '$DEPLOY_TEST_PATH'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml ps -a
+            echo '--- api logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=400 api
+            echo '--- web logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=120 web
+            echo '--- caddy logs ---'
+            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=40 caddy
+          "
