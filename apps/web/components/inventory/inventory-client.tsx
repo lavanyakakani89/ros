@@ -182,7 +182,7 @@ export function InventoryClient() {
   const verticalConfig = getStoredVerticalConfig();
   const role = getStoredAuthSession()?.user?.role;
   const canManageProducts = role === "OWNER" || role === "MANAGER";
-  const supportsExpiryAlerts = verticalConfig !== null && verticalConfig.vertical === "PHARMACY" && verticalConfig.expiryAlerts.enabled;
+  const supportsExpiryAlerts = verticalConfig !== null && verticalConfig.vertical === "PHARMACY" && Boolean(verticalConfig.expiryAlerts?.enabled);
   const productsQuery = useQuery({
     queryKey: ["products", lowStockOnly, searchTerm, page, pageSize],
     queryFn: () => listProducts({

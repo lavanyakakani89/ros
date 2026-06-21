@@ -147,7 +147,7 @@ function SupplierSelect({ suppliers, loading }: Readonly<{ suppliers: SupplierOp
   );
 }
 
-function DynamicField({ field, defaultValue }: Readonly<{ field: VerticalField; defaultValue?: string }>) {
+function DynamicField({ field, defaultValue }: Readonly<{ field: VerticalField; defaultValue?: string | undefined }>) {
   const commonClass = "mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600";
 
   return (
