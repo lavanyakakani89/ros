@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: bizbil-testing
+  group: retailos-testing
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 35
 
     env:
-      DATABASE_URL: postgresql://bizbil:password@localhost:5432/bizbil
+      DATABASE_URL: postgresql://retailos:password@localhost:5432/retailos
       REDIS_URL: redis://:password@localhost:6379
       JWT_SECRET: ci-only-jwt-secret
       NEXT_PUBLIC_API_URL: /api
@@ -37,13 +37,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: bizbil
-          POSTGRES_USER: bizbil
+          POSTGRES_DB: retailos
+          POSTGRES_USER: retailos
           POSTGRES_PASSWORD: password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U bizbil -d bizbil"
+          --health-cmd "pg_isready -U retailos -d retailos"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -67,13 +67,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: pnpm --filter @bizbil/api prisma:generate
+        run: pnpm --filter @retailos/api prisma:generate
 
       - name: Apply migrations to CI database
-        run: pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+        run: pnpm --filter @retailos/api exec -- prisma migrate deploy --schema prisma/schema.prisma
 
       - name: Verify RLS policies
-        run: pnpm --filter @bizbil/api prisma:verify-rls
+        run: pnpm --filter @retailos/api prisma:verify-rls
 
       - name: Lint, typecheck, and test
         run: pnpm check
@@ -112,7 +112,7 @@ jobs:
           set -Eeuo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
           DEPLOY_USER="${DEPLOY_USER:-root}"
-          PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/bizbil}"
+          PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
           DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/bizbil-testing}"
           HEALTH_URL="${HEALTH_URL:-https://test.bizbil.com/api/health}"
 
