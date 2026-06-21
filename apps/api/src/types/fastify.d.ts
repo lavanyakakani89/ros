@@ -17,6 +17,14 @@ declare module "fastify" {
   interface FastifyRequest {
     rawBody?: string;
     tenant: Tenant;
+    user: {
+      userId: string;
+      tenantId: string;
+      role: UserRole;
+      storeId?: string | null;
+      customerId?: string;
+      tokenType?: "tenant_user" | "storefront_customer";
+    };
     storeId?: string | null;
     superAdmin?: {
       id: string;
