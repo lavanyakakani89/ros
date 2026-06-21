@@ -96,10 +96,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           set -Eeuo pipefail
-          if [ -z "${DEPLOY_HOST:-}" ]; then
-            echo "::error::DEPLOY_HOST secret is empty. Set it in the production environment to the new VPS hostname or IP."
-            exit 1
-          fi
+          DEPLOY_HOST="${DEPLOY_HOST:-66.42.79.12}"
           DEPLOY_USER="${DEPLOY_USER:-root}"
           DEPLOY_PATH="${DEPLOY_PATH:-/opt/bizbil}"
           HEALTH_URL="${HEALTH_URL:-https://ros.sivsanoils.in/api/health}"

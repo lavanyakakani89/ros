@@ -15,7 +15,7 @@ BizBil deploys automatically from GitHub Actions when code is pushed to `main`.
 
 Set these in GitHub:
 
-- `DEPLOY_HOST`: production VPS IP or hostname set in GitHub Secrets
+- `DEPLOY_HOST`: VPS IP or hostname, currently `66.42.79.12`
 - `DEPLOY_USER`: SSH user, currently `root`
 - `DEPLOY_SSH_KEY`: private key that matches the deploy public key on the VPS
 - `DEPLOY_PATH`: server repo path, currently `/opt/bizbil`
