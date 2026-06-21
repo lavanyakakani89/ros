@@ -125,12 +125,11 @@ jobs:
             exit 1
           fi
           ssh-keygen -lf ~/.ssh/id_ed25519.pub
-          chmod 700 ~/.ssh
-          : > ~/.ssh/known_hosts
+          ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy latest main on server
         run: |
-          ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" "
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
             set -Eeuo pipefail
             cd '$DEPLOY_PATH'
             DEPLOY_REF='origin/main' bash infra/deploy-production.sh
