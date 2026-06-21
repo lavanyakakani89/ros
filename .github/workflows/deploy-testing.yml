@@ -275,7 +275,17 @@ jobs:
 
       - name: Dump testing stack logs on failure
         if: failure()
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER || secrets.DEPLOY_USER }}
+          DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
         run: |
+          set -Eeuo pipefail
+          if [ -z "${DEPLOY_HOST:-}" ] || [ -z "${DEPLOY_USER:-}" ] || [ -z "${DEPLOY_TEST_PATH:-}" ]; then
+            echo "Skipping log dump because deploy host details are unavailable in this run."
+            exit 0
+          fi
+
           ssh "$DEPLOY_USER@$DEPLOY_HOST" "
             set +e
             cd '$DEPLOY_TEST_PATH'
