@@ -107,7 +107,7 @@ jobs:
     steps:
       - name: Configure SSH
         env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_TEST_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_TEST_SSH_KEY }}
         run: |
           set -Eeuo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
