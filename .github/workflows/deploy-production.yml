@@ -1,0 +1,177 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bizbil-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify build before deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      DATABASE_URL: postgresql://bizbil:password@localhost:5432/bizbil
+      REDIS_URL: redis://:password@localhost:6379
+      JWT_SECRET: ci-only-jwt-secret
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_APP_NAME: BizBil
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bizbil
+          POSTGRES_USER: bizbil
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bizbil -d bizbil"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @bizbil/api prisma:generate
+
+      - name: Apply migrations to CI database
+        run: pnpm --filter @bizbil/api exec -- prisma migrate deploy --schema prisma/schema.prisma
+
+      - name: Verify RLS policies
+        run: pnpm --filter @bizbil/api prisma:verify-rls
+
+      - name: Lint, typecheck, and test
+        run: pnpm check
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Validate production compose
+        run: docker compose --env-file .env.production.example -f infra/docker-compose.prod.yml config
+
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: verify
+    environment: production
+
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      DEPLOY_SHA: ${{ github.sha }}
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_TIME: ${{ github.event.head_commit.timestamp }}
+
+    steps:
+      - name: Validate deploy secrets
+        run: |
+          set -Eeuo pipefail
+
+          require_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::$name is empty. Set it in the production environment before deploying."
+              exit 1
+            fi
+          }
+
+          require_secret "DEPLOY_HOST" "$DEPLOY_HOST"
+          require_secret "DEPLOY_USER" "$DEPLOY_USER"
+          require_secret "DEPLOY_PATH" "$DEPLOY_PATH"
+          require_secret "DEPLOY_HEALTH_URL" "$HEALTH_URL"
+          require_secret "DEPLOY_SSH_KEY" "${{ secrets.DEPLOY_SSH_KEY }}"
+          require_secret "GH_PAT" "$GH_PAT"
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          set -Eeuo pipefail
+
+          DEPLOY_HOST="${DEPLOY_HOST:?DEPLOY_HOST is required in the production environment.}"
+          DEPLOY_USER="${DEPLOY_USER:?DEPLOY_USER is required in the production environment.}"
+          DEPLOY_PATH="${DEPLOY_PATH:?DEPLOY_PATH is required in the production environment.}"
+          HEALTH_URL="${HEALTH_URL:?DEPLOY_HEALTH_URL is required in the production environment.}"
+          GH_PAT="${GH_PAT:?GH_PAT is required as a repository secret.}"
+          DEPLOY_SSH_KEY="${DEPLOY_SSH_KEY:?DEPLOY_SSH_KEY is required in the production environment.}"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; then
+            echo "::error::DEPLOY_SSH_KEY is not a valid OpenSSH private key."
+            exit 1
+          fi
+
+          ssh-keyscan -T 10 -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          ssh-keygen -lf ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" "echo SSH preflight OK on \$(hostname)"
+
+          {
+            echo "DEPLOY_HOST=$DEPLOY_HOST"
+            echo "DEPLOY_USER=$DEPLOY_USER"
+            echo "DEPLOY_PATH=$DEPLOY_PATH"
+            echo "HEALTH_URL=$HEALTH_URL"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+            echo "DEPLOY_TIME=$DEPLOY_TIME"
+          } >> "$GITHUB_ENV"
+
+      - name: Deploy latest main on server
+        run: |
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "GH_PAT='$GH_PAT' GITHUB_REPOSITORY='$GITHUB_REPOSITORY' DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_TIME='$DEPLOY_TIME' DEPLOY_PATH='$DEPLOY_PATH' bash -s" <<'EOF'
+          set -Eeuo pipefail
+          cd "$DEPLOY_PATH"
+          DEPLOY_REF='origin/main' bash infra/deploy-production.sh
+          EOF
+
+      - name: Health check
+        run: |
+          for attempt in {1..5}; do
+            status=$(curl -fsS -o /dev/null -w "%{http_code}" --max-time 15 "$HEALTH_URL" || true)
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Health check failed: $HEALTH_URL did not return HTTP 200 after 5 attempts." >&2
+          exit 1
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/id_ed25519.pub ~/.ssh/known_hosts

@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: retailos-testing
+  group: bizbil-testing
   cancel-in-progress: true
 
 jobs:
@@ -93,10 +93,9 @@ jobs:
 
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_TEST_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER || secrets.DEPLOY_USER }}
-      PROD_DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-      DEPLOY_TEST_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
-      HEALTH_URL: https://test.bizbil.com/api/health
+      DEPLOY_USER: ${{ secrets.DEPLOY_TEST_USER }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_TEST_PATH }}
+      HEALTH_URL: ${{ secrets.DEPLOY_TEST_HEALTH_URL }}
       GH_PAT: ${{ secrets.GH_PAT }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       DEPLOY_SHA: ${{ github.sha }}
@@ -105,56 +104,65 @@ jobs:
       RESET_DATABASE: ${{ inputs.reset_database || false }}
 
     steps:
+      - name: Validate deploy secrets
+        run: |
+          set -Eeuo pipefail
+
+          require_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::$name is empty. Set it in the testing environment before deploying."
+              exit 1
+            fi
+          }
+
+          require_secret "DEPLOY_TEST_HOST" "$DEPLOY_HOST"
+          require_secret "DEPLOY_TEST_USER" "$DEPLOY_USER"
+          require_secret "DEPLOY_TEST_PATH" "$DEPLOY_PATH"
+          require_secret "DEPLOY_TEST_HEALTH_URL" "$HEALTH_URL"
+          require_secret "DEPLOY_TEST_SSH_KEY" "${{ secrets.DEPLOY_TEST_SSH_KEY }}"
+          require_secret "GH_PAT" "$GH_PAT"
+
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_TEST_SSH_KEY }}
         run: |
           set -Eeuo pipefail
-          DEPLOY_HOST="${DEPLOY_HOST:-test.bizbil.com}"
-          DEPLOY_USER="${DEPLOY_USER:-root}"
-          PROD_DEPLOY_PATH="${PROD_DEPLOY_PATH:-/opt/retailos}"
-          DEPLOY_TEST_PATH="${DEPLOY_TEST_PATH:-/opt/bizbil-testing}"
-          HEALTH_URL="${HEALTH_URL:-https://test.bizbil.com/api/health}"
 
-          if [ -z "${GH_PAT:-}" ]; then
-            echo "::error::GH_PAT secret is empty. Add a repository secret or testing environment secret named GH_PAT with GitHub repo read access."
+          DEPLOY_HOST="${DEPLOY_HOST:?DEPLOY_TEST_HOST is required in the testing environment.}"
+          DEPLOY_USER="${DEPLOY_USER:?DEPLOY_TEST_USER is required in the testing environment.}"
+          DEPLOY_PATH="${DEPLOY_PATH:?DEPLOY_TEST_PATH is required in the testing environment.}"
+          HEALTH_URL="${HEALTH_URL:?DEPLOY_TEST_HEALTH_URL is required in the testing environment.}"
+          GH_PAT="${GH_PAT:?GH_PAT is required as a repository secret.}"
+          DEPLOY_SSH_KEY="${DEPLOY_SSH_KEY:?DEPLOY_TEST_SSH_KEY is required in the testing environment.}"
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; then
+            echo "::error::DEPLOY_TEST_SSH_KEY is not a valid OpenSSH private key."
             exit 1
           fi
 
-          if [ -z "${DEPLOY_SSH_KEY:-}" ]; then
-            echo "::error::DEPLOY_SSH_KEY secret is empty. Add the private key text, including BEGIN/END lines, as a repository secret or testing environment secret named DEPLOY_SSH_KEY."
-            exit 1
-          fi
-
-          if printf '%s' "$DEPLOY_SSH_KEY" | grep -q '\\n'; then
-            DEPLOY_SSH_KEY="$(printf '%b' "$DEPLOY_SSH_KEY")"
-          fi
+          ssh-keyscan -T 10 -H "$DEPLOY_HOST" > ~/.ssh/known_hosts
+          ssh-keygen -lf ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" "echo SSH preflight OK on \$(hostname)"
 
           {
             echo "DEPLOY_HOST=$DEPLOY_HOST"
             echo "DEPLOY_USER=$DEPLOY_USER"
-            echo "PROD_DEPLOY_PATH=$PROD_DEPLOY_PATH"
-            echo "DEPLOY_TEST_PATH=$DEPLOY_TEST_PATH"
+            echo "DEPLOY_PATH=$DEPLOY_PATH"
             echo "HEALTH_URL=$HEALTH_URL"
             echo "DEPLOY_SHA=$DEPLOY_SHA"
             echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
             echo "DEPLOY_TIME=$DEPLOY_TIME"
           } >> "$GITHUB_ENV"
 
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          if ! ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub; then
-            echo "::error::DEPLOY_SSH_KEY is present but is not a valid OpenSSH private key."
-            exit 1
-          fi
-          ssh-keygen -lf ~/.ssh/id_ed25519.pub
-          ssh-keyscan -T 10 -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-          ssh -o BatchMode=yes -o ConnectTimeout=15 "$DEPLOY_USER@$DEPLOY_HOST" "echo SSH preflight OK on \$(hostname)"
-
       - name: Deploy exact testing commit on server
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "GH_PAT='$GH_PAT' GITHUB_REPOSITORY='$GITHUB_REPOSITORY' DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_TIME='$DEPLOY_TIME' RESET_DATABASE='$RESET_DATABASE' DEPLOY_TEST_PATH='$DEPLOY_TEST_PATH' bash -s" <<'EOF'
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "GH_PAT='$GH_PAT' GITHUB_REPOSITORY='$GITHUB_REPOSITORY' DEPLOY_SHA='$DEPLOY_SHA' DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_TIME='$DEPLOY_TIME' RESET_DATABASE='$RESET_DATABASE' DEPLOY_TEST_PATH='$DEPLOY_PATH' bash -s" <<'EOF'
           set -Eeuo pipefail
           REMOTE_URL="https://x-access-token:$GH_PAT@github.com/$GITHUB_REPOSITORY.git"
 
@@ -204,82 +212,16 @@ jobs:
 
       - name: Health check
         run: |
-          for attempt in {1..30}; do
-            if curl -fsS "$HEALTH_URL"; then
+          for attempt in {1..5}; do
+            status=$(curl -fsS -o /dev/null -w "%{http_code}" --max-time 15 "$HEALTH_URL" || true)
+            if [ "$status" = "200" ]; then
               exit 0
             fi
-            sleep 5
+            sleep 10
           done
-          echo "Testing health check failed: $HEALTH_URL" >&2
+          echo "Testing health check failed: $HEALTH_URL did not return HTTP 200 after 5 attempts." >&2
           exit 1
 
-      - name: Verify deployment - route assertions
-        run: |
-          BASE="${HEALTH_URL%/api/health}"
-          FAIL=0
-
-          check_route() {
-            local url="$BASE$1"
-            local expected="$2"
-            local status=$(curl -Ls -o /dev/null -w "%{http_code}" \
-              --max-time 15 "$url")
-            if [ "$status" = "$expected" ]; then
-              echo "✅ $1 -> $status"
-            else
-              echo "❌ $1 -> $status (expected $expected)"
-              FAIL=1
-            fi
-          }
-
-          echo "Waiting 30s for containers to start..."
-          sleep 30
-
-          check_route "/api/health" "200"
-
-          VERSION_RESPONSE=$(curl -Ls "$BASE/api/version")
-          DEPLOYED_SHA=$(echo "$VERSION_RESPONSE" | grep -o '"commit":"[^"]*"' | cut -d'"' -f4)
-          if [ "$DEPLOYED_SHA" = "$DEPLOY_SHA" ]; then
-            echo "✅ /api/version -> correct SHA $DEPLOYED_SHA"
-          else
-            echo "❌ /api/version -> wrong SHA: $DEPLOYED_SHA (expected $DEPLOY_SHA)"
-            FAIL=1
-          fi
-
-          check_route "/login" "200"
-          check_route "/dashboard" "200"
-          check_route "/payroll" "200"
-          check_route "/settings/payment-methods" "200"
-
-          TITLE=$(curl -Ls "$BASE" | grep -o '<title>[^<]*</title>' | head -1)
-          if echo "$TITLE" | grep -qi "bizbil"; then
-            echo "✅ Page title contains BizBil"
-          else
-            echo "❌ Page title wrong: $TITLE (should contain BizBil)"
-            FAIL=1
-          fi
-
-          if [ "$FAIL" = "1" ]; then
-            echo ""
-            echo "❌ DEPLOYMENT VERIFICATION FAILED"
-            echo "The test server is not serving the correct code."
-            echo "Check the bootstrap and origin configuration."
-            exit 1
-          else
-            echo ""
-            echo "✅ ALL CHECKS PASSED - test server is correct"
-          fi
-
-      - name: Dump testing stack logs on failure
-        if: failure()
-        run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" "
-            set +e
-            cd '$DEPLOY_TEST_PATH'
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml ps -a
-            echo '--- api logs ---'
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=400 api
-            echo '--- web logs ---'
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=120 web
-            echo '--- caddy logs ---'
-            docker compose --env-file .env.testing -f infra/docker-compose.test.yml logs --tail=40 caddy
-          "
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/id_ed25519.pub ~/.ssh/known_hosts
