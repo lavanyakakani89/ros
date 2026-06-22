@@ -1,14 +1,14 @@
-import { UserRole } from "@prisma/client";
+import type { UserRole } from "@bizbil/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { ROLE_PERMISSIONS, type Permission } from "./permissions.js";
 
-const permissionsByRole: Record<UserRole, Set<Permission>> = {
-  [UserRole.OWNER]: new Set(ROLE_PERMISSIONS[UserRole.OWNER]),
-  [UserRole.MANAGER]: new Set(ROLE_PERMISSIONS[UserRole.MANAGER]),
-  [UserRole.STAFF]: new Set(ROLE_PERMISSIONS[UserRole.STAFF]),
-  [UserRole.DELIVERY]: new Set(ROLE_PERMISSIONS[UserRole.DELIVERY]),
-};
+const permissionsByRole = {
+  OWNER: new Set(ROLE_PERMISSIONS.OWNER),
+  MANAGER: new Set(ROLE_PERMISSIONS.MANAGER),
+  STAFF: new Set(ROLE_PERMISSIONS.STAFF),
+  DELIVERY: new Set(ROLE_PERMISSIONS.DELIVERY),
+} satisfies Record<UserRole, Set<Permission>>;
 
 export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
   if (request.isImpersonated) {
@@ -22,10 +22,10 @@ export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
     return;
   }
 
-  if (!permissionsByRole[role].has(permission)) {
+  if (!getPermissionsForRole(role).has(permission)) {
     return reply.status(403).send({
       error: "Forbidden",
-      code: role === UserRole.DELIVERY ? "DELIVERY_ROLE_RESTRICTED" : "INSUFFICIENT_PERMISSIONS",
+      code: role === "DELIVERY" ? "DELIVERY_ROLE_RESTRICTED" : "INSUFFICIENT_PERMISSIONS",
       message: "Your role does not have permission to perform this action.",
       requiredPermission: permission,
     });
@@ -36,7 +36,7 @@ export function enforceRbac(request: FastifyRequest, reply: FastifyReply) {
 
 export function canRoleAccess(role: UserRole, method: string, url: string): boolean {
   const permission = requiredPermission(method, url);
-  return permission ? permissionsByRole[role].has(permission) : true;
+  return permission ? getPermissionsForRole(role).has(permission) : true;
 }
 
 export function requiredPermission(method: string, url: string): Permission | undefined {
@@ -151,4 +151,19 @@ function isDeliveryDetailRoute(path: string): boolean {
 
   const segments = path.split("/").filter(Boolean);
   return segments.length === 3 && segments[0] === "api" && segments[1] === "delivery";
+}
+
+function getPermissionsForRole(role: UserRole): Set<Permission> {
+  switch (role) {
+    case "OWNER":
+      return permissionsByRole.OWNER;
+    case "MANAGER":
+      return permissionsByRole.MANAGER;
+    case "STAFF":
+      return permissionsByRole.STAFF;
+    case "DELIVERY":
+      return permissionsByRole.DELIVERY;
+    default:
+      throw new Error("Unsupported role");
+  }
 }

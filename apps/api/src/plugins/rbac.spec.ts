@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { UserRole } from "@prisma/client";
+import type { UserRole } from "@bizbil/shared";
 
 import { stripCustomerFinancials } from "../modules/customers/customers.sanitizers.js";
 import { stripDeliveryFinancials } from "../modules/delivery/delivery.sanitizers.js";
@@ -14,38 +14,39 @@ type AccessCase = {
 };
 
 const routeCases: AccessCase[] = [
-  { role: UserRole.STAFF, method: "POST", url: "/api/inventory/products", allowed: false },
-  { role: UserRole.STAFF, method: "DELETE", url: "/api/billing/invoices/inv_1/cancel", allowed: false },
-  { role: UserRole.STAFF, method: "POST", url: "/api/billing/invoices/inv_1/cancel", allowed: false },
-  { role: UserRole.STAFF, method: "GET", url: "/api/reports/sales", allowed: false },
-  { role: UserRole.STAFF, method: "GET", url: "/api/settings/tenant", allowed: false },
-  { role: UserRole.STAFF, method: "POST", url: "/api/billing/invoices", allowed: true },
-  { role: UserRole.STAFF, method: "POST", url: "/api/billing/invoices/inv_1/confirm", allowed: true },
-  { role: UserRole.STAFF, method: "GET", url: "/api/customers", allowed: true },
-  { role: UserRole.STAFF, method: "POST", url: "/api/expenses", allowed: true },
-  { role: UserRole.STAFF, method: "GET", url: "/api/expenses", allowed: true },
-  { role: UserRole.STAFF, method: "DELETE", url: "/api/expenses/exp_1", allowed: false },
-  { role: UserRole.MANAGER, method: "GET", url: "/api/reports/pl", allowed: false },
-  { role: UserRole.MANAGER, method: "GET", url: "/api/reports/pnl", allowed: false },
-  { role: UserRole.MANAGER, method: "PUT", url: "/api/settings/tenant", allowed: false },
-  { role: UserRole.MANAGER, method: "POST", url: "/api/settings/users", allowed: true },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/billing/invoices", allowed: false },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/inventory/products", allowed: false },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/customers", allowed: false },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/reports/sales", allowed: false },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/delivery/me", allowed: true },
-  { role: UserRole.DELIVERY, method: "GET", url: "/api/delivery/del_1", allowed: true },
-  { role: UserRole.DELIVERY, method: "PUT", url: "/api/delivery/del_1/status", allowed: true },
-  { role: UserRole.DELIVERY, method: "POST", url: "/api/delivery/routes/optimize", allowed: false },
-  { role: UserRole.OWNER, method: "GET", url: "/api/reports/pnl", allowed: true },
-  { role: UserRole.OWNER, method: "PUT", url: "/api/settings/tenant", allowed: true },
+  { role: "STAFF", method: "POST", url: "/api/inventory/products", allowed: false },
+  { role: "STAFF", method: "DELETE", url: "/api/billing/invoices/inv_1/cancel", allowed: false },
+  { role: "STAFF", method: "POST", url: "/api/billing/invoices/inv_1/cancel", allowed: false },
+  { role: "STAFF", method: "GET", url: "/api/reports/sales", allowed: false },
+  { role: "STAFF", method: "GET", url: "/api/settings/tenant", allowed: false },
+  { role: "STAFF", method: "POST", url: "/api/billing/invoices", allowed: true },
+  { role: "STAFF", method: "POST", url: "/api/billing/invoices/inv_1/confirm", allowed: true },
+  { role: "STAFF", method: "GET", url: "/api/customers", allowed: true },
+  { role: "STAFF", method: "POST", url: "/api/expenses", allowed: true },
+  { role: "STAFF", method: "GET", url: "/api/expenses", allowed: true },
+  { role: "STAFF", method: "DELETE", url: "/api/expenses/exp_1", allowed: false },
+  { role: "MANAGER", method: "GET", url: "/api/reports/pl", allowed: false },
+  { role: "MANAGER", method: "GET", url: "/api/reports/pnl", allowed: false },
+  { role: "MANAGER", method: "PUT", url: "/api/settings/tenant", allowed: false },
+  { role: "MANAGER", method: "POST", url: "/api/settings/users", allowed: true },
+  { role: "DELIVERY", method: "GET", url: "/api/billing/invoices", allowed: false },
+  { role: "DELIVERY", method: "GET", url: "/api/inventory/products", allowed: false },
+  { role: "DELIVERY", method: "GET", url: "/api/customers", allowed: false },
+  { role: "DELIVERY", method: "GET", url: "/api/reports/sales", allowed: false },
+  { role: "DELIVERY", method: "GET", url: "/api/delivery/me", allowed: true },
+  { role: "DELIVERY", method: "GET", url: "/api/delivery/del_1", allowed: true },
+  { role: "DELIVERY", method: "PUT", url: "/api/delivery/del_1/status", allowed: true },
+  { role: "DELIVERY", method: "POST", url: "/api/delivery/routes/optimize", allowed: false },
+  { role: "OWNER", method: "GET", url: "/api/reports/pnl", allowed: true },
+  { role: "OWNER", method: "PUT", url: "/api/settings/tenant", allowed: true },
 ];
 
 for (const testCase of routeCases) {
+  const roleLabel = testCase.role as string;
   assert.equal(
     canRoleAccess(testCase.role, testCase.method, testCase.url),
     testCase.allowed,
-    `${testCase.role} ${testCase.method} ${testCase.url}`,
+    `${roleLabel} ${testCase.method} ${testCase.url}`,
   );
 }
 
