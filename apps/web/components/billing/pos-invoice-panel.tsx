@@ -804,10 +804,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           pdfViewUrl,
         };
         setLastBill(nextBill);
-        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
-        if (outputOk) {
-          showStockWarnings(updated.stockWarnings ?? localStockWarnings);
-        }
+        if (autoPrint) {
+		const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+			if (outputOk) {
+				showStockWarnings(updated.stockWarnings ?? localStockWarnings);
+		}
+	} else {
+		showStockWarnings(updated.stockWarnings ?? localStockWarnings);
+	}
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ["invoices"] }),
           queryClient.invalidateQueries({ queryKey: ["products"] }),
