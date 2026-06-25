@@ -6,6 +6,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose.prod.yml}"
 ENV_FILE="${ENV_FILE:-.env.production}"
 
 cd "$(dirname "$0")/.."
+git config --global --add safe.directory "$PWD"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE" >&2
