@@ -92,9 +92,16 @@ export function ProductFieldForm({ onCreated }: Readonly<{ onCreated?: () => voi
           </button>
         </div>
         <div className="grid gap-4 p-4 lg:grid-cols-2">
-          {groupedFields.required.map((field) => (
-            <DynamicField key={field.key === "sku" ? `${field.key}-${nextProductId}` : field.key} field={field} defaultValue={field.key === "sku" ? nextProductId : undefined} />
-          ))}
+          {groupedFields.required.map((field) => {
+            const autoProductId = field.key === "sku" && nextProductId ? nextProductId : null;
+            return (
+              <DynamicField
+                key={field.key === "sku" ? `${field.key}-${nextProductId}` : field.key}
+                field={field}
+                {...(autoProductId ? { defaultValue: autoProductId } : {})}
+              />
+            );
+          })}
           {groupedFields.optional.length > 0 ? (
             <details className="rounded-md border border-border bg-slate-50 lg:col-span-2">
               <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700">
