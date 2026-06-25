@@ -9,7 +9,7 @@ import { PaginationControls } from "@/components/shared/pagination-controls";
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, downloadApiFile, listProducts, type ProductRecord } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
-import { getStoredAuthSession, getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
+import { getStoredTenant, getStoredVerticalConfig } from "@/lib/vertical-config";
 
 interface ProductBatch {
   id: string;
