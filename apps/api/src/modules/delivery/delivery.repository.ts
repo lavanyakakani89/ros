@@ -71,7 +71,7 @@ export class DeliveryRepository {
         : query.scope === "archive"
           ? { in: [DeliveryStatus.DELIVERED, DeliveryStatus.FAILED, DeliveryStatus.CANCELLED] }
           : undefined;
-    const createdAt: Prisma.DateTimeFilter | undefined = query.from || query.to
+    const createdAt: Prisma.DateTimeFilter | undefined = (query.from || query.to) && query.status === DeliveryStatus.DELIVERED
       ? {
           ...(query.from ? { gte: query.from } : {}),
           ...(query.to ? { lte: query.to } : {}),
