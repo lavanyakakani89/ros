@@ -136,6 +136,7 @@ jobs:
           ssh -o StrictHostKeyChecking=accept-new "$DEPLOY_USER@$DEPLOY_HOST" "
             set -Eeuo pipefail
             cd '$DEPLOY_PATH'
+            git config --global --add safe.directory '$DEPLOY_PATH'
             DEPLOY_REF='origin/main' bash infra/deploy-production.sh
           "
 
