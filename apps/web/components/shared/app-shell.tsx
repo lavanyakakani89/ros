@@ -163,7 +163,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   if (checkingSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-surface text-sm font-medium text-slate-600">
-        Loading RetailOS
+        Loading BizBil
       </div>
     );
   }
@@ -227,7 +227,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             <CreditCard className="size-5" aria-hidden="true" />
           </div>
           <div className={cn(sidebarCollapsed && "sr-only")}>
-            <div className="text-sm font-semibold">RetailOS</div>
+            <div className="text-sm font-semibold">BizBil</div>
             <div className="text-xs text-slate-500">{tenantName}</div>
             <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>
@@ -331,7 +331,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:px-6">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>Your RetailOS subscription needs attention. Billing continues to work, but please contact your administrator.</span>
+              <span>Your BizBil subscription needs attention. Billing continues to work, but please contact your administrator.</span>
             </div>
           </div>
         ) : null}

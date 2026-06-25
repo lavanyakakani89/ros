@@ -1571,7 +1571,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <div className="p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="text-lg font-bold text-slate-950">RetailOS Invoice</div>
+                  <div className="text-lg font-bold text-slate-950">BizBil Invoice</div>
                   <div className="text-sm text-slate-500">{lastBill.invoiceNumber}</div>
                   {lastBill.customer ? <div className="mt-2 text-sm text-slate-700">{lastBill.customer.name} | {lastBill.customer.phone}</div> : null}
                 </div>
