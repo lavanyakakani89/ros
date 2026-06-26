@@ -4,8 +4,11 @@
 
 :root {
   color-scheme: light;
-  --app-background: #f8fafc;
-  --app-foreground: #172033;
+  --surface: 210 20% 98%;
+  --ink: 222 34% 12%;
+  --border: 214 18% 88%;
+  --app-background: hsl(var(--surface));
+  --app-foreground: hsl(var(--ink));
   --app-control-background: #ffffff;
   --app-control-foreground: #172033;
   --app-control-border: #cbd5e1;
@@ -13,8 +16,11 @@
 
 .dark {
   color-scheme: dark;
-  --app-background: #020617;
-  --app-foreground: #e2e8f0;
+  --surface: 222 47% 11%;
+  --ink: 210 40% 98%;
+  --border: 217 19% 27%;
+  --app-background: hsl(var(--surface));
+  --app-foreground: hsl(var(--ink));
   --app-control-background: #0f172a;
   --app-control-foreground: #e2e8f0;
   --app-control-border: #334155;
@@ -64,4 +70,44 @@ textarea::placeholder {
 .dark input:not([type="checkbox"]):not([type="radio"])::placeholder,
 .dark textarea::placeholder {
   color: #64748b;
+}
+
+.dark [class*="bg-white"],
+.dark [class*="bg-slate-50"],
+.dark [class*="bg-slate-100"],
+.dark [class*="bg-slate-200"] {
+  background-color: hsl(var(--surface)) !important;
+}
+
+.dark [class*="bg-"][class*="-50"],
+.dark [class*="bg-"][class*="-100"] {
+  background-color: hsl(222 47% 14%) !important;
+}
+
+.dark [class*="text-slate-9"],
+.dark [class*="text-slate-8"],
+.dark [class*="text-slate-7"],
+.dark [class*="text-slate-6"] {
+  color: hsl(var(--ink)) !important;
+}
+
+.dark [class*="text-slate-5"] {
+  color: hsl(215 20% 72%) !important;
+}
+
+.dark [class*="text-slate-4"] {
+  color: hsl(215 16% 58%) !important;
+}
+
+.dark [class*="border-slate-100"],
+.dark [class*="border-slate-200"],
+.dark [class*="border-slate-300"],
+.dark [class*="border-border"] {
+  border-color: hsl(var(--border)) !important;
+}
+
+.dark [class*="hover:bg-white"]:hover,
+.dark [class*="hover:bg-slate-50"]:hover,
+.dark [class*="hover:bg-slate-100"]:hover {
+  background-color: hsl(222 47% 16%) !important;
 }

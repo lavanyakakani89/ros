@@ -6,9 +6,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        border: "hsl(214 18% 88%)",
-        surface: "hsl(210 20% 98%)",
-        ink: "hsl(222 34% 12%)",
+        border: "hsl(var(--border))",
+        surface: "hsl(var(--surface))",
+        ink: "hsl(var(--ink))",
       },
     },
   },
