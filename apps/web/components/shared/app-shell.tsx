@@ -229,9 +229,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 		</div>
 		<div className={cn(sidebarCollapsed && "sr-only")}>
 			<Image src="/bizbil-landing/icons/bizbil-wordmark-no-logo.png" alt="BizBil" width={88} height={24} className="object-contain" />
-            <div className="text-xs text-slate-500">{tenantName}</div>
-            <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
-          </div>
+            </div>
         </div>
         <nav className={cn("px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
           {dashboard ? (
