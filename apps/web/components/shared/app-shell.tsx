@@ -1,3 +1,4 @@
+import Image from 'next/image';
 "use client";
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
@@ -223,11 +224,11 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     <div className="min-h-screen bg-surface text-ink">
       <aside className={cn("fixed inset-y-0 left-0 hidden border-r border-border bg-white transition-[width] duration-200 lg:block", sidebarCollapsed ? "w-20" : "w-64")}>
         <div className={cn("flex h-16 items-center gap-3 border-b border-border px-4", sidebarCollapsed && "justify-center px-3")}>
-          <div className="flex size-9 items-center justify-center rounded-md bg-emerald-600 text-white">
-            <CreditCard className="size-5" aria-hidden="true" />
-          </div>
-          <div className={cn(sidebarCollapsed && "sr-only")}>
-            <div className="text-sm font-semibold">BizBil</div>
+		<div className="flex size-9 items-center justify-center rounded-md bg-emerald-600 overflow-hidden">
+			<Image src="/bizbil-landing/icons/bizbil-mark.png" alt="BizBil" width={36} height={36} className="object-contain" />
+		</div>
+		<div className={cn(sidebarCollapsed && "sr-only")}>
+			<Image src="/bizbil-landing/icons/bizbil-wordmark-no-logo.png" alt="BizBil" width={88} height={24} className="object-contain" />
             <div className="text-xs text-slate-500">{tenantName}</div>
             <div className="text-[10px] text-slate-400">{verticalConfig.displayName} | {tenant?.gstEnabled === false ? "GST off" : "GST enabled"}</div>
           </div>
