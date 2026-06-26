@@ -76,3 +76,55 @@ jobs:
 
       - name: Validate testing compose
         run: docker compose --env-file .env.testing.example -f infra/docker-compose.test.yml config
+    
+      - name: Guard BizBil branding
+        run: |
+            # Fail if RetailOS appears in any user-facing file
+            FOUND=$(grep -rn "RetailOS" \
+              apps/web/app \
+              apps/web/components \
+              apps/web/public/manifest.json \
+              --include="*.tsx" \
+              --include="*.ts" \
+              --include="*.json" \
+              --exclude-dir=node_modules \
+              --exclude-dir=.next \
+              | grep -v "RetailOS Local Agent" \
+              | grep -v "RetailOS-Offline" \
+              | grep -v "RetailOS Print Agent" \
+              | grep -v "local-print-agent.ts" \
+              | grep -v "offline-queue.ts" \
+              || true)
+
+            if [ -n "$FOUND" ]; then
+              echo "❌ RetailOS branding found in user-facing files:"
+              echo "$FOUND"
+              echo ""
+              echo "Replace with BizBil before merging."
+              exit 1
+            fi
+
+            echo "✅ BizBil branding check passed"
+
+            # Fail if CreditCard icon is used in app-shell
+            if grep -n "CreditCard" apps/web/components/shared/app-shell.tsx; then
+              echo "❌ CreditCard icon found in app-shell — should use bizbil-mark.png"
+              exit 1
+            fi
+
+            echo "✅ Logo check passed"
+            
+      - name: Guard BizBil logo assets exist
+        run: |
+            FILES=(
+              "apps/web/public/bizbil-landing/icons/bizbil-mark.png"
+              "apps/web/public/bizbil-landing/icons/bizbil-wordmark.png"
+              "apps/web/public/bizbil-landing/icons/bizbil-wordmark-no-logo.png"
+            )
+            for f in "${FILES[@]}"; do
+              if [ ! -f "$f" ]; then
+                echo "❌ Missing required logo asset: $f"
+                exit 1
+              fi
+            done
+            echo "✅ All logo assets present"

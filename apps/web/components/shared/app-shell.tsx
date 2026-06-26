@@ -1,5 +1,5 @@
-import Image from 'next/image';
 "use client";
+import Image from 'next/image';
 
 import type { VerticalConfig, VerticalNavigationItem } from "@retailos/shared";
 import { pharmacyConfig } from "@retailos/vertical-configs";
