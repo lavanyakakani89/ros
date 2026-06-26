@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
+import { useTheme } from "next-themes";
 
 interface SettingsResponse {
   tenant: {
@@ -125,6 +126,7 @@ export function SettingsPanel() {
     <div className="space-y-4">
       {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error.message}</div> : null}
       {message ? <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div> : null}
+      <ThemeSection />
       <section className="grid gap-3 md:grid-cols-2">
         <Link className="flex items-center gap-3 rounded-md border border-border bg-white p-4 text-sm text-slate-700" href="/settings/templates">
           <span className="flex size-10 items-center justify-center rounded-md bg-sky-50 text-sky-700">
@@ -236,6 +238,63 @@ export function SettingsPanel() {
       </section>
       <PasswordPanel />
     </div>
+  );
+}
+
+function ThemeSection() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null;
+  }
+
+  return (
+    <section id="theme" className="rounded-md border border-border bg-white p-4 dark:bg-slate-900">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-slate-950 dark:text-white">Theme preferences</div>
+        <div className="text-xs text-slate-500 dark:text-slate-400">Choose between light, dark, or system theme</div>
+      </div>
+      <div className="flex gap-4">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="radio"
+            name="theme"
+            value="light"
+            checked={theme === "light"}
+            onChange={() => setTheme("light")}
+            className="size-4 accent-emerald-600"
+          />
+          Light
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="radio"
+            name="theme"
+            value="dark"
+            checked={theme === "dark"}
+            onChange={() => setTheme("dark")}
+            className="size-4 accent-emerald-600"
+          />
+          Dark
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <input
+            type="radio"
+            name="theme"
+            value="system"
+            checked={theme === "system"}
+            onChange={() => setTheme("system")}
+            className="size-4 accent-emerald-600"
+          />
+          System
+        </label>
+      </div>
+    </section>
   );
 }
 
