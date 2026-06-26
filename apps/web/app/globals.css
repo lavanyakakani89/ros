@@ -4,7 +4,20 @@
 
 :root {
   color-scheme: light;
-  background: #f8fafc;
+  --app-background: #f8fafc;
+  --app-foreground: #172033;
+  --app-control-background: #ffffff;
+  --app-control-foreground: #172033;
+  --app-control-border: #cbd5e1;
+}
+
+.dark {
+  color-scheme: dark;
+  --app-background: #020617;
+  --app-foreground: #e2e8f0;
+  --app-control-background: #0f172a;
+  --app-control-foreground: #e2e8f0;
+  --app-control-border: #334155;
 }
 
 * {
@@ -18,8 +31,8 @@ body {
 
 body {
   margin: 0;
-  background: #f8fafc;
-  color: #172033;
+  background: var(--app-background);
+  color: var(--app-foreground);
 }
 
 button,
@@ -27,4 +40,28 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background: var(--app-control-background);
+  color: var(--app-control-foreground);
+  border-color: var(--app-control-border);
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  color: var(--app-control-foreground) !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"])::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+}
+
+.dark input:not([type="checkbox"]):not([type="radio"])::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
 }
