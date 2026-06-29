@@ -136,6 +136,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const queryClient = useQueryClient();
   const { lines, setLines, setLine, addLine, removeLine, reset, holdBill, restoreHeld, deleteHeld, heldBills, autoPrint, setAutoPrint } = useBillingStore();
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const addingProductRef = useRef(false);
   const isEditMode = Boolean(editingInvoice);
   const [online, setOnline] = useState(true);
   const [gstEnabled, setGstEnabled] = useState(true);
@@ -534,6 +535,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }
 
   async function addProductFromSearch(input: string) {
+    if (addingProductRef.current) return;
+    addingProductRef.current = true;
+
     const code = input.trim();
     const codeLower = code.toLowerCase();
     const search = buildProductSearchTerm(input);
@@ -544,10 +548,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       if (exactProduct) {
         insertProduct(exactProduct);
         setBarcodeInput("");
+        addingProductRef.current = false;
         return;
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Product lookup failed", "red");
+      addingProductRef.current = false;
       return;
     }
 
@@ -567,11 +573,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     if (!product) {
       notify(`No product found for ${code}`, "red");
       setBarcodeInput("");
+      addingProductRef.current = false;
       return;
     }
 
     insertProduct(product);
     setBarcodeInput("");
+    addingProductRef.current = false;
   }
 
   function handleCustomerSearchKey(event: React.KeyboardEvent<HTMLInputElement>) {
