@@ -39,6 +39,7 @@ export const electronicsConfig: VerticalConfig = {
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "smartphone", href: "/inventory" },
+    { label: "Labels", icon: "tag", href: "/labels" },
     { label: "Warranty", icon: "shield", href: "/inventory/warranty" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
     { label: "Payments", icon: "wallet", href: "/payments" },
