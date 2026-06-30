@@ -9,6 +9,7 @@ import {
   FileText,
   History,
   KeyRound,
+  Home,
   LogOut,
   MessageCircle,
   PanelLeftClose,
