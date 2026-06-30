@@ -129,7 +129,7 @@ export function DashboardHome() {
   const pendingDeliveryCount = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status)).length;
   const failedDeliveryCount = deliveries.filter((delivery) => delivery.status === "FAILED").length;
   const auditLogs = auditQuery.data?.data ?? [];
-  const tenantName = tenant?.name ?? "RetailOS";
+  const tenantName = tenant?.name ?? "BizBil";
   const moduleGroups = dashboardModuleGroups(verticalConfig.navigation);
   const maxSales = Math.max(...(s?.dailySales ?? []).map((day) => day.sales), 1);
 

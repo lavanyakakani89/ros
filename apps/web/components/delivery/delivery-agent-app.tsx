@@ -176,7 +176,7 @@ export function DeliveryAgentApp() {
       <header className="sticky top-0 z-10 border-b border-emerald-800 bg-emerald-700 px-4 py-3 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{tenant?.name ?? "RetailOS"}</div>
+            <div className="truncate text-sm font-semibold">{tenant?.name ?? "BizBil"}</div>
             <div className="truncate text-xs text-emerald-100">{session?.user?.name ?? "Delivery app"}</div>
           </div>
           <button className="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-semibold" onClick={() => void handleLogout()}>Logout</button>

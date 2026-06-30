@@ -918,7 +918,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         invoiceNumber: lastBill.invoiceNumber,
         grandTotal: lastBill.grandTotal,
         paymentMode: lastBill.paymentMode,
-        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        tenantName: getStoredTenant()?.name ?? "BizBil",
         customerName: lastBill.customer.name,
         items: lastBill.lines,
         templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady"),
@@ -981,9 +981,9 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         agentUrl: result.agentUrl,
         printerName: result.printerName,
         bytesBase64: result.bytesBase64,
-        jobName: `RetailOS ${invoiceNumber}`,
+        jobName: `BizBil ${invoiceNumber}`,
       });
-      notify(`${actionLabel}. Printed through RetailOS Local Print Agent.`);
+      notify(`${actionLabel}. Printed through BizBil Local Print Agent.`);
       return true;
     }
 

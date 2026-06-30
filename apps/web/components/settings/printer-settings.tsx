@@ -42,7 +42,7 @@ interface TestResponse {
 const paperSizes: PaperSize[] = ["THERMAL_2", "THERMAL_3", "THERMAL_4", "A5", "A4"];
 const connectionTypes: Array<{ value: PrinterConn; label: string; icon: React.ElementType }> = [
   { value: "NONE", label: "PDF only", icon: Printer },
-  { value: "LOCAL_AGENT", label: "RetailOS Local Agent", icon: Printer },
+  { value: "LOCAL_AGENT", label: "BizBil Local Agent", icon: Printer },
   { value: "NETWORK", label: "Network ESC/POS", icon: Network },
   { value: "USB_PRINTNODE", label: "USB via PrintNode", icon: Usb },
   { value: "BLUETOOTH", label: "Bluetooth payload", icon: Bluetooth },
@@ -125,9 +125,9 @@ export function PrinterSettings() {
         agentUrl: result.agentUrl ?? agentUrl,
         printerName: result.printerName,
         bytesBase64: result.bytesBase64,
-        jobName: "RetailOS test print",
+        jobName: "BizBil test print",
       });
-      setMessage("Test print sent through RetailOS Local Print Agent.");
+      setMessage("Test print sent through BizBil Local Print Agent.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Local print agent test failed.");
     }

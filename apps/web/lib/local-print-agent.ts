@@ -24,7 +24,7 @@ interface LocalAgentPrintResponse {
 
 export async function printViaLocalAgent(input: LocalAgentPrintRequest): Promise<LocalAgentPrintResponse> {
   if (!input.bytesBase64) {
-    throw new Error("Printer payload was not returned by RetailOS.");
+    throw new Error("Printer payload was not returned by BizBil.");
   }
 
   if (!input.printerName?.trim()) {
@@ -40,7 +40,7 @@ export async function printViaLocalAgent(input: LocalAgentPrintRequest): Promise
       connectionType: "WINDOWS",
       printerName: input.printerName.trim(),
       payloadBase64: input.bytesBase64,
-      jobName: input.jobName ?? "RetailOS invoice",
+      jobName: input.jobName ?? "BizBil invoice",
     }),
   });
 
@@ -77,8 +77,8 @@ export function normalizeAgentUrl(agentUrl?: string | null): string {
 async function localAgentError(response: Response): Promise<string> {
   try {
     const payload = await response.json() as { error?: string };
-    return payload.error || `RetailOS Print Agent returned ${String(response.status)}.`;
+    return payload.error || `BizBil Print Agent returned ${String(response.status)}.`;
   } catch {
-    return `RetailOS Print Agent returned ${String(response.status)}.`;
+    return `BizBil Print Agent returned ${String(response.status)}.`;
   }
 }

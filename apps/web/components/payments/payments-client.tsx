@@ -126,7 +126,7 @@ export function PaymentsClient() {
         invoiceNumber: invoice.invoiceNumber,
         amountDue: Number(invoice.amountDue),
         grandTotal: Number(invoice.grandTotal),
-        tenantName: getStoredTenant()?.name ?? "RetailOS",
+        tenantName: getStoredTenant()?.name ?? "BizBil",
         customerName: invoice.customer.name,
         templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "paymentReminder"),
       }),

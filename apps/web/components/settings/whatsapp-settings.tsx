@@ -86,7 +86,7 @@ export function WhatsappSettings() {
   const disconnect = useMutation({
     mutationFn: () => createAuthenticatedApiClient().post<WhatsappIntegrationResponse>("/whatsapp/integration/disconnect", {}),
     onSuccess: async () => {
-      setMessage("WhatsApp disconnected in RetailOS.");
+      setMessage("WhatsApp disconnected in BizBil.");
       await queryClient.invalidateQueries({ queryKey: ["whatsapp-integration"] });
     },
   });
@@ -132,7 +132,7 @@ export function WhatsappSettings() {
       const signupResponse = await launchEmbeddedSignup(config.configurationId);
       const code = signupResponse.authResponse?.code;
       if (!code) {
-        setConnectError("WhatsApp signup was cancelled before RetailOS received permission.");
+        setConnectError("WhatsApp signup was cancelled before BizBil received permission.");
         return;
       }
 

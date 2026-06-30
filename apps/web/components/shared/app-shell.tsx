@@ -169,8 +169,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     );
   }
 
-  const tenantName = tenant?.name ?? "RetailOS";
-  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "RetailOS User";
+  const tenantName = tenant?.name ?? "BizBil";
+  const userName = impersonation?.superAdminName ?? session?.user?.name ?? "BizBil User";
   const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const role = session?.user?.role ?? "USER";
   const initials = getInitials(userName);
