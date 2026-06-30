@@ -493,12 +493,12 @@ function getInitials(name: string): string {
   );
 }
 
-function getNavigationIcon(item: VerticalNavigationItem) {
+function getNavigationIcon(item: VerticalNavigationItem): LucideIcon {
   if (item.icon in iconMap) {
-    return iconMap[item.icon as keyof typeof iconMap];
+    return iconMap[item.icon as keyof typeof iconMap] as LucideIcon;
   }
 
-  return Home;
+  return Home as LucideIcon;
 }
 
 function NavigationLink({
