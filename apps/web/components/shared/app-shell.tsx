@@ -6,7 +6,6 @@ import { pharmacyConfig } from "@retailos/vertical-configs";
 import {
   AlertTriangle,
   ChevronDown,
-  CreditCard,
   FileText,
   History,
   KeyRound,
@@ -499,7 +498,7 @@ function getNavigationIcon(item: VerticalNavigationItem) {
     return iconMap[item.icon as keyof typeof iconMap];
   }
 
-  return CreditCard;
+  return Home;
 }
 
 function NavigationLink({
