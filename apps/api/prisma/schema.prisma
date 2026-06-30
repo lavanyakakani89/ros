@@ -92,6 +92,8 @@ model Tenant {
   employees          Employee[]
   employeeSalaryRevisions EmployeeSalaryRevision[]
   payrollRuns        PayrollRun[]
+  labelTemplates     LabelTemplate[]
+  labelPrintJobs     LabelPrintJob[]
 
   @@map("tenants")
 }
@@ -136,6 +138,8 @@ model User {
   voidedPayrollDisbursements PayrollDisbursement[] @relation("PayrollDisbursementVoidAuthoriser")
   employeeSalaryRevisions EmployeeSalaryRevision[] @relation("EmployeeSalaryRevisionChangedBy")
   storeAssignments StoreUserAssignment[]
+  labelTemplatesCreated LabelTemplate[] @relation("LabelTemplateCreatedBy")
+  labelPrintJobsPrinted LabelPrintJob[] @relation("LabelPrintJobPrintedBy")
 
 
   @@unique([tenantId, email])
@@ -901,6 +905,44 @@ model PrinterConfig {
   updatedAt        DateTime    @updatedAt @map("updated_at")
 
   @@map("printer_configs")
+}
+
+model LabelTemplate {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  widthMm     Decimal   @map("width_mm") @db.Decimal(6, 2)
+  heightMm    Decimal   @map("height_mm") @db.Decimal(6, 2)
+  layoutMode  String    @default("1up") @map("layout_mode")
+  canvasJson  Json      @map("canvas_json")
+  isDefault   Boolean   @default(false) @map("is_default")
+  createdById String?   @map("created_by")
+  createdBy   User?     @relation("LabelTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, deletedAt])
+  @@map("label_templates")
+}
+
+model LabelPrintJob {
+  id          String    @id @default(cuid())
+  tenantId    String    @map("tenant_id")
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  templateId  String?   @map("template_id")
+  template    LabelTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  printedById String?   @map("printed_by")
+  printedBy   User?     @relation("LabelPrintJobPrintedBy", fields: [printedById], references: [id], onDelete: SetNull)
+  items       Json
+  totalLabels Int       @map("total_labels")
+  outputType  String    @map("output_type")
+  printedAt   DateTime  @default(now()) @map("printed_at")
+
+  @@index([tenantId, printedAt])
+  @@map("label_print_jobs")
 }
 
 model Payment {

@@ -39,6 +39,7 @@ export const fashionConfig: VerticalConfig = {
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "shirt", href: "/inventory" },
+    { label: "Labels", icon: "tag", href: "/labels" },
     { label: "Customers", icon: "users", href: "/customers" },
     { label: "Payments", icon: "wallet", href: "/payments" },
     { label: "Suppliers", icon: "building", href: "/suppliers" },

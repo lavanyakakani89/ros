@@ -40,6 +40,7 @@ export const groceryConfig: VerticalConfig = {
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "boxes", href: "/inventory" },
+    { label: "Labels", icon: "tag", href: "/labels" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
     { label: "Payments", icon: "wallet", href: "/payments" },
     { label: "Customers", icon: "users", href: "/customers" },

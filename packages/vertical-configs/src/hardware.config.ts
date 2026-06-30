@@ -38,6 +38,7 @@ export const hardwareConfig: VerticalConfig = {
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "boxes", href: "/inventory" },
+    { label: "Labels", icon: "tag", href: "/labels" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
     { label: "Customers", icon: "users", href: "/customers" },
     { label: "Payments", icon: "wallet", href: "/payments" },
