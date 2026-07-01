@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import MapView, { Marker } from "react-native-maps";
 import { useQuery } from "@tanstack/react-query";

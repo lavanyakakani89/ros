@@ -28,19 +28,7 @@ export default function AppLayout() {
       <Tabs.Screen name="customers/[id]" options={{ href: null }} />
       <Tabs.Screen name="more/reports" options={{ href: null }} />
       <Tabs.Screen name="more/payments" options={{ href: null }} />
-      <Tabs.Screen name="more/expenses" options={{ href: null }} />
-      <Tabs.Screen name="more/credit-notes" options={{ href: null }} />
-      <Tabs.Screen name="more/quotations" options={{ href: null }} />
-      <Tabs.Screen name="more/coupons" options={{ href: null }} />
-      <Tabs.Screen name="more/suppliers" options={{ href: null }} />
       <Tabs.Screen name="more/settings" options={{ href: null }} />
-      <Tabs.Screen name="more/audit-log" options={{ href: null }} />
-      <Tabs.Screen name="more/users" options={{ href: null }} />
-      <Tabs.Screen name="more/whatsapp-orders" options={{ href: null }} />
-      <Tabs.Screen name="more/whatsapp-orders/[id]" options={{ href: null }} />
-      <Tabs.Screen name="more/purchases" options={{ href: null }} />
-      <Tabs.Screen name="more/purchases/create" options={{ href: null }} />
-      <Tabs.Screen name="more/purchases/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

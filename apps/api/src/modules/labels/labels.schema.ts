@@ -4,7 +4,7 @@ import { LABEL_FIELD_TYPES, LABEL_LAYOUT_MODES, type LabelCanvasDefinition, type
 
 const nonNegativeNumber = z.coerce.number().finite().min(0);
 
-export const labelCanvasFieldSchema: z.ZodType<LabelCanvasField> = z.object({
+export const labelCanvasFieldSchema = z.object({
   id: z.string().trim().min(1),
   type: z.enum(LABEL_FIELD_TYPES),
   x: nonNegativeNumber,
@@ -17,11 +17,11 @@ export const labelCanvasFieldSchema: z.ZodType<LabelCanvasField> = z.object({
   textContent: z.string().optional(),
   imageUrl: z.string().trim().min(1).optional(),
   codeType: z.enum(["qr", "barcode"]).optional(),
-}).strict();
+}).strict() as z.ZodType<LabelCanvasField>;
 
-export const labelCanvasSchema: z.ZodType<LabelCanvasDefinition> = z.object({
+export const labelCanvasSchema = z.object({
   fields: z.array(labelCanvasFieldSchema),
-}).strict();
+}).strict() as z.ZodType<LabelCanvasDefinition>;
 
 export const labelTemplateBodySchema = z.object({
   name: z.string().trim().min(1).max(128).optional(),
@@ -60,9 +60,14 @@ const inlinePreviewSchema = z.object({
   layout_mode: z.enum(LABEL_LAYOUT_MODES).optional(),
 });
 
-export const labelPreviewSchema = inlinePreviewSchema.extend({
+const labelPreviewBaseSchema = inlinePreviewSchema.extend({
   items: z.array(labelSelectionSchema).min(1),
-}).superRefine((input, context) => {
+});
+
+function validatePreviewInput(
+  input: z.infer<typeof labelPreviewBaseSchema>,
+  context: z.RefinementCtx,
+): void {
   if (!input.template_id && !input.canvas_json) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -96,11 +101,13 @@ export const labelPreviewSchema = inlinePreviewSchema.extend({
       });
     }
   }
-});
+}
 
-export const labelPrintSchema = labelPreviewSchema.extend({
+export const labelPreviewSchema = labelPreviewBaseSchema.superRefine(validatePreviewInput);
+
+export const labelPrintSchema = labelPreviewBaseSchema.extend({
   output_type: z.enum(["print", "pdf"]),
-});
+}).superRefine(validatePreviewInput);
 
 export const labelImageQuerySchema = z.object({
   objectName: z.string().trim().min(1),

@@ -1,27 +1,78 @@
-const sharp = require("sharp");
 const path = require("path");
+const { resolveWorkspacePackage } = require("./resolve-workspace-package");
+const sharp = require(resolveWorkspacePackage("sharp"));
 
-async function createIcon(filename, width, height, bg, text) {
+const assetsDir = path.join(__dirname, "../assets");
+const webPublicDir = path.join(__dirname, "../../web/public");
+const iconSvg = path.join(webPublicDir, "icons", "icon.svg");
+const wordmarkPng = path.join(webPublicDir, "bizbil-landing", "icons", "bizbil-wordmark.png");
+
+async function createIcon() {
+  await sharp(iconSvg)
+    .resize(1024, 1024)
+    .png()
+    .toFile(path.join(assetsDir, "icon.png"));
+  console.log("Created icon.png");
+}
+
+async function createAdaptiveIcon() {
+  const foreground = await sharp(iconSvg)
+    .resize(860, 860)
+    .png()
+    .toBuffer();
+
+  await sharp({
+    create: {
+      width: 1024,
+      height: 1024,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: foreground, gravity: "center" }])
+    .png()
+    .toFile(path.join(assetsDir, "adaptive-icon.png"));
+  console.log("Created adaptive-icon.png");
+}
+
+async function createSplash() {
+  const wordmark = await sharp(wordmarkPng)
+    .resize({ width: 720 })
+    .png()
+    .toBuffer();
+
+  await sharp({
+    create: {
+      width: 1284,
+      height: 2778,
+      channels: 4,
+      background: "#0F6E56",
+    },
+  })
+    .composite([{ input: wordmark, gravity: "center" }])
+    .png()
+    .toFile(path.join(assetsDir, "splash.png"));
+  console.log("Created splash.png");
+}
+
+async function createNotificationIcon() {
   const svg = `
-    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="${bg}"/>
-      <text x="50%" y="50%" font-family="Arial" font-size="${Math.floor(width / 6)}"
-        font-weight="bold" fill="white" text-anchor="middle"
-        dominant-baseline="middle">${text}</text>
+    <svg width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#ffffff" d="M21 24h54v12H21zM21 43h54v11H21zM21 61h24v14H21zM58 61h17v14H58z"/>
     </svg>`;
 
   await sharp(Buffer.from(svg))
     .png()
-    .toFile(path.join(__dirname, "../assets", filename));
-  console.log("Created", filename);
+    .toFile(path.join(assetsDir, "notification-icon.png"));
+  console.log("Created notification-icon.png");
 }
 
 async function main() {
-  await createIcon("icon.png", 1024, 1024, "#0F6E56", "ROS");
-  await createIcon("adaptive-icon.png", 1024, 1024, "#0F6E56", "R");
-  await createIcon("splash.png", 1284, 2778, "#0F6E56", "BizBil");
-  await createIcon("notification-icon.png", 96, 96, "#0F6E56", "R");
-  console.log("All placeholder icons created. Replace with real assets before Play Store.");
+  await createIcon();
+  await createAdaptiveIcon();
+  await createSplash();
+  await createNotificationIcon();
+  console.log("Generated BizBil mobile assets from checked-in brand sources.");
 }
 
 main().catch(console.error);

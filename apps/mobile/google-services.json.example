@@ -3,7 +3,7 @@
   "_instructions": [
     "1. Go to console.firebase.google.com",
     "2. Create project named BizBil",
-    "3. Add Android app with package: in.sivsanoils.bizbil",
+    "3. Add Android app with package: in.bizbil.app",
     "4. Download google-services.json",
     "5. Place it at apps/mobile/google-services.json",
     "6. Never commit the real google-services.json to git"
@@ -17,7 +17,7 @@
     {
       "client_info": {
         "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-        "android_client_info": { "package_name": "in.sivsanoils.bizbil" }
+        "android_client_info": { "package_name": "in.bizbil.app" }
       },
       "api_key": [{ "current_key": "placeholder-replace-with-real-key" }],
       "services": { "appinvite_service": { "other_platform_oauth_client": [] } }

@@ -76,9 +76,9 @@ export interface ResolvedLabelProduct {
   name: string;
   sku: string | null;
   barcode: string | null;
-  sellingPrice: string | number;
-  mrp: string | number;
-  currentStock: string | number;
+  sellingPrice: { toNumber(): number } | string | number;
+  mrp: { toNumber(): number } | string | number;
+  currentStock: { toNumber(): number } | string | number;
   verticalData: Record<string, unknown> | null;
   batches: Array<{
     expiryDate: Date | null;

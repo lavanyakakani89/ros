@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { BarChart } from "react-native-chart-kit";
 import { useQuery } from "@tanstack/react-query";
@@ -6,42 +6,176 @@ import { formatCurrency, Permission } from "@bizbil/shared";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/Input";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
-import { apiClient } from "@/lib/api-client";
-import { useAuthStore } from "@/stores/auth-store";
 import { usePermission, useRequirePermission } from "@/hooks/usePermission";
+import { apiClient } from "@/lib/api-client";
 import { colors, fontSizes, fontWeights, spacing } from "@/theme";
 
+type MobileTab = "sales" | "stock" | "dues" | "profit";
+
+interface OverviewResponse {
+  metrics: {
+    netSales: number;
+    invoiceCount: number;
+    collections: number;
+    receivables: number;
+    lowStockCount: number;
+  };
+  topProducts: Array<{ productName: string; quantitySold: number; totalSales: number }>;
+  trends: {
+    revenue: Array<{ date: string; value: number }>;
+  };
+}
+
+interface InventoryResponse {
+  stockValue: number;
+  lowStockCount: number;
+  stockByCategory: Array<{ category: string; stock: number }>;
+}
+
+interface PnlResponse {
+  revenue: number;
+  cost: number;
+  grossProfit: number;
+  grossMarginPct: number;
+}
+
 export default function ReportsScreen() {
-  const [period, setPeriod] = useState("today");
-  const [tab, setTab] = useState("sales");
+  useRequirePermission(Permission.REPORTS_VIEW);
   const canFinancialReports = usePermission(Permission.REPORTS_FINANCIAL);
-  const gstEnabled = useAuthStore((state) => state.tenant?.gstEnabled ?? true);
-  const query = useQuery({ queryKey: ["reports", period], queryFn: () => apiClient.get<any>(`/api/reports/sales?period=${period}`) });
-  const data = query.data ?? {};
-  const tabs = ["sales", ...(gstEnabled ? ["gst"] : []), "stock", ...(canFinancialReports ? ["pnl"] : [])];
+  const [period, setPeriod] = useState<"7d" | "30d">("7d");
+  const [tab, setTab] = useState<MobileTab>("sales");
+  const dateRange = useMemo(() => {
+    const to = new Date().toISOString().slice(0, 10);
+    const days = period === "30d" ? 29 : 6;
+    const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+    return { from, to };
+  }, [period]);
+
+  const overviewQuery = useQuery({
+    queryKey: ["mobile-reports-overview", period, dateRange.from, dateRange.to],
+    queryFn: () => apiClient.get<OverviewResponse>(`/api/reports/overview?from=${dateRange.from}&to=${dateRange.to}`),
+  });
+  const inventoryQuery = useQuery({
+    queryKey: ["mobile-reports-inventory"],
+    queryFn: () => apiClient.get<InventoryResponse>("/api/reports/inventory"),
+  });
+  const pnlQuery = useQuery({
+    queryKey: ["mobile-reports-pnl", period, dateRange.from, dateRange.to],
+    queryFn: () => apiClient.get<PnlResponse>(`/api/reports/pnl?from=${dateRange.from}&to=${dateRange.to}`),
+    enabled: canFinancialReports,
+  });
+
+  const overview = overviewQuery.data;
+  const inventory = inventoryQuery.data;
+  const pnl = pnlQuery.data;
+  const tabs: MobileTab[] = ["sales", "stock", "dues", ...(canFinancialReports ? ["profit" as const] : [])];
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <ScreenHeader title="Reports" subtitle="Sales, GST, stock, and profitability" />
-      <View style={styles.row}>{["today", "week", "month", "custom"].map((item) => <Button key={item} label={item} variant={period === item ? "primary" : "secondary"} onPress={() => setPeriod(item)} />)}</View>
-      {period === "custom" ? <View style={styles.row}><Input label="From" /><Input label="To" /></View> : null}
-      <View style={styles.row}>{tabs.map((item) => <Button key={item} label={item.toUpperCase()} variant={tab === item ? "primary" : "secondary"} onPress={() => setTab(item)} />)}</View>
-      {tab === "sales" ? <ReportBlock title="Sales" rows={[["Gross sales", data.grossSales], ["Net sales", data.netSales], ["Invoice count", data.invoiceCount], ["Avg bill value", data.avgBillValue]]} chart /> : null}
-      {tab === "gst" ? <ReportBlock title="GST" rows={[["0/5/12/18%", data.taxBySlab], ["Total CGST", data.totalCgst], ["Total SGST", data.totalSgst], ["Total tax collected", data.taxCollected], ["ITC from purchases", data.itc], ["Net payable", data.netPayable]]} /> : null}
-      {tab === "stock" ? <ReportBlock title="Stock" rows={[["Stock value total", data.stockValue], ["Low stock list", data.lowStock], ["Expiry 30/60/90", data.expiryBreakdown]]} /> : null}
-      {tab === "pnl" ? <PnlBlock data={data} /> : null}
+      <ScreenHeader title="Reports" subtitle="Mobile analytics summary" />
+      <View style={styles.row}>
+        {(["7d", "30d"] as const).map((item) => (
+          <Button key={item} label={item === "7d" ? "Last 7d" : "Last 30d"} variant={period === item ? "primary" : "secondary"} onPress={() => setPeriod(item)} />
+        ))}
+      </View>
+      <View style={styles.row}>
+        {tabs.map((item) => (
+          <Button key={item} label={item.toUpperCase()} variant={tab === item ? "primary" : "secondary"} onPress={() => setTab(item)} />
+        ))}
+      </View>
+
+      {tab === "sales" ? (
+        <ReportBlock
+          title="Sales summary"
+          rows={[
+            ["Net sales", overview?.metrics.netSales],
+            ["Invoices", overview?.metrics.invoiceCount],
+            ["Collections", overview?.metrics.collections],
+            ["Top product", overview?.topProducts[0]?.productName ?? "-"],
+          ]}
+          chartData={overview?.trends.revenue.map((item) => item.value) ?? []}
+        />
+      ) : null}
+
+      {tab === "stock" ? (
+        <ReportBlock
+          title="Stock summary"
+          rows={[
+            ["Stock value", inventory?.stockValue],
+            ["Low stock items", inventory?.lowStockCount],
+            ["Top category", inventory?.stockByCategory[0]?.category ?? "-"],
+            ["Category stock", inventory?.stockByCategory[0]?.stock],
+          ]}
+        />
+      ) : null}
+
+      {tab === "dues" ? (
+        <ReportBlock
+          title="Dues summary"
+          rows={[
+            ["Receivables", overview?.metrics.receivables],
+            ["Collections", overview?.metrics.collections],
+            ["Invoices", overview?.metrics.invoiceCount],
+            ["Low stock items", overview?.metrics.lowStockCount],
+          ]}
+        />
+      ) : null}
+
+      {tab === "profit" ? (
+        <ReportBlock
+          title="Profitability"
+          rows={[
+            ["Revenue", pnl?.revenue],
+            ["Cost", pnl?.cost],
+            ["Gross profit", pnl?.grossProfit],
+            ["Margin", pnl ? `${pnl.grossMarginPct.toFixed(1)}%` : "-"],
+          ]}
+        />
+      ) : null}
     </ScrollView>
   );
 }
 
-function PnlBlock({ data }: { data: Record<string, unknown> }) {
-  useRequirePermission(Permission.REPORTS_FINANCIAL);
-  return <ReportBlock title="P&L" rows={[["Revenue", data.revenue], ["COGS", data.cogs], ["Gross profit", data.grossProfit], ["Expenses", data.expenses], ["Net profit", data.netProfit], ["For detailed analysis consult your accountant", ""]]} />;
-}
-
-function ReportBlock({ title, rows, chart }: { title: string; rows: Array<[string, unknown]>; chart?: boolean }) {
-  return <Card style={styles.block}><Text style={styles.title}>{title}</Text>{chart ? <BarChart data={{ labels: ["M", "T", "W", "T", "F"], datasets: [{ data: [10, 20, 12, 28, 24] }] }} width={320} height={180} yAxisLabel="₹" yAxisSuffix="" chartConfig={{ color: () => colors.teal, backgroundGradientFrom: colors.white, backgroundGradientTo: colors.white, decimalPlaces: 0 }} /> : null}{rows.map(([label, value]) => <View key={label} style={styles.reportRow}><Text style={styles.muted}>{label}</Text><Text style={styles.value}>{typeof value === "number" ? formatCurrency(value) : String(value ?? "-")}</Text></View>)}</Card>;
+function ReportBlock({
+  title,
+  rows,
+  chartData,
+}: {
+  title: string;
+  rows: Array<[string, unknown]>;
+  chartData?: number[];
+}) {
+  return (
+    <Card style={styles.block}>
+      <Text style={styles.title}>{title}</Text>
+      {chartData && chartData.length > 1 ? (
+        <BarChart
+          data={{
+            labels: chartData.map((_value, index) => `${index + 1}`),
+            datasets: [{ data: chartData.length > 0 ? chartData : [0] }],
+          }}
+          width={320}
+          height={180}
+          yAxisLabel="Rs "
+          yAxisSuffix=""
+          chartConfig={{
+            color: () => colors.teal,
+            backgroundGradientFrom: colors.white,
+            backgroundGradientTo: colors.white,
+            decimalPlaces: 0,
+          }}
+          style={styles.chart}
+        />
+      ) : null}
+      {rows.map(([label, value]) => (
+        <View key={label} style={styles.reportRow}>
+          <Text style={styles.muted}>{label}</Text>
+          <Text style={styles.value}>{typeof value === "number" ? formatCurrency(value) : String(value ?? "-")}</Text>
+        </View>
+      ))}
+    </Card>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -53,4 +187,5 @@ const styles = StyleSheet.create({
   reportRow: { flexDirection: "row", justifyContent: "space-between", gap: spacing.md },
   muted: { color: colors.slateMid },
   value: { color: colors.slate, fontWeight: fontWeights.semibold },
+  chart: { marginVertical: spacing.sm, borderRadius: 12 },
 });

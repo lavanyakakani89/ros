@@ -1,10 +1,23 @@
-import { CreditNoteStatus, InvoiceStatus, PaymentMode, POStatus, type PrismaClient, type Tenant } from "@prisma/client";
+import {
+  CreditNoteStatus,
+  InvoiceStatus,
+  PaymentMode,
+  POStatus,
+  PurchaseReturnStatus,
+  SettlementStatus,
+  type PrismaClient,
+  type Tenant,
+} from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import type {
   ComparisonReportQuery,
   CustomerSalesReportQuery,
+  ExpenseAnalyticsQuery,
   OutstandingSummaryQuery,
+  OverviewReportQuery,
+  PaymentAnalyticsQuery,
+  PurchaseAnalyticsQuery,
   ReportDateRange,
   SparklineReportQuery,
   StockMovementReportQuery,
@@ -63,6 +76,380 @@ export class ReportsService {
       stockValue: products.reduce((t, p) => t + p.currentStock.toNumber() * (p.purchasePrice?.toNumber() ?? 0), 0),
       lowStockCount: products.filter((p) => p.reorderLevel !== null && p.currentStock.lte(p.reorderLevel)).length,
       stockByCategory: groupStockByCategory(products),
+    };
+  }
+
+  async getOverviewReport(tenant: Tenant, query: OverviewReportQuery) {
+    const previousQuery = previousRange(query);
+    const [
+      sales,
+      inventory,
+      pnl,
+      outstanding,
+      purchases,
+      payments,
+      expenses,
+      topCustomersReport,
+      topSuppliersReport,
+      previousSales,
+      previousPnl,
+      previousPurchases,
+      previousPayments,
+      previousExpenses,
+      storeBreakdown,
+    ] = await Promise.all([
+      this.getSalesSummary(tenant, query),
+      this.getInventorySummary(tenant),
+      this.getPnlReport(tenant, query),
+      this.getOutstandingSummary(tenant, { storeId: query.storeId }),
+      this.getPurchaseAnalyticsReport(tenant, { ...query, page: 1, limit: 5 }),
+      this.getPaymentAnalyticsReport(tenant, { ...query, page: 1, limit: 5 }),
+      this.getExpenseAnalyticsReport(tenant, { ...query, page: 1, limit: 10 }),
+      this.getCustomerSalesReport(tenant, { ...query, page: 1, limit: 5, sortBy: "revenue" }),
+      this.getSupplierPurchasesReport(tenant, { ...query, page: 1, limit: 5 }),
+      this.getSalesSummary(tenant, previousQuery),
+      this.getPnlReport(tenant, previousQuery),
+      this.getPurchaseAnalyticsReport(tenant, { ...previousQuery, page: 1, limit: 5 }),
+      this.getPaymentAnalyticsReport(tenant, { ...previousQuery, page: 1, limit: 5 }),
+      this.getExpenseAnalyticsReport(tenant, { ...previousQuery, page: 1, limit: 10 }),
+      this.getStoreBreakdown(tenant.id, query),
+    ]);
+
+    return {
+      from: sales.from,
+      to: sales.to,
+      storeId: query.storeId ?? null,
+      metrics: {
+        grossSales: roundNumber(sales.grossSales),
+        netSales: roundNumber(sales.netSales),
+        invoiceCount: sales.invoiceCount,
+        averageBillValue: roundNumber(sales.averageBillValue),
+        grossProfit: roundNumber(pnl.grossProfit),
+        grossMarginPct: roundNumber(pnl.grossMarginPct),
+        purchaseTotal: roundNumber(purchases.totalReceived),
+        pendingPurchaseTotal: roundNumber(purchases.pendingAmount),
+        expenseTotal: roundNumber(expenses.totalExpenses),
+        collections: roundNumber(payments.collectionTotal),
+        receivables: roundNumber(outstanding.totalOutstanding),
+        supplierPayables: roundNumber(purchases.totalOutstanding),
+        stockValue: roundNumber(inventory.stockValue),
+        lowStockCount: inventory.lowStockCount,
+      },
+      deltas: {
+        netSalesPct: percentChange(sales.netSales, previousSales.netSales),
+        grossProfitPct: percentChange(pnl.grossProfit, previousPnl.grossProfit),
+        purchaseTotalPct: percentChange(purchases.totalReceived, previousPurchases.totalReceived),
+        expenseTotalPct: percentChange(expenses.totalExpenses, previousExpenses.totalExpenses),
+        collectionsPct: percentChange(payments.collectionTotal, previousPayments.collectionTotal),
+      },
+      trends: {
+        revenue: sales.dailySales.map((item) => ({ date: item.date, value: roundNumber(item.sales) })),
+        purchases: purchases.dailyPurchases,
+        expenses: expenses.dailyExpenses,
+        collections: payments.dailyCollections,
+      },
+      topProducts: sales.movingItems.slice(0, 5),
+      topCustomers: topCustomersReport.data.map((row) => ({
+        id: row.id,
+        name: row.name,
+        revenue: row.totalRevenue,
+        outstanding: row.outstanding,
+        invoices: row.invoiceCount,
+      })),
+      topSuppliers: topSuppliersReport.data.map((row) => ({
+        id: row.id,
+        name: row.name,
+        purchased: row.totalPurchased,
+        outstanding: row.outstanding,
+        purchaseOrders: row.poCount,
+      })),
+      stockHealth: {
+        stockValue: roundNumber(inventory.stockValue),
+        lowStockCount: inventory.lowStockCount,
+        stockByCategory: inventory.stockByCategory,
+      },
+      receivables: outstanding,
+      payables: {
+        totalOutstanding: roundNumber(purchases.totalOutstanding),
+        totalPaid: roundNumber(purchases.totalPaid),
+        totalReturns: roundNumber(purchases.totalReturns),
+      },
+      storeBreakdown,
+    };
+  }
+
+  async getPurchaseAnalyticsReport(tenant: Tenant, query: PurchaseAnalyticsQuery) {
+    const range = toRange(query);
+    const [receivedOrders, pendingOrders, supplierPayments, purchaseReturns] = await Promise.all([
+      this.prisma.purchaseOrder.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: { in: [POStatus.PARTIAL, POStatus.RECEIVED] },
+          createdAt: range,
+          ...storeWhere(query.storeId),
+        },
+        include: { supplier: true },
+      }),
+      this.prisma.purchaseOrder.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: { in: [POStatus.DRAFT, POStatus.SENT] },
+          createdAt: range,
+          ...storeWhere(query.storeId),
+        },
+        include: { supplier: true },
+      }),
+      this.prisma.supplierPayment.findMany({
+        where: {
+          tenantId: tenant.id,
+          paidAt: range,
+          ...(query.storeId ? { purchaseOrder: { storeId: query.storeId } } : {}),
+        },
+        include: { supplier: true, purchaseOrder: true },
+      }),
+      this.prisma.purchaseReturn.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: PurchaseReturnStatus.CONFIRMED,
+          createdAt: range,
+          ...(query.storeId ? { purchaseOrder: { storeId: query.storeId } } : {}),
+        },
+        include: { supplier: true, purchaseOrder: true },
+      }),
+    ]);
+
+    const dailyPurchaseTotals = new Map<string, number>();
+    const supplierMap = new Map<string, {
+      id: string;
+      name: string;
+      totalPurchased: number;
+      totalPaid: number;
+      outstanding: number;
+      purchaseOrders: number;
+      returned: number;
+    }>();
+
+    for (const order of receivedOrders) {
+      const amount = order.totalAmount.toNumber();
+      const date = (order.receivedAt ?? order.createdAt).toISOString().slice(0, 10);
+      dailyPurchaseTotals.set(date, (dailyPurchaseTotals.get(date) ?? 0) + amount);
+      const current = supplierMap.get(order.supplierId) ?? {
+        id: order.supplierId,
+        name: order.supplier.name,
+        totalPurchased: 0,
+        totalPaid: 0,
+        outstanding: 0,
+        purchaseOrders: 0,
+        returned: 0,
+      };
+      current.totalPurchased += amount;
+      current.purchaseOrders += 1;
+      supplierMap.set(order.supplierId, current);
+    }
+
+    for (const payment of supplierPayments) {
+      const current = supplierMap.get(payment.supplierId) ?? {
+        id: payment.supplierId,
+        name: payment.supplier.name,
+        totalPurchased: 0,
+        totalPaid: 0,
+        outstanding: 0,
+        purchaseOrders: 0,
+        returned: 0,
+      };
+      current.totalPaid += payment.amount.toNumber();
+      supplierMap.set(payment.supplierId, current);
+    }
+
+    for (const purchaseReturn of purchaseReturns) {
+      const current = supplierMap.get(purchaseReturn.supplierId) ?? {
+        id: purchaseReturn.supplierId,
+        name: purchaseReturn.supplier.name,
+        totalPurchased: 0,
+        totalPaid: 0,
+        outstanding: 0,
+        purchaseOrders: 0,
+        returned: 0,
+      };
+      current.returned += purchaseReturn.totalAmount.toNumber();
+      supplierMap.set(purchaseReturn.supplierId, current);
+    }
+
+    const suppliers = [...supplierMap.values()]
+      .map((supplier) => {
+        const adjustedPurchaseTotal = Math.max(supplier.totalPurchased - supplier.returned, 0);
+        const outstanding = Math.max(adjustedPurchaseTotal - supplier.totalPaid, 0);
+        return {
+          ...supplier,
+          totalPurchased: roundNumber(adjustedPurchaseTotal),
+          totalPaid: roundNumber(supplier.totalPaid),
+          returned: roundNumber(supplier.returned),
+          outstanding: roundNumber(outstanding),
+        };
+      })
+      .sort((left, right) => right.totalPurchased - left.totalPurchased);
+
+    const totalReceived = receivedOrders.reduce((sum, order) => sum + order.totalAmount.toNumber(), 0);
+    const totalPaid = supplierPayments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0);
+    const totalReturns = purchaseReturns.reduce((sum, purchaseReturn) => sum + purchaseReturn.totalAmount.toNumber(), 0);
+    const adjustedReceived = Math.max(totalReceived - totalReturns, 0);
+    const pendingAmount = pendingOrders.reduce((sum, order) => sum + order.totalAmount.toNumber(), 0);
+
+    return {
+      totalReceived: roundNumber(adjustedReceived),
+      totalPaid: roundNumber(totalPaid),
+      totalReturns: roundNumber(totalReturns),
+      totalOutstanding: roundNumber(Math.max(adjustedReceived - totalPaid, 0)),
+      receivedPoCount: receivedOrders.length,
+      pendingPoCount: pendingOrders.length,
+      pendingAmount: roundNumber(pendingAmount),
+      dailyPurchases: [...dailyPurchaseTotals.entries()]
+        .map(([date, value]) => ({ date, value: roundNumber(value) }))
+        .sort((left, right) => left.date.localeCompare(right.date)),
+      suppliers: paginate(suppliers, query.page, query.limit),
+      topSuppliers: suppliers.slice(0, 5),
+    };
+  }
+
+  async getPaymentAnalyticsReport(tenant: Tenant, query: PaymentAnalyticsQuery) {
+    const range = toRange(query);
+    const [payments, settlements, cancelledInvoices, outstandingSummary] = await Promise.all([
+      this.prisma.payment.findMany({
+        where: {
+          tenantId: tenant.id,
+          recordedAt: range,
+          ...(query.storeId ? { invoice: { storeId: query.storeId } } : {}),
+        },
+        include: {
+          invoice: {
+            select: {
+              storeId: true,
+            },
+          },
+          paymentMethod: true,
+        },
+      }),
+      this.prisma.settlement.findMany({
+        where: {
+          tenantId: tenant.id,
+          periodEnd: { gte: range.gte },
+          periodStart: { lte: range.lte },
+          ...(query.storeId ? { paymentMethod: { storeId: query.storeId } } : {}),
+        },
+      }),
+      this.prisma.invoice.findMany({
+        where: {
+          tenantId: tenant.id,
+          status: InvoiceStatus.CANCELLED,
+          updatedAt: range,
+          ...storeWhere(query.storeId),
+        },
+      }),
+      this.getOutstandingSummary(tenant, { storeId: query.storeId }),
+    ]);
+
+    const activePayments = payments.filter((payment) => !payment.voidedAt);
+    const voidPayments = payments.filter((payment) => payment.voidedAt);
+    const byMethod = new Map<string, {
+      id: string;
+      name: string;
+      shortCode: string;
+      color: string;
+      total: number;
+      count: number;
+    }>();
+    const dailyCollections = new Map<string, number>();
+
+    for (const payment of activePayments) {
+      const date = payment.recordedAt.toISOString().slice(0, 10);
+      dailyCollections.set(date, (dailyCollections.get(date) ?? 0) + payment.amount.toNumber());
+      const current = byMethod.get(payment.paymentMethodId) ?? {
+        id: payment.paymentMethodId,
+        name: payment.paymentMethod.name,
+        shortCode: payment.paymentMethod.shortCode,
+        color: payment.paymentMethod.color,
+        total: 0,
+        count: 0,
+      };
+      current.total += payment.amount.toNumber();
+      current.count += 1;
+      byMethod.set(payment.paymentMethodId, current);
+    }
+
+    const methodRows = [...byMethod.values()]
+      .map((row) => ({
+        ...row,
+        total: roundNumber(row.total),
+      }))
+      .sort((left, right) => right.total - left.total);
+
+    const refundTotal = cancelledInvoices.reduce((sum, invoice) => sum + invoice.amountPaid.toNumber(), 0);
+
+    return {
+      collectionTotal: roundNumber(activePayments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0)),
+      refundTotal: roundNumber(refundTotal),
+      netCollection: roundNumber(activePayments.reduce((sum, payment) => sum + payment.amount.toNumber(), 0) - refundTotal),
+      transactionCount: activePayments.length,
+      voidCount: voidPayments.length,
+      outstandingDue: outstandingSummary.totalOutstanding,
+      settlementSummary: {
+        draft: settlements.filter((settlement) => settlement.status === SettlementStatus.DRAFT).length,
+        reviewed: settlements.filter((settlement) => settlement.status === SettlementStatus.REVIEWED).length,
+        settled: settlements.filter((settlement) => settlement.status === SettlementStatus.SETTLED).length,
+      },
+      dailyCollections: [...dailyCollections.entries()]
+        .map(([date, value]) => ({ date, value: roundNumber(value) }))
+        .sort((left, right) => left.date.localeCompare(right.date)),
+      methods: paginate(methodRows, query.page, query.limit),
+      topMethods: methodRows.slice(0, 5),
+    };
+  }
+
+  async getExpenseAnalyticsReport(tenant: Tenant, query: ExpenseAnalyticsQuery) {
+    const range = toRange(query);
+    const expenses = await this.prisma.expense.findMany({
+      where: {
+        tenantId: tenant.id,
+        paidAt: range,
+        ...storeWhere(query.storeId),
+      },
+      orderBy: { paidAt: "asc" },
+    });
+
+    const categoryTotals = new Map<string, { category: string; total: number; count: number }>();
+    const dailyExpenses = new Map<string, number>();
+
+    for (const expense of expenses) {
+      const date = expense.paidAt.toISOString().slice(0, 10);
+      dailyExpenses.set(date, (dailyExpenses.get(date) ?? 0) + expense.amount.toNumber());
+      const current = categoryTotals.get(expense.category) ?? {
+        category: expense.category,
+        total: 0,
+        count: 0,
+      };
+      current.total += expense.amount.toNumber();
+      current.count += 1;
+      categoryTotals.set(expense.category, current);
+    }
+
+    const categories = [...categoryTotals.values()]
+      .map((row) => ({
+        ...row,
+        total: roundNumber(row.total),
+      }))
+      .sort((left, right) => right.total - left.total);
+
+    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount.toNumber(), 0);
+
+    return {
+      totalExpenses: roundNumber(totalExpenses),
+      expenseCount: expenses.length,
+      averageExpense: roundNumber(expenses.length > 0 ? totalExpenses / expenses.length : 0),
+      dailyExpenses: [...dailyExpenses.entries()]
+        .map(([date, value]) => ({ date, value: roundNumber(value) }))
+        .sort((left, right) => left.date.localeCompare(right.date)),
+      categories: paginate(categories, query.page, query.limit),
+      topCategories: categories.slice(0, 5),
     };
   }
 
@@ -684,6 +1071,134 @@ export class ReportsService {
     };
   }
 
+  private async getStoreBreakdown(tenantId: string, query: ReportDateRange) {
+    const range = toRange(query);
+    const [stores, invoices, purchaseOrders, expenses, payments] = await Promise.all([
+      this.prisma.store.findMany({
+        where: {
+          tenantId,
+          isActive: true,
+          ...(query.storeId ? { id: query.storeId } : {}),
+        },
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+      }),
+      this.prisma.invoice.findMany({
+        where: {
+          tenantId,
+          status: { in: activeInvoiceStatuses },
+          invoiceDate: range,
+          ...storeWhere(query.storeId),
+        },
+        select: {
+          storeId: true,
+          grandTotal: true,
+          amountPaid: true,
+        },
+      }),
+      this.prisma.purchaseOrder.findMany({
+        where: {
+          tenantId,
+          status: { in: [POStatus.PARTIAL, POStatus.RECEIVED] },
+          createdAt: range,
+          ...storeWhere(query.storeId),
+        },
+        select: {
+          storeId: true,
+          totalAmount: true,
+        },
+      }),
+      this.prisma.expense.findMany({
+        where: {
+          tenantId,
+          paidAt: range,
+          ...storeWhere(query.storeId),
+        },
+        select: {
+          storeId: true,
+          amount: true,
+        },
+      }),
+      this.prisma.payment.findMany({
+        where: {
+          tenantId,
+          recordedAt: range,
+          voidedAt: null,
+          ...(query.storeId ? { invoice: { storeId: query.storeId } } : {}),
+        },
+        select: {
+          amount: true,
+          invoice: {
+            select: {
+              storeId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const rows = new Map<string, {
+      storeId: string;
+      storeName: string;
+      invoices: number;
+      sales: number;
+      purchases: number;
+      expenses: number;
+      collections: number;
+    }>();
+
+    for (const store of stores) {
+      rows.set(store.id, {
+        storeId: store.id,
+        storeName: store.name,
+        invoices: 0,
+        sales: 0,
+        purchases: 0,
+        expenses: 0,
+        collections: 0,
+      });
+    }
+
+    for (const invoice of invoices) {
+      if (!invoice.storeId || !rows.has(invoice.storeId)) continue;
+      const current = rows.get(invoice.storeId);
+      if (!current) continue;
+      current.invoices += 1;
+      current.sales += invoice.grandTotal.toNumber();
+    }
+
+    for (const order of purchaseOrders) {
+      if (!order.storeId || !rows.has(order.storeId)) continue;
+      const current = rows.get(order.storeId);
+      if (!current) continue;
+      current.purchases += order.totalAmount.toNumber();
+    }
+
+    for (const expense of expenses) {
+      if (!expense.storeId || !rows.has(expense.storeId)) continue;
+      const current = rows.get(expense.storeId);
+      if (!current) continue;
+      current.expenses += expense.amount.toNumber();
+    }
+
+    for (const payment of payments) {
+      const storeId = payment.invoice.storeId;
+      if (!storeId || !rows.has(storeId)) continue;
+      const current = rows.get(storeId);
+      if (!current) continue;
+      current.collections += payment.amount.toNumber();
+    }
+
+    return [...rows.values()]
+      .map((row) => ({
+        ...row,
+        sales: roundNumber(row.sales),
+        purchases: roundNumber(row.purchases),
+        expenses: roundNumber(row.expenses),
+        collections: roundNumber(row.collections),
+      }))
+      .sort((left, right) => right.sales - left.sales);
+  }
+
   private async getMetricSeries(tenantId: string, metric: ComparisonReportQuery["metric"], period: ComparisonReportQuery["period"], year: number, storeId?: string) {
     const range = yearRange(year);
     const points = createComparisonPeriods(period);
@@ -751,6 +1266,18 @@ type InvoiceWithItems = Awaited<ReturnType<PrismaClient["invoice"]["findMany"]>>
 };
 
 type InvoiceItemForReport = InvoiceWithItems["items"][number];
+
+function previousRange(query: ReportDateRange): ReportDateRange {
+  const range = toRange(query);
+  const span = Math.max(range.lte.getTime() - range.gte.getTime(), 86_400_000);
+  const previousTo = new Date(range.gte.getTime() - 1);
+  const previousFrom = new Date(previousTo.getTime() - span);
+  return {
+    from: previousFrom,
+    to: previousTo,
+    ...(query.storeId ? { storeId: query.storeId } : {}),
+  };
+}
 
 function toRange(query: ReportDateRange): { gte: Date; lte: Date } {
   const now = new Date();
@@ -889,6 +1416,14 @@ function roundNumber(value: number): number {
 
 function roundQuantity(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function percentChange(current: number, previous: number): number | null {
+  if (previous === 0) {
+    return current > 0 ? 100 : null;
+  }
+
+  return roundNumber(((current - previous) / previous) * 100);
 }
 
 function yearRange(year: number): { gte: Date; lte: Date } {

@@ -6,6 +6,14 @@ import {
   comparisonReportQuerySchema,
   customerSalesReportExportQuerySchema,
   customerSalesReportQuerySchema,
+  expenseAnalyticsExportQuerySchema,
+  expenseAnalyticsQuerySchema,
+  overviewReportExportQuerySchema,
+  overviewReportQuerySchema,
+  paymentAnalyticsExportQuerySchema,
+  paymentAnalyticsQuerySchema,
+  purchaseAnalyticsExportQuerySchema,
+  purchaseAnalyticsQuerySchema,
   reportDateRangeSchema,
   reportExportQuerySchema,
   stockMovementReportExportQuerySchema,
@@ -34,6 +42,39 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     const query = scopedQuery(request.user.role, request.storeId, reportDateRangeSchema.parse(request.query));
     return service.getSalesSummary(request.tenant, query);
   });
+
+  fastify.get("/api/reports/overview", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, overviewReportQuerySchema.parse(request.query));
+    return service.getOverviewReport(request.tenant, query);
+  }));
+
+  fastify.get("/api/reports/overview/export", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, overviewReportExportQuerySchema.parse(request.query));
+    const overview = await service.getOverviewReport(request.tenant, query);
+    const rows = [
+      { metric: "Gross sales", value: overview.metrics.grossSales },
+      { metric: "Net sales", value: overview.metrics.netSales },
+      { metric: "Invoices", value: overview.metrics.invoiceCount },
+      { metric: "Gross profit", value: overview.metrics.grossProfit },
+      { metric: "Purchases", value: overview.metrics.purchaseTotal },
+      { metric: "Expenses", value: overview.metrics.expenseTotal },
+      { metric: "Collections", value: overview.metrics.collections },
+      { metric: "Receivables", value: overview.metrics.receivables },
+      { metric: "Supplier payables", value: overview.metrics.supplierPayables },
+      { metric: "Stock value", value: overview.metrics.stockValue },
+      { metric: "Low stock count", value: overview.metrics.lowStockCount },
+      ...overview.storeBreakdown.map((row) => ({
+        metric: "Store breakdown",
+        store: row.storeName,
+        sales: row.sales,
+        purchases: row.purchases,
+        expenses: row.expenses,
+        collections: row.collections,
+        invoices: row.invoices,
+      })),
+    ];
+    return sendReport(reply, "overview", query.format, rows);
+  }));
 
   fastify.get("/api/reports/summary/export", async (request, reply) => {
     const query = scopedQuery(request.user.role, request.storeId, reportExportQuerySchema.parse(request.query));
@@ -139,6 +180,91 @@ export const reportsRoutes: FastifyPluginCallback = (fastify, _options, done) =>
     ];
     return sendReport(reply, "pnl", query.format, rows);
   });
+
+  fastify.get("/api/reports/purchase-analytics", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, purchaseAnalyticsQuerySchema.parse(request.query));
+    return service.getPurchaseAnalyticsReport(request.tenant, query);
+  }));
+
+  fastify.get("/api/reports/purchase-analytics/export", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, purchaseAnalyticsExportQuerySchema.parse(request.query));
+    const report = await service.getPurchaseAnalyticsReport(request.tenant, { ...query, page: 1, limit: 100_000 });
+    const rows = [
+      {
+        section: "summary",
+        totalReceived: report.totalReceived,
+        totalPaid: report.totalPaid,
+        totalReturns: report.totalReturns,
+        totalOutstanding: report.totalOutstanding,
+        pendingPoCount: report.pendingPoCount,
+        pendingAmount: report.pendingAmount,
+      },
+      ...report.suppliers.data.map((row) => ({
+        section: "supplier",
+        supplier: row.name,
+        purchased: row.totalPurchased,
+        paid: row.totalPaid,
+        returned: row.returned,
+        outstanding: row.outstanding,
+        purchaseOrders: row.purchaseOrders,
+      })),
+    ];
+    return sendReport(reply, "purchase-analytics", query.format, rows);
+  }));
+
+  fastify.get("/api/reports/payment-analytics", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, paymentAnalyticsQuerySchema.parse(request.query));
+    return service.getPaymentAnalyticsReport(request.tenant, query);
+  }));
+
+  fastify.get("/api/reports/payment-analytics/export", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, paymentAnalyticsExportQuerySchema.parse(request.query));
+    const report = await service.getPaymentAnalyticsReport(request.tenant, { ...query, page: 1, limit: 100_000 });
+    const rows = [
+      {
+        section: "summary",
+        collectionTotal: report.collectionTotal,
+        refundTotal: report.refundTotal,
+        netCollection: report.netCollection,
+        outstandingDue: report.outstandingDue,
+        transactionCount: report.transactionCount,
+        voidCount: report.voidCount,
+      },
+      ...report.methods.data.map((row) => ({
+        section: "method",
+        method: row.name,
+        shortCode: row.shortCode,
+        total: row.total,
+        count: row.count,
+      })),
+    ];
+    return sendReport(reply, "payment-analytics", query.format, rows);
+  }));
+
+  fastify.get("/api/reports/expense-analytics", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, expenseAnalyticsQuerySchema.parse(request.query));
+    return service.getExpenseAnalyticsReport(request.tenant, query);
+  }));
+
+  fastify.get("/api/reports/expense-analytics/export", async (request, reply) => handleReports(reply, async () => {
+    const query = scopedQuery(request.user.role, request.storeId, expenseAnalyticsExportQuerySchema.parse(request.query));
+    const report = await service.getExpenseAnalyticsReport(request.tenant, { ...query, page: 1, limit: 100_000 });
+    const rows = [
+      {
+        section: "summary",
+        totalExpenses: report.totalExpenses,
+        expenseCount: report.expenseCount,
+        averageExpense: report.averageExpense,
+      },
+      ...report.categories.data.map((row) => ({
+        section: "category",
+        category: row.category,
+        total: row.total,
+        count: row.count,
+      })),
+    ];
+    return sendReport(reply, "expense-analytics", query.format, rows);
+  }));
 
   fastify.get("/api/reports/customer-sales", async (request) => {
     const query = scopedQuery(request.user.role, request.storeId, customerSalesReportQuerySchema.parse(request.query));

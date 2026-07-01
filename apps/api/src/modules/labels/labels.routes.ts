@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { FastifyPluginCallback } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { DEFAULT_LABEL_TEMPLATES } from "./labels.defaults.js";
 import { LabelsRepository } from "./labels.repository.js";
@@ -61,7 +61,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     };
   });
 
-  fastify.get("/api/labels/templates/default", async () => {
+  fastify.get("/api/labels/templates/default", () => {
     return {
       templates: DEFAULT_LABEL_TEMPLATES.map((template) => serializeDefaultTemplate(template)),
     };
@@ -69,7 +69,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
 
   fastify.post("/api/labels/templates", async (request, reply) => {
     const input = labelTemplateCreateSchema.parse(request.body);
-    const template = await repository.createTemplate(request.tenant.id, request.user.id, input);
+    const template = await repository.createTemplate(request.tenant.id, request.user.userId, input);
 
     return reply.status(201).send({
       template: serializeDbTemplate(template),
@@ -133,7 +133,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
 
     const stat = await fastify.minio.statObject(fastify.minioBucket, query.objectName);
     const stream = await fastify.minio.getObject(fastify.minioBucket, query.objectName);
-    reply.header("Content-Type", stat.metaData?.["content-type"] ?? "application/octet-stream");
+    reply.header("Content-Type", stat.metaData["content-type"] ?? "application/octet-stream");
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
     return reply.send(stream);
   });
@@ -151,7 +151,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     const job = await repository.createPrintJob({
       tenantId: request.tenant.id,
       templateId: preview.templateId,
-      printedById: request.user.id,
+      printedById: request.user.userId,
       items: input.items,
       totalLabels: preview.totalLabels,
       outputType: input.output_type,
@@ -196,7 +196,7 @@ async function resolveLabelRequest(
     fastify,
     tenantId,
     input.template_id,
-    input.canvas_json ?? null,
+    input.canvas_json,
     input.width_mm ?? null,
     input.height_mm ?? null,
     input.layout_mode ?? null,

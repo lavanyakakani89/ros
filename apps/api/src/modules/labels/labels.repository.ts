@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient, LabelTemplate } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import type { LabelTemplateCreateInput, LabelTemplateUpdateInput } from "./labels.schema.js";
 
@@ -56,7 +56,7 @@ export class LabelsRepository {
         widthMm: input.width_mm,
         heightMm: input.height_mm,
         layoutMode: input.layout_mode,
-        canvasJson: input.canvas_json as Prisma.InputJsonValue,
+        canvasJson: input.canvas_json as unknown as Prisma.InputJsonValue,
       },
       include: {
         createdBy: {
@@ -82,7 +82,7 @@ export class LabelsRepository {
         ...(input.width_mm !== undefined ? { widthMm: input.width_mm } : {}),
         ...(input.height_mm !== undefined ? { heightMm: input.height_mm } : {}),
         ...(input.layout_mode !== undefined ? { layoutMode: input.layout_mode } : {}),
-        ...(input.canvas_json !== undefined ? { canvasJson: input.canvas_json as Prisma.InputJsonValue } : {}),
+        ...(input.canvas_json !== undefined ? { canvasJson: input.canvas_json as unknown as Prisma.InputJsonValue } : {}),
       },
     });
   }

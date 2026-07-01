@@ -3,12 +3,13 @@
   "compilerOptions": {
     "strict": true,
     "baseUrl": ".",
-    "types": ["react", "node"],
+    "types": ["react"],
     "paths": {
       "@/*": ["src/*"],
       "@bizbil/shared": ["../../packages/shared/src/index.ts"],
       "@bizbil/shared/*": ["../../packages/shared/src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts"]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts"],
+  "exclude": ["app.config.ts", "scripts/**/*"]
 }

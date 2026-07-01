@@ -5,6 +5,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "lint": "node scripts/run-lint.js",
+    "typecheck": "node scripts/run-typecheck.js",
+    "check": "node scripts/run-typecheck.js && node scripts/run-lint.js",
     "build:android": "eas build --platform android",
     "build:preview": "eas build --platform android --profile preview",
     "build:production": "eas build --platform android --profile production",
@@ -55,8 +58,10 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "eslint": "^9.17.0",
     "@react-native/gradle-plugin": "0.74.87",
     "@types/react": "^18.2.79",
+    "typescript": "^5.7.2",
     "sharp": "^0.34.5"
   }
 }

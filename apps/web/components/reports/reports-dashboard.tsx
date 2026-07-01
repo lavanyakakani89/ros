@@ -3,14 +3,48 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Fragment, useEffect, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useDeferredValue, useEffect, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, downloadApiFile, listProducts } from "@/lib/api-client";
 import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 
-type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend" | "customers" | "suppliers" | "aging" | "stock" | "comparison" | "tally";
+type Tab =
+  | "overview"
+  | "sales"
+  | "purchases"
+  | "payments"
+  | "expenses"
+  | "inventory"
+  | "pnl"
+  | "gstr"
+  | "dayend"
+  | "customers"
+  | "suppliers"
+  | "aging"
+  | "stock"
+  | "comparison"
+  | "tally";
+
+type ComparisonMetric = "revenue" | "invoices" | "customers" | "expenses";
+type ComparisonPeriod = "monthly" | "weekly";
+
+interface StoreOption {
+  id: string;
+  name: string;
+  isDefault?: boolean;
+}
 
 interface ReportSummary {
   grossSales: number;
@@ -29,10 +63,54 @@ interface ReportSummary {
   movingItems: Array<{ productName: string; quantitySold: number; totalSales: number }>;
 }
 
+interface OverviewReport {
+  metrics: {
+    grossSales: number;
+    netSales: number;
+    invoiceCount: number;
+    averageBillValue: number;
+    grossProfit: number;
+    grossMarginPct: number;
+    purchaseTotal: number;
+    pendingPurchaseTotal: number;
+    expenseTotal: number;
+    collections: number;
+    receivables: number;
+    supplierPayables: number;
+    stockValue: number;
+    lowStockCount: number;
+  };
+  deltas: {
+    netSalesPct: number | null;
+    grossProfitPct: number | null;
+    purchaseTotalPct: number | null;
+    expenseTotalPct: number | null;
+    collectionsPct: number | null;
+  };
+  trends: {
+    revenue: Array<{ date: string; value: number }>;
+    purchases: Array<{ date: string; value: number }>;
+    expenses: Array<{ date: string; value: number }>;
+    collections: Array<{ date: string; value: number }>;
+  };
+  topProducts: Array<{ productName: string; quantitySold: number; totalSales: number }>;
+  topCustomers: Array<{ id: string; name: string; revenue: number; outstanding: number; invoices: number }>;
+  topSuppliers: Array<{ id: string; name: string; purchased: number; outstanding: number; purchaseOrders: number }>;
+  storeBreakdown: Array<{
+    storeId: string;
+    storeName: string;
+    invoices: number;
+    sales: number;
+    purchases: number;
+    expenses: number;
+    collections: number;
+  }>;
+}
+
 interface InventoryReport {
   stockValue: number;
   lowStockCount: number;
-  stockByCategory: Array<{ category: string; stock: number }>;
+  stockByCategory: Array<{ category: string; products: number; stock: number }>;
 }
 
 interface PnlReport {
@@ -43,6 +121,67 @@ interface PnlReport {
   items: Array<{ productName: string; quantitySold: number; revenue: number; cost: number; profit: number; marginPct: number }>;
 }
 
+interface PurchaseAnalyticsReport {
+  totalReceived: number;
+  totalPaid: number;
+  totalReturns: number;
+  totalOutstanding: number;
+  receivedPoCount: number;
+  pendingPoCount: number;
+  pendingAmount: number;
+  dailyPurchases: Array<{ date: string; value: number }>;
+  suppliers: PaginatedReport<{
+    id: string;
+    name: string;
+    totalPurchased: number;
+    totalPaid: number;
+    outstanding: number;
+    purchaseOrders: number;
+    returned: number;
+  }>;
+  topSuppliers: Array<{
+    id: string;
+    name: string;
+    totalPurchased: number;
+    totalPaid: number;
+    outstanding: number;
+    purchaseOrders: number;
+    returned: number;
+  }>;
+}
+
+interface PaymentAnalyticsReport {
+  collectionTotal: number;
+  refundTotal: number;
+  netCollection: number;
+  transactionCount: number;
+  voidCount: number;
+  outstandingDue: number;
+  settlementSummary: {
+    draft: number;
+    reviewed: number;
+    settled: number;
+  };
+  dailyCollections: Array<{ date: string; value: number }>;
+  methods: PaginatedReport<{
+    id: string;
+    name: string;
+    shortCode: string;
+    color: string;
+    total: number;
+    count: number;
+  }>;
+}
+
+interface ExpenseAnalyticsReport {
+  totalExpenses: number;
+  expenseCount: number;
+  averageExpense: number;
+  dailyExpenses: Array<{ date: string; value: number }>;
+  categories: PaginatedReport<{ category: string; total: number; count: number }>;
+  topCategories: Array<{ category: string; total: number; count: number }>;
+}
+
 interface DayEndReport {
   date: string;
   openingCash: number;
@@ -50,10 +189,12 @@ interface DayEndReport {
   salesUpi: number;
   salesCard: number;
   salesCredit: number;
+  salesNetbanking?: number;
   totalCollection: number;
   invoiceCount: number;
   refunds: number;
   closingCash: number;
+  paymentMethods?: Array<{ id: string; name: string; total: number; count: number }>;
 }
 
 interface PaginatedReport<T> {
@@ -72,15 +213,6 @@ interface CustomerSalesReportRow {
   totalPaid: number;
   outstanding: number;
   lastPurchaseDate: string | null;
-  invoices: Array<{
-    id: string;
-    invoiceNumber: string;
-    invoiceDate: string;
-    status: string;
-    grandTotal: number;
-    amountPaid: number;
-    amountDue: number;
-  }>;
 }
 
 interface SupplierPurchasesReportRow {
@@ -110,8 +242,8 @@ interface StockMovementReportRow {
 }
 
 interface ComparisonReport {
-  metric: "revenue" | "invoices" | "customers" | "expenses";
-  period: "monthly" | "weekly";
+  metric: ComparisonMetric;
+  period: ComparisonPeriod;
   year1: number;
   year2: number;
   rows: Array<{
@@ -122,464 +254,628 @@ interface ComparisonReport {
   }>;
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
-function weekAgoStr() { return new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10); }
+interface ProductLookup {
+  id: string;
+  name: string;
+  barcode?: string | null;
+  sku?: string | null;
+}
+
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isoDaysAgo(days: number) {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
 
 export function ReportsDashboard() {
   const searchParams = useSearchParams();
-  // Next widens this to nullable during production builds when pages/ exists.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const initialTab = (searchParams?.get("tab") as Tab | null) ?? "sales";
+  const sessionRole = getStoredAuthSession()?.user?.role ?? "STAFF";
+  const canViewReports = sessionRole === "OWNER" || sessionRole === "MANAGER";
+  const canViewFinancial = sessionRole === "OWNER" || sessionRole === "MANAGER";
+  const currentYear = new Date().getFullYear();
+  const initialTab = (searchParams?.get("tab") as Tab | null) ?? "overview";
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [from, setFrom] = useState(weekAgoStr());
-  const [to, setTo] = useState(todayStr());
+  const [from, setFrom] = useState(isoDaysAgo(6));
+  const [to, setTo] = useState(isoToday());
+  const [storeId, setStoreId] = useState("");
   const [gstEnabled, setGstEnabled] = useState(true);
-  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [stockProductSearch, setStockProductSearch] = useState("");
+  const deferredStockSearch = useDeferredValue(stockProductSearch.trim());
   const [stockProductId, setStockProductId] = useState("");
   const [stockMovementType, setStockMovementType] = useState("");
-  const currentYear = new Date().getFullYear();
-  const [comparisonMetric, setComparisonMetric] = useState<ComparisonReport["metric"]>("revenue");
-  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonReport["period"]>("monthly");
+  const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetric>("revenue");
+  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("monthly");
   const [comparisonYear1, setComparisonYear1] = useState(currentYear - 1);
   const [comparisonYear2, setComparisonYear2] = useState(currentYear);
-  const canViewPnl = getStoredAuthSession()?.user?.role === "OWNER";
+  const api = createAuthenticatedApiClient();
 
   useEffect(() => {
     const enabled = getStoredTenant()?.gstEnabled !== false;
     setGstEnabled(enabled);
-    if ((!enabled && tab === "gstr") || (!canViewPnl && tab === "pnl")) {
-      setTab("sales");
+    if (!enabled && tab === "gstr") {
+      setTab("overview");
     }
-  }, [canViewPnl, tab]);
+    if (!canViewFinancial && (tab === "pnl" || tab === "payments" || tab === "expenses" || tab === "purchases")) {
+      setTab("overview");
+    }
+  }, [canViewFinancial, tab]);
+
+  const storesQuery = useQuery({
+    queryKey: ["report-stores"],
+    queryFn: () => api.get<StoreOption[]>("/settings/stores"),
+    enabled: canViewReports,
+  });
+
+  const overviewQuery = useQuery({
+    queryKey: ["reports-overview", from, to, storeId],
+    queryFn: () => api.get<OverviewReport>(`/reports/overview?${dateRangeQuery(from, to, storeId)}`),
+    enabled: canViewReports && tab === "overview",
+  });
 
   const summaryQuery = useQuery({
-    queryKey: ["reports-summary", from, to],
-    queryFn: () =>
-      createAuthenticatedApiClient().get<ReportSummary>(`/reports/summary?from=${from}&to=${to}`),
-    enabled: tab === "sales" || (gstEnabled && tab === "gstr"),
+    queryKey: ["reports-summary", from, to, storeId],
+    queryFn: () => api.get<ReportSummary>(`/reports/summary?${dateRangeQuery(from, to, storeId)}`),
+    enabled: canViewReports && (tab === "sales" || tab === "gstr"),
   });
+
+  const purchaseQuery = useQuery({
+    queryKey: ["reports-purchases", from, to, storeId],
+    queryFn: () => api.get<PurchaseAnalyticsReport>(`/reports/purchase-analytics?${dateRangeQuery(from, to, storeId, { limit: "25" })}`),
+    enabled: canViewFinancial && tab === "purchases",
+  });
+
+  const paymentQuery = useQuery({
+    queryKey: ["reports-payments", from, to, storeId],
+    queryFn: () => api.get<PaymentAnalyticsReport>(`/reports/payment-analytics?${dateRangeQuery(from, to, storeId, { limit: "25" })}`),
+    enabled: canViewFinancial && tab === "payments",
+  });
+
+  const expenseQuery = useQuery({
+    queryKey: ["reports-expenses", from, to, storeId],
+    queryFn: () => api.get<ExpenseAnalyticsReport>(`/reports/expense-analytics?${dateRangeQuery(from, to, storeId, { limit: "25" })}`),
+    enabled: canViewFinancial && tab === "expenses",
+  });
+
   const inventoryQuery = useQuery({
     queryKey: ["reports-inventory"],
-    queryFn: () => createAuthenticatedApiClient().get<InventoryReport>("/reports/inventory"),
-    enabled: tab === "inventory",
+    queryFn: () => api.get<InventoryReport>("/reports/inventory"),
+    enabled: canViewReports && tab === "inventory",
   });
+
   const pnlQuery = useQuery({
-    queryKey: ["reports-pnl", from, to],
-    queryFn: () => createAuthenticatedApiClient().get<PnlReport>(`/reports/pnl?from=${from}&to=${to}`),
-    enabled: canViewPnl && tab === "pnl",
+    queryKey: ["reports-pnl", from, to, storeId],
+    queryFn: () => api.get<PnlReport>(`/reports/pnl?${dateRangeQuery(from, to, storeId)}`),
+    enabled: canViewFinancial && tab === "pnl",
   });
+
   const dayEndQuery = useQuery({
-    queryKey: ["reports-dayend", to],
-    queryFn: () => createAuthenticatedApiClient().get<DayEndReport>(`/reports/day-end?date=${to}`),
-    enabled: tab === "dayend",
+    queryKey: ["reports-day-end", to],
+    queryFn: () => api.get<DayEndReport>(`/reports/day-end?date=${to}`),
+    enabled: canViewReports && tab === "dayend",
   });
+
   const customerSalesQuery = useQuery({
-    queryKey: ["reports-customer-sales", from, to],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<CustomerSalesReportRow>>(`/reports/customer-sales?from=${from}&to=${to}&limit=50&sortBy=revenue`),
-    enabled: tab === "customers",
+    queryKey: ["reports-customers", from, to, storeId],
+    queryFn: () => api.get<PaginatedReport<CustomerSalesReportRow>>(`/reports/customer-sales?${dateRangeQuery(from, to, storeId, { limit: "50", sortBy: "revenue" })}`),
+    enabled: canViewReports && tab === "customers",
   });
+
   const supplierPurchasesQuery = useQuery({
-    queryKey: ["reports-supplier-purchases", from, to],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<SupplierPurchasesReportRow>>(`/reports/supplier-purchases?from=${from}&to=${to}&limit=50`),
-    enabled: tab === "suppliers",
+    queryKey: ["reports-suppliers", from, to, storeId],
+    queryFn: () => api.get<PaginatedReport<SupplierPurchasesReportRow>>(`/reports/supplier-purchases?${dateRangeQuery(from, to, storeId, { limit: "50" })}`),
+    enabled: canViewReports && tab === "suppliers",
   });
+
   const agingQuery = useQuery({
-    queryKey: ["reports-aging"],
-    queryFn: () => createAuthenticatedApiClient().get<AgingReport>("/reports/outstanding-aging"),
-    enabled: tab === "aging",
+    queryKey: ["reports-aging", storeId],
+    queryFn: () => api.get<AgingReport>(`/reports/outstanding-aging?${optionalStoreQuery(storeId)}`),
+    enabled: canViewReports && tab === "aging",
   });
+
   const stockMovementQuery = useQuery({
-    queryKey: ["reports-stock-movement", from, to, stockProductId, stockMovementType],
-    queryFn: () => createAuthenticatedApiClient().get<PaginatedReport<StockMovementReportRow>>(`/reports/stock-movement?${stockMovementQueryString(from, to, stockProductId, stockMovementType)}`),
-    enabled: tab === "stock",
+    queryKey: ["reports-stock", from, to, storeId, stockProductId, stockMovementType],
+    queryFn: () => api.get<PaginatedReport<StockMovementReportRow>>(`/reports/stock-movement?${stockMovementQueryString(from, to, storeId, stockProductId, stockMovementType)}`),
+    enabled: canViewReports && tab === "stock",
   });
+
   const stockProductSearchQuery = useQuery({
-    queryKey: ["reports-stock-product-search", stockProductSearch],
-    queryFn: () => listProducts({ search: stockProductSearch.trim(), limit: 20 }),
-    enabled: tab === "stock" && stockProductSearch.trim().length > 0,
+    queryKey: ["reports-stock-product-search", deferredStockSearch],
+    queryFn: () => listProducts({ search: deferredStockSearch, limit: 20 }),
+    enabled: canViewReports && tab === "stock" && deferredStockSearch.length > 0,
   });
+
   const comparisonQuery = useQuery({
-    queryKey: ["reports-comparison", comparisonMetric, comparisonPeriod, comparisonYear1, comparisonYear2],
-    queryFn: () => createAuthenticatedApiClient().get<ComparisonReport>(`/reports/comparison?metric=${comparisonMetric}&period=${comparisonPeriod}&year1=${String(comparisonYear1)}&year2=${String(comparisonYear2)}`),
-    enabled: tab === "comparison" && comparisonYear1 !== comparisonYear2,
+    queryKey: ["reports-comparison", comparisonMetric, comparisonPeriod, comparisonYear1, comparisonYear2, storeId],
+    queryFn: () => api.get<ComparisonReport>(`/reports/comparison?${comparisonQueryString(comparisonMetric, comparisonPeriod, comparisonYear1, comparisonYear2, storeId)}`),
+    enabled: canViewReports && tab === "comparison" && comparisonYear1 !== comparisonYear2,
   });
 
-  const summary = summaryQuery.data;
-  const inventory = inventoryQuery.data;
-  const pnl = pnlQuery.data;
-  const dayEnd = dayEndQuery.data;
-  const customerSales = customerSalesQuery.data;
-  const supplierPurchases = supplierPurchasesQuery.data;
-  const aging = agingQuery.data;
-  const stockMovement = stockMovementQuery.data;
-  const stockProductResults = stockProductSearchQuery.data?.data ?? [];
-  const comparison = comparisonQuery.data;
-
-  const salesData = summary?.dailySales.map((item) => ({
-    day: item.date.slice(5),
-    sales: item.sales,
-    invoices: item.invoices,
-  })) ?? [];
-  const stockData = inventory?.stockByCategory.map((item) => ({ category: item.category, value: item.stock })) ?? [];
-
-  const tabs: { id: Tab; label: string }[] = [
+  const tabs: Array<{ id: Tab; label: string }> = [
+    { id: "overview", label: "Overview" },
     { id: "sales", label: "Sales" },
+    ...(canViewFinancial ? [{ id: "purchases" as const, label: "Purchases" }] : []),
+    ...(canViewFinancial ? [{ id: "payments" as const, label: "Payments" }] : []),
+    ...(canViewFinancial ? [{ id: "expenses" as const, label: "Expenses" }] : []),
     { id: "inventory", label: "Inventory" },
-    ...(canViewPnl ? [{ id: "pnl" as const, label: "P&L" }] : []),
-    ...(gstEnabled ? [{ id: "gstr" as const, label: "GSTR Export" }] : []),
-    { id: "dayend", label: "Day-End" },
+    ...(canViewFinancial ? [{ id: "pnl" as const, label: "P&L" }] : []),
+    ...(gstEnabled ? [{ id: "gstr" as const, label: "GST" }] : []),
+    { id: "dayend", label: "Day-end" },
     { id: "customers", label: "Customers" },
     { id: "suppliers", label: "Suppliers" },
     { id: "aging", label: "Aging" },
-    { id: "stock", label: "Stock Movement" },
-    { id: "comparison", label: "YoY / MoM" },
-    { id: "tally", label: "Tally Export" },
+    { id: "stock", label: "Stock" },
+    { id: "comparison", label: "Compare" },
+    { id: "tally", label: "Tally" },
   ];
 
-  function downloadCsv(content: string, filename: string) {
-    const blob = new Blob([content], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+  if (!canViewReports) {
+    return (
+      <section className="rounded-md border border-border bg-white p-6 text-sm text-slate-500">
+        Reports are available to owners and managers.
+      </section>
+    );
   }
 
-  function exportGstr1() {
-    if (!summary) return;
-    const rows = [
-      ["HSN Code", "Taxable Value", "CGST", "SGST", "Total GST", "Total Sales"],
-      ...summary.hsnSummary.map((h) => [h.hsnCode, h.taxableValue, "", "", h.totalGst, h.totalSales]),
-    ];
-    downloadCsv(rows.map((r) => r.join(",")).join("\n"), `GSTR1_${from}_${to}.csv`);
-  }
-
-  function exportGstr3b() {
-    if (!summary) return;
-    const rows = [
-      ["GST Rate %", "Taxable Value", "CGST", "SGST", "Total GST"],
-      ...summary.gstByRate.map((g) => [g.gstRate, g.taxableValue, g.cgst, g.sgst, g.totalGst]),
-    ];
-    downloadCsv(rows.map((r) => r.join(",")).join("\n"), `GSTR3B_${from}_${to}.csv`);
-  }
-
-  async function downloadReportExport(endpoint: string, filename: string, format: "csv" | "xlsx") {
-    const query = new URLSearchParams({ format });
-    if (tab !== "inventory") {
-      query.set("from", from);
-      query.set("to", to);
-    }
-    await downloadApiFile(`/reports/${endpoint}/export?${query.toString()}`, `${filename}.${format}`);
-  }
-
-  async function downloadAdvancedReportExport(endpoint: string, filename: string, format: "csv" | "xlsx") {
-    const query = new URLSearchParams({ format, from, to });
-    await downloadApiFile(`/reports/${endpoint}/export?${query.toString()}`, `${filename}.${format}`);
-  }
-
-  async function downloadStockMovementExport(format: "csv" | "xlsx") {
-    await downloadApiFile(`/reports/stock-movement/export?${stockMovementQueryString(from, to, stockProductId, stockMovementType, format)}`, `stock-movement-${from}-${to}.${format}`);
-  }
-
-  async function downloadTallyExport() {
-    await downloadApiFile(`/reports/tally-export?from=${from}&to=${to}`, `tally-export-${from}-${to}.xml`);
-  }
+  const storeOptions = storesQuery.data ?? [];
+  const overview = overviewQuery.data;
+  const summary = summaryQuery.data;
+  const purchases = purchaseQuery.data;
+  const payments = paymentQuery.data;
+  const expenses = expenseQuery.data;
+  const inventory = inventoryQuery.data;
+  const pnl = pnlQuery.data;
+  const dayEnd = dayEndQuery.data;
+  const customers = customerSalesQuery.data;
+  const suppliers = supplierPurchasesQuery.data;
+  const aging = agingQuery.data;
+  const stockMovement = stockMovementQuery.data;
+  const comparison = comparisonQuery.data;
+  const stockProductResults = (stockProductSearchQuery.data?.data ?? []) as ProductLookup[];
 
   return (
     <div className="space-y-4">
-      {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-border">
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors ${tab === t.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-slate-500 hover:text-slate-700"}`}>
-            {t.label}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setTab(item.id)}
+            className={`whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors ${tab === item.id ? "border-b-2 border-emerald-600 text-emerald-700" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            {item.label}
           </button>
         ))}
       </div>
 
-      {/* Date range picker (shown for sales/pnl/gstr/dayend) */}
-      {tab !== "inventory" && tab !== "aging" && tab !== "comparison" && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            From <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
-          </label>
-          {[
-            { label: "Today", fn: () => { setFrom(todayStr()); setTo(todayStr()); } },
-            { label: "Last 7d", fn: () => { setFrom(weekAgoStr()); setTo(todayStr()); } },
-            { label: "This month", fn: () => { const d = new Date(); setFrom(`${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); setTo(todayStr()); } },
-          ].map((q) => (
-            <button key={q.label} onClick={q.fn} className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50">{q.label}</button>
-          ))}
-        </div>
-      )}
+      <ReportsToolbar
+        tab={tab}
+        from={from}
+        to={to}
+        storeId={storeId}
+        stores={storeOptions}
+        onFromChange={setFrom}
+        onToChange={setTo}
+        onStoreChange={setStoreId}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link href="/reports/payment-methods" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Payment statements</Link>
-        <Link href="/reports/settlements" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settlements</Link>
+        <Link href="/reports/payment-methods" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Payment statements
+        </Link>
+        <Link href="/reports/settlements" className="h-9 rounded-md border border-border px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Settlements
+        </Link>
+        {tab === "overview" ? (
+          <>
+            <ExportButton label="Overview CSV" onClick={() => void downloadReport("overview", from, to, storeId, "csv")} />
+            <ExportButton label="Overview Excel" onClick={() => void downloadReport("overview", from, to, storeId, "xlsx")} />
+          </>
+        ) : null}
         {tab === "sales" ? (
           <>
-            <ExportButton label="Summary CSV" onClick={() => void downloadReportExport("summary", `summary-${from}-${to}`, "csv")} />
-            <ExportButton label="Daily Excel" onClick={() => void downloadReportExport("daily-sales", `daily-sales-${from}-${to}`, "xlsx")} />
-            <ExportButton label="Moving items CSV" onClick={() => void downloadReportExport("moving-items", `moving-items-${from}-${to}`, "csv")} />
+            <ExportButton label="Summary CSV" onClick={() => void downloadReport("summary", from, to, storeId, "csv")} />
+            <ExportButton label="Daily Excel" onClick={() => void downloadReport("daily-sales", from, to, storeId, "xlsx")} />
+            <ExportButton label="Moving items CSV" onClick={() => void downloadReport("moving-items", from, to, storeId, "csv")} />
+          </>
+        ) : null}
+        {tab === "purchases" ? (
+          <>
+            <ExportButton label="Purchases CSV" onClick={() => void downloadReport("purchase-analytics", from, to, storeId, "csv")} />
+            <ExportButton label="Purchases Excel" onClick={() => void downloadReport("purchase-analytics", from, to, storeId, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "payments" ? (
+          <>
+            <ExportButton label="Payments CSV" onClick={() => void downloadReport("payment-analytics", from, to, storeId, "csv")} />
+            <ExportButton label="Payments Excel" onClick={() => void downloadReport("payment-analytics", from, to, storeId, "xlsx")} />
+          </>
+        ) : null}
+        {tab === "expenses" ? (
+          <>
+            <ExportButton label="Expenses CSV" onClick={() => void downloadReport("expense-analytics", from, to, storeId, "csv")} />
+            <ExportButton label="Expenses Excel" onClick={() => void downloadReport("expense-analytics", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "inventory" ? (
           <>
-            <ExportButton label="Inventory CSV" onClick={() => void downloadReportExport("inventory", "inventory", "csv")} />
-            <ExportButton label="Inventory Excel" onClick={() => void downloadReportExport("inventory", "inventory", "xlsx")} />
+            <ExportButton label="Inventory CSV" onClick={() => void downloadApiFile("/reports/inventory/export?format=csv", "inventory.csv")} />
+            <ExportButton label="Inventory Excel" onClick={() => void downloadApiFile("/reports/inventory/export?format=xlsx", "inventory.xlsx")} />
           </>
         ) : null}
-        {tab === "pnl" && canViewPnl ? (
+        {tab === "pnl" ? (
           <>
-            <ExportButton label="P&L CSV" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "csv")} />
-            <ExportButton label="P&L Excel" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "xlsx")} />
+            <ExportButton label="P&L CSV" onClick={() => void downloadReport("pnl", from, to, storeId, "csv")} />
+            <ExportButton label="P&L Excel" onClick={() => void downloadReport("pnl", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "gstr" ? (
           <>
-            <ExportButton label="GST CSV" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "csv")} />
-            <ExportButton label="GST Excel" onClick={() => void downloadReportExport("gst", `gst-${from}-${to}`, "xlsx")} />
+            <ExportButton label="GST CSV" onClick={() => void downloadReport("gst", from, to, storeId, "csv")} />
+            <ExportButton label="GST Excel" onClick={() => void downloadReport("gst", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "customers" ? (
           <>
-            <ExportButton label="Customer sales CSV" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "csv")} />
-            <ExportButton label="Customer sales Excel" onClick={() => void downloadAdvancedReportExport("customer-sales", `customer-sales-${from}-${to}`, "xlsx")} />
+            <ExportButton label="Customer CSV" onClick={() => void downloadReport("customer-sales", from, to, storeId, "csv")} />
+            <ExportButton label="Customer Excel" onClick={() => void downloadReport("customer-sales", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "suppliers" ? (
           <>
-            <ExportButton label="Supplier purchases CSV" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "csv")} />
-            <ExportButton label="Supplier purchases Excel" onClick={() => void downloadAdvancedReportExport("supplier-purchases", `supplier-purchases-${from}-${to}`, "xlsx")} />
+            <ExportButton label="Supplier CSV" onClick={() => void downloadReport("supplier-purchases", from, to, storeId, "csv")} />
+            <ExportButton label="Supplier Excel" onClick={() => void downloadReport("supplier-purchases", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "aging" ? (
           <>
-            <ExportButton label="Aging CSV" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "csv")} />
-            <ExportButton label="Aging Excel" onClick={() => void downloadAdvancedReportExport("outstanding-aging", "outstanding-aging", "xlsx")} />
+            <ExportButton label="Aging CSV" onClick={() => void downloadReport("outstanding-aging", from, to, storeId, "csv")} />
+            <ExportButton label="Aging Excel" onClick={() => void downloadReport("outstanding-aging", from, to, storeId, "xlsx")} />
           </>
         ) : null}
         {tab === "stock" ? (
-          <ExportButton label="Stock movement CSV" onClick={() => void downloadStockMovementExport("csv")} />
+          <ExportButton label="Stock CSV" onClick={() => void downloadApiFile(`/reports/stock-movement/export?${stockMovementQueryString(from, to, storeId, stockProductId, stockMovementType, "csv")}`, `stock-movement-${from}-${to}.csv`)} />
         ) : null}
         {tab === "tally" ? (
-          <ExportButton label="Download Tally XML" onClick={() => void downloadTallyExport()} />
+          <ExportButton label="Download XML" onClick={() => void downloadApiFile(`/reports/tally-export?${dateRangeQuery(from, to, storeId)}`, `tally-export-${from}-${to}.xml`)} />
         ) : null}
       </div>
 
-      {/* --- SALES TAB --- */}
-      {tab === "sales" && (
-        <>
-          <StatStrip items={[
-            { label: "Gross sales", value: money(summary?.grossSales ?? 0), tone: "emerald" },
-            ...(gstEnabled ? [{ label: "GST collected", value: money(summary?.totalGst ?? 0), tone: "blue" as const }] : []),
-            { label: "Invoices", value: String(summary?.invoiceCount ?? 0), tone: "slate" },
-            { label: "Avg bill", value: money(summary?.averageBillValue ?? 0), tone: "amber" },
-            { label: "Collected", value: money(summary?.paid ?? 0), tone: "emerald" },
-            { label: "Outstanding", value: money(summary?.due ?? 0), tone: "amber" },
-          ]} />
+      {tab === "overview" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Net sales", value: money(overview?.metrics.netSales ?? 0), tone: "emerald" },
+              { label: "Gross profit", value: money(overview?.metrics.grossProfit ?? 0), tone: "blue" },
+              { label: "Purchases", value: money(overview?.metrics.purchaseTotal ?? 0), tone: "amber" },
+              { label: "Collections", value: money(overview?.metrics.collections ?? 0), tone: "slate" },
+              { label: "Expenses", value: money(overview?.metrics.expenseTotal ?? 0), tone: "amber" },
+              { label: "Receivables", value: money(overview?.metrics.receivables ?? 0), tone: "slate" },
+              { label: "Supplier payables", value: money(overview?.metrics.supplierPayables ?? 0), tone: "amber" },
+              { label: "Stock value", value: money(overview?.metrics.stockValue ?? 0), tone: "blue" },
+            ]}
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ChartCard title="Revenue vs purchases vs expenses">
+              <LineChart data={mergeTrendSeries(overview)}>
+                <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Line type="monotone" dataKey="revenue" stroke="#059669" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="purchases" stroke="#2563eb" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="expenses" stroke="#f97316" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ChartCard>
+            <ChartCard title="Collections trend">
+              <BarChart data={(overview?.trends.collections ?? []).map((item) => ({ date: item.date.slice(5), value: item.value }))}>
+                <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Bar dataKey="value" fill="#1d4ed8" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ChartCard>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <SummaryList
+              title="Top products"
+              items={(overview?.topProducts ?? []).map((item) => `${item.productName} · ${item.quantitySold} units · ${money(item.totalSales)}`)}
+            />
+            <SummaryList
+              title="Top customers"
+              items={(overview?.topCustomers ?? []).map((item) => `${item.name} · ${money(item.revenue)} · due ${money(item.outstanding)}`)}
+            />
+            <SummaryList
+              title="Top suppliers"
+              items={(overview?.topSuppliers ?? []).map((item) => `${item.name} · ${money(item.purchased)} · due ${money(item.outstanding)}`)}
+            />
+          </div>
+          <TableShell title="Store breakdown" loading={overviewQuery.isLoading} empty={(overview?.storeBreakdown ?? []).length === 0}>
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Store</th>
+                  <th className="px-4 py-2 text-right font-medium">Invoices</th>
+                  <th className="px-4 py-2 text-right font-medium">Sales</th>
+                  <th className="px-4 py-2 text-right font-medium">Purchases</th>
+                  <th className="px-4 py-2 text-right font-medium">Expenses</th>
+                  <th className="px-4 py-2 text-right font-medium">Collections</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(overview?.storeBreakdown ?? []).map((row) => (
+                  <tr key={row.storeId}>
+                    <td className="px-4 py-2 font-medium">{row.storeName}</td>
+                    <td className="px-4 py-2 text-right">{row.invoices}</td>
+                    <td className="px-4 py-2 text-right">{money(row.sales)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.purchases)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.expenses)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.collections)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      ) : null}
+
+      {tab === "sales" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Gross sales", value: money(summary?.grossSales ?? 0), tone: "emerald" },
+              { label: "Net sales", value: money(summary?.netSales ?? 0), tone: "blue" },
+              { label: "Invoices", value: String(summary?.invoiceCount ?? 0), tone: "slate" },
+              { label: "Collected", value: money(summary?.paid ?? 0), tone: "amber" },
+            ]}
+          />
           <div className="grid gap-4 xl:grid-cols-2">
             <ChartCard title="Daily sales">
-              <LineChart data={salesData}>
+              <LineChart data={(summary?.dailySales ?? []).map((item) => ({ date: item.date.slice(5), sales: item.sales, invoices: item.invoices }))}>
                 <CartesianGrid stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} />
-                <Tooltip formatter={(v) => money(Number(v))} />
+                <Tooltip formatter={(value) => money(Number(value))} />
                 <Line type="monotone" dataKey="sales" stroke="#059669" strokeWidth={3} dot={false} />
                 <Line type="monotone" dataKey="invoices" stroke="#2563eb" strokeWidth={2} dot={false} />
               </LineChart>
             </ChartCard>
-            <ChartCard title="Stock by category">
-              <BarChart data={stockData}>
+            <SummaryList title="Fast-moving items" items={(summary?.movingItems ?? []).map((item) => `${item.productName} · ${item.quantitySold} units · ${money(item.totalSales)}`)} />
+          </div>
+        </div>
+      ) : null}
+
+      {tab === "purchases" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Received", value: money(purchases?.totalReceived ?? 0), tone: "blue" },
+              { label: "Paid", value: money(purchases?.totalPaid ?? 0), tone: "emerald" },
+              { label: "Outstanding", value: money(purchases?.totalOutstanding ?? 0), tone: "amber" },
+              { label: "Pending PO value", value: money(purchases?.pendingAmount ?? 0), tone: "slate" },
+            ]}
+          />
+          <ChartCard title="Daily purchases">
+            <BarChart data={(purchases?.dailyPurchases ?? []).map((item) => ({ date: item.date.slice(5), value: item.value }))}>
+              <CartesianGrid stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="date" tickLine={false} axisLine={false} />
+              <YAxis tickLine={false} axisLine={false} />
+              <Tooltip formatter={(value) => money(Number(value))} />
+              <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ChartCard>
+          <TableShell title="Supplier purchase analytics" loading={purchaseQuery.isLoading} empty={(purchases?.suppliers.data ?? []).length === 0}>
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Supplier</th>
+                  <th className="px-4 py-2 text-right font-medium">POs</th>
+                  <th className="px-4 py-2 text-right font-medium">Purchased</th>
+                  <th className="px-4 py-2 text-right font-medium">Returned</th>
+                  <th className="px-4 py-2 text-right font-medium">Paid</th>
+                  <th className="px-4 py-2 text-right font-medium">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(purchases?.suppliers.data ?? []).map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-2 font-medium">{row.name}</td>
+                    <td className="px-4 py-2 text-right">{row.purchaseOrders}</td>
+                    <td className="px-4 py-2 text-right">{money(row.totalPurchased)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.returned)}</td>
+                    <td className="px-4 py-2 text-right">{money(row.totalPaid)}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.outstanding)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      ) : null}
+
+      {tab === "payments" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Collections", value: money(payments?.collectionTotal ?? 0), tone: "emerald" },
+              { label: "Refunds", value: money(payments?.refundTotal ?? 0), tone: "amber" },
+              { label: "Net collection", value: money(payments?.netCollection ?? 0), tone: "blue" },
+              { label: "Outstanding due", value: money(payments?.outstandingDue ?? 0), tone: "slate" },
+            ]}
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ChartCard title="Daily collections">
+              <LineChart data={(payments?.dailyCollections ?? []).map((item) => ({ date: item.date.slice(5), value: item.value }))}>
                 <CartesianGrid stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="category" tickLine={false} axisLine={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Line type="monotone" dataKey="value" stroke="#1d4ed8" strokeWidth={3} dot={false} />
+              </LineChart>
+            </ChartCard>
+            <section className="rounded-md border border-border bg-white p-4">
+              <div className="mb-3 text-sm font-semibold text-slate-950">Settlement status</div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <MetricCard label="Draft" value={String(payments?.settlementSummary.draft ?? 0)} />
+                <MetricCard label="Reviewed" value={String(payments?.settlementSummary.reviewed ?? 0)} />
+                <MetricCard label="Settled" value={String(payments?.settlementSummary.settled ?? 0)} />
+              </div>
+            </section>
+          </div>
+          <TableShell title="Payment method mix" loading={paymentQuery.isLoading} empty={(payments?.methods.data ?? []).length === 0}>
+            <table className="w-full min-w-[680px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Method</th>
+                  <th className="px-4 py-2 text-right font-medium">Transactions</th>
+                  <th className="px-4 py-2 text-right font-medium">Collected</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(payments?.methods.data ?? []).map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-2 font-medium">{row.name}</td>
+                    <td className="px-4 py-2 text-right">{row.count}</td>
+                    <td className="px-4 py-2 text-right">{money(row.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      ) : null}
+
+      {tab === "expenses" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Total expenses", value: money(expenses?.totalExpenses ?? 0), tone: "amber" },
+              { label: "Entries", value: String(expenses?.expenseCount ?? 0), tone: "slate" },
+              { label: "Average expense", value: money(expenses?.averageExpense ?? 0), tone: "blue" },
+              { label: "Top category", value: expenses?.topCategories[0]?.category ?? "-", tone: "emerald" },
+            ]}
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <ChartCard title="Daily expenses">
+              <BarChart data={(expenses?.dailyExpenses ?? []).map((item) => ({ date: item.date.slice(5), value: item.value }))}>
+                <CartesianGrid stroke="#e2e8f0" vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                <YAxis tickLine={false} axisLine={false} />
+                <Tooltip formatter={(value) => money(Number(value))} />
+                <Bar dataKey="value" fill="#ea580c" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ChartCard>
-            <div className="rounded-md border border-border bg-white p-4 xl:col-span-2">
-              <div className="grid gap-4 md:grid-cols-3">
-                <ReportList title="Fast-moving items" items={(summary?.movingItems ?? []).slice(0, 8).map((i) => `${i.productName} — ${String(i.quantitySold)} units`)} />
-                {gstEnabled ? (
-                  <>
-                    <ReportList title="GST by rate" items={(summary?.gstByRate ?? []).map((i) => `${String(i.gstRate)}% -> ${money(i.totalGst)}`)} />
-                    <ReportList title="HSN summary" items={(summary?.hsnSummary ?? []).slice(0, 8).map((i) => `${i.hsnCode} - ${money(i.totalSales)}`)} />
-                  </>
-                ) : (
-                  <ReportList title="Non-GST sales" items={["GST reports are hidden because GST is disabled for this shop."]} />
-                )}
-              </div>
-            </div>
+            <SummaryList title="Top categories" items={(expenses?.topCategories ?? []).map((item) => `${item.category} · ${money(item.total)} · ${item.count} entries`)} />
           </div>
-        </>
-      )}
+          <TableShell title="Expense categories" loading={expenseQuery.isLoading} empty={(expenses?.categories.data ?? []).length === 0}>
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Category</th>
+                  <th className="px-4 py-2 text-right font-medium">Entries</th>
+                  <th className="px-4 py-2 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(expenses?.categories.data ?? []).map((row) => (
+                  <tr key={row.category}>
+                    <td className="px-4 py-2 font-medium">{row.category}</td>
+                    <td className="px-4 py-2 text-right">{row.count}</td>
+                    <td className="px-4 py-2 text-right">{money(row.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        </div>
+      ) : null}
 
-      {/* --- INVENTORY TAB --- */}
-      {tab === "inventory" && (
-        <>
-          <StatStrip items={[
-            { label: "Stock value", value: money(inventory?.stockValue ?? 0), tone: "blue" },
-            { label: "Low stock items", value: String(inventory?.lowStockCount ?? 0), tone: "amber" },
-          ]} />
+      {tab === "inventory" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Stock value", value: money(inventory?.stockValue ?? 0), tone: "blue" },
+              { label: "Low stock items", value: String(inventory?.lowStockCount ?? 0), tone: "amber" },
+              { label: "Categories", value: String(inventory?.stockByCategory.length ?? 0), tone: "slate" },
+              { label: "Top category", value: inventory?.stockByCategory[0]?.category ?? "-", tone: "emerald" },
+            ]}
+          />
           <ChartCard title="Stock by category">
-            <BarChart data={stockData}>
+            <BarChart data={(inventory?.stockByCategory ?? []).slice(0, 10).map((item) => ({ category: item.category, stock: item.stock }))}>
               <CartesianGrid stroke="#e2e8f0" vertical={false} />
               <XAxis dataKey="category" tickLine={false} axisLine={false} />
               <YAxis tickLine={false} axisLine={false} />
               <Tooltip />
-              <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="stock" fill="#1d4ed8" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartCard>
-        </>
-      )}
+        </div>
+      ) : null}
 
-      {/* --- P&L TAB --- */}
-      {canViewPnl && tab === "pnl" && (
-        <>
-          <StatStrip items={[
-            { label: "Revenue", value: money(pnl?.revenue ?? 0), tone: "emerald" },
-            { label: "COGS", value: money(pnl?.cost ?? 0), tone: "amber" },
-            { label: "Gross Profit", value: money(pnl?.grossProfit ?? 0), tone: "blue" },
-            { label: "Margin", value: `${(pnl?.grossMarginPct ?? 0).toFixed(1)}%`, tone: "slate" },
-          ]} />
-          <div className="rounded-md border border-border bg-white">
-            <div className="border-b border-border px-4 py-3 text-sm font-semibold text-slate-950">Product-level P&L</div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="bg-slate-50 text-xs text-slate-500">
-                  <tr>
-                    <th className="px-4 py-2 text-left font-medium">Product</th>
-                    <th className="px-4 py-2 text-right font-medium">Qty sold</th>
-                    <th className="px-4 py-2 text-right font-medium">Revenue</th>
-                    <th className="px-4 py-2 text-right font-medium">COGS</th>
-                    <th className="px-4 py-2 text-right font-medium">Profit</th>
-                    <th className="px-4 py-2 text-right font-medium">Margin</th>
+      {tab === "pnl" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Revenue", value: money(pnl?.revenue ?? 0), tone: "emerald" },
+              { label: "Cost", value: money(pnl?.cost ?? 0), tone: "amber" },
+              { label: "Gross profit", value: money(pnl?.grossProfit ?? 0), tone: "blue" },
+              { label: "Margin", value: `${(pnl?.grossMarginPct ?? 0).toFixed(1)}%`, tone: "slate" },
+            ]}
+          />
+          <TableShell title="Product profitability" loading={pnlQuery.isLoading} empty={(pnl?.items ?? []).length === 0}>
+            <table className="w-full min-w-[840px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Product</th>
+                  <th className="px-4 py-2 text-right font-medium">Qty</th>
+                  <th className="px-4 py-2 text-right font-medium">Revenue</th>
+                  <th className="px-4 py-2 text-right font-medium">Cost</th>
+                  <th className="px-4 py-2 text-right font-medium">Profit</th>
+                  <th className="px-4 py-2 text-right font-medium">Margin</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(pnl?.items ?? []).map((item) => (
+                  <tr key={item.productName}>
+                    <td className="px-4 py-2 font-medium">{item.productName}</td>
+                    <td className="px-4 py-2 text-right">{item.quantitySold}</td>
+                    <td className="px-4 py-2 text-right">{money(item.revenue)}</td>
+                    <td className="px-4 py-2 text-right">{money(item.cost)}</td>
+                    <td className="px-4 py-2 text-right">{money(item.profit)}</td>
+                    <td className="px-4 py-2 text-right">{item.marginPct.toFixed(1)}%</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {(pnl?.items ?? []).map((item) => (
-                    <tr key={item.productName}>
-                      <td className="px-4 py-2 font-medium">{item.productName}</td>
-                      <td className="px-4 py-2 text-right">{item.quantitySold}</td>
-                      <td className="px-4 py-2 text-right">{money(item.revenue)}</td>
-                      <td className="px-4 py-2 text-right text-amber-700">{money(item.cost)}</td>
-                      <td className="px-4 py-2 text-right text-emerald-700">{money(item.profit)}</td>
-                      <td className="px-4 py-2 text-right">{item.marginPct.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* --- GSTR TAB --- */}
-      {tab === "gstr" && (
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <button onClick={exportGstr1} disabled={!summary} className="h-10 rounded-md bg-emerald-600 px-5 text-sm font-medium text-white disabled:opacity-40">
-              Export GSTR-1 (CSV)
-            </button>
-            <button onClick={exportGstr3b} disabled={!summary} className="h-10 rounded-md border border-border px-5 text-sm font-medium text-slate-700 disabled:opacity-40">
-              Export GSTR-3B (CSV)
-            </button>
-          </div>
-          {summary && (
-            <div className="rounded-md border border-border bg-white">
-              <div className="border-b border-border px-4 py-3 text-sm font-semibold">GSTR-1 — HSN-wise summary ({from} to {to})</div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium">HSN Code</th>
-                      <th className="px-4 py-2 text-right font-medium">Taxable Value</th>
-                      <th className="px-4 py-2 text-right font-medium">CGST</th>
-                      <th className="px-4 py-2 text-right font-medium">SGST</th>
-                      <th className="px-4 py-2 text-right font-medium">Total GST</th>
-                      <th className="px-4 py-2 text-right font-medium">Total Sales</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {summary.hsnSummary.map((h) => (
-                      <tr key={h.hsnCode}>
-                        <td className="px-4 py-2 font-mono">{h.hsnCode}</td>
-                        <td className="px-4 py-2 text-right">{money(h.taxableValue)}</td>
-                        <td className="px-4 py-2 text-right">{money(summary.totalCgst)}</td>
-                        <td className="px-4 py-2 text-right">{money(summary.totalSgst)}</td>
-                        <td className="px-4 py-2 text-right">{money(h.totalGst)}</td>
-                        <td className="px-4 py-2 text-right font-medium">{money(h.totalSales)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="border-t border-border px-4 py-3 text-sm font-semibold">GSTR-3B — GST rate-wise summary</div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px] text-sm">
-                  <thead className="bg-slate-50 text-xs text-slate-500">
-                    <tr>
-                      <th className="px-4 py-2 text-left font-medium">GST Rate</th>
-                      <th className="px-4 py-2 text-right font-medium">Taxable Value</th>
-                      <th className="px-4 py-2 text-right font-medium">CGST</th>
-                      <th className="px-4 py-2 text-right font-medium">SGST</th>
-                      <th className="px-4 py-2 text-right font-medium">Total GST</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {summary.gstByRate.map((g) => (
-                      <tr key={g.gstRate}>
-                        <td className="px-4 py-2">{g.gstRate}%</td>
-                        <td className="px-4 py-2 text-right">{money(g.taxableValue)}</td>
-                        <td className="px-4 py-2 text-right">{money(g.cgst)}</td>
-                        <td className="px-4 py-2 text-right">{money(g.sgst)}</td>
-                        <td className="px-4 py-2 text-right font-medium">{money(g.totalGst)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* --- DAY-END TAB --- */}
-      {tab === "dayend" && (
-        <div className="space-y-4">
-          <div className="rounded-md border border-border bg-white p-5">
-            <h2 className="mb-4 text-sm font-semibold text-slate-950">Day-end closing — {to}</h2>
-            {dayEnd ? (
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-                {[
-                  { label: "Cash sales", value: money(dayEnd.salesCash) },
-                  { label: "UPI sales", value: money(dayEnd.salesUpi) },
-                  { label: "Card sales", value: money(dayEnd.salesCard) },
-                  { label: "Credit sales", value: money(dayEnd.salesCredit) },
-                  { label: "Total collection", value: money(dayEnd.totalCollection) },
-                  { label: "Invoices raised", value: String(dayEnd.invoiceCount) },
-                  { label: "Refunds", value: money(dayEnd.refunds) },
-                  { label: "Closing cash", value: money(dayEnd.closingCash) },
-                ].map((row) => (
-                  <div key={row.label} className="rounded-md border border-border p-3">
-                    <div className="text-xs text-slate-500">{row.label}</div>
-                    <div className="mt-1 text-lg font-bold text-slate-950">{row.value}</div>
-                  </div>
                 ))}
-              </div>
-            ) : (
-              <p className="text-sm text-slate-400">No data for selected date.</p>
-            )}
-          </div>
+              </tbody>
+            </table>
+          </TableShell>
         </div>
-      )}
+      ) : null}
 
-      {tab === "customers" && (
-        <TableShell title="Customer sales" loading={customerSalesQuery.isLoading} empty={(customerSales?.data ?? []).length === 0}>
+      {tab === "gstr" ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SummaryList title="GST by rate" items={(summary?.gstByRate ?? []).map((item) => `${item.gstRate}% · ${money(item.totalGst)} · taxable ${money(item.taxableValue)}`)} />
+          <SummaryList title="HSN summary" items={(summary?.hsnSummary ?? []).map((item) => `${item.hsnCode} · ${money(item.totalSales)} · GST ${money(item.totalGst)}`)} />
+        </div>
+      ) : null}
+
+      {tab === "dayend" ? (
+        <div className="space-y-4">
+          <StatStrip
+            items={[
+              { label: "Cash", value: money(dayEnd?.salesCash ?? 0), tone: "emerald" },
+              { label: "UPI", value: money(dayEnd?.salesUpi ?? 0), tone: "blue" },
+              { label: "Card", value: money(dayEnd?.salesCard ?? 0), tone: "slate" },
+              { label: "Closing cash", value: money(dayEnd?.closingCash ?? 0), tone: "amber" },
+            ]}
+          />
+          <SummaryList title="Payment methods" items={(dayEnd?.paymentMethods ?? []).map((item) => `${item.name} · ${money(item.total)} · ${item.count} txns`)} />
+        </div>
+      ) : null}
+
+      {tab === "customers" ? (
+        <TableShell title="Customer sales" loading={customerSalesQuery.isLoading} empty={(customers?.data ?? []).length === 0}>
           <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
@@ -592,58 +888,24 @@ export function ReportsDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {(customerSales?.data ?? []).map((row) => (
-                <Fragment key={row.id}>
-                  <tr className="cursor-pointer hover:bg-slate-50" onClick={() => setExpandedCustomerId((current) => current === row.id ? null : row.id)}>
-                    <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
-                    <td className="px-4 py-2 text-right">{row.invoiceCount}</td>
-                    <td className="px-4 py-2 text-right">{money(row.totalRevenue)}</td>
-                    <td className="px-4 py-2 text-right">{money(row.totalPaid)}</td>
-                    <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.outstanding)}</td>
-                    <td className="px-4 py-2 text-right">{row.lastPurchaseDate ? new Date(row.lastPurchaseDate).toLocaleDateString("en-IN") : "-"}</td>
-                  </tr>
-                  {expandedCustomerId === row.id ? (
-                    <tr className="bg-slate-50">
-                      <td colSpan={6} className="px-4 py-3">
-                        <div className="overflow-x-auto rounded-md border border-border bg-white">
-                          <table className="w-full min-w-[620px] text-xs">
-                            <thead className="bg-slate-50 text-slate-500">
-                              <tr>
-                                <th className="px-3 py-2 text-left font-medium">Invoice</th>
-                                <th className="px-3 py-2 text-left font-medium">Date</th>
-                                <th className="px-3 py-2 text-left font-medium">Status</th>
-                                <th className="px-3 py-2 text-right font-medium">Total</th>
-                                <th className="px-3 py-2 text-right font-medium">Paid</th>
-                                <th className="px-3 py-2 text-right font-medium">Due</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                              {row.invoices.map((invoice) => (
-                                <tr key={invoice.id}>
-                                  <td className="px-3 py-2 font-mono">{invoice.invoiceNumber}</td>
-                                  <td className="px-3 py-2">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</td>
-                                  <td className="px-3 py-2">{invoice.status}</td>
-                                  <td className="px-3 py-2 text-right">{money(invoice.grandTotal)}</td>
-                                  <td className="px-3 py-2 text-right">{money(invoice.amountPaid)}</td>
-                                  <td className="px-3 py-2 text-right font-semibold text-amber-700">{money(invoice.amountDue)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
+              {(customers?.data ?? []).map((row) => (
+                <tr key={row.id}>
+                  <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
+                  <td className="px-4 py-2 text-right">{row.invoiceCount}</td>
+                  <td className="px-4 py-2 text-right">{money(row.totalRevenue)}</td>
+                  <td className="px-4 py-2 text-right">{money(row.totalPaid)}</td>
+                  <td className="px-4 py-2 text-right font-semibold text-amber-700">{money(row.outstanding)}</td>
+                  <td className="px-4 py-2 text-right">{row.lastPurchaseDate ? new Date(row.lastPurchaseDate).toLocaleDateString("en-IN") : "-"}</td>
+                </tr>
               ))}
             </tbody>
           </table>
         </TableShell>
-      )}
+      ) : null}
 
-      {tab === "suppliers" && (
-        <TableShell title="Supplier purchases" loading={supplierPurchasesQuery.isLoading} empty={(supplierPurchases?.data ?? []).length === 0}>
-          <table className="w-full min-w-[680px] text-sm">
+      {tab === "suppliers" ? (
+        <TableShell title="Supplier purchases" loading={supplierPurchasesQuery.isLoading} empty={(suppliers?.data ?? []).length === 0}>
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-slate-50 text-xs text-slate-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Supplier</th>
@@ -654,7 +916,7 @@ export function ReportsDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {(supplierPurchases?.data ?? []).map((row) => (
+              {(suppliers?.data ?? []).map((row) => (
                 <tr key={row.id}>
                   <td className="px-4 py-2"><span className="font-medium">{row.name}</span><span className="block text-xs text-slate-400">{row.phone}</span></td>
                   <td className="px-4 py-2 text-right">{row.poCount}</td>
@@ -666,42 +928,17 @@ export function ReportsDashboard() {
             </tbody>
           </table>
         </TableShell>
-      )}
+      ) : null}
 
-      {tab === "aging" && (
+      {tab === "aging" ? (
         <div className="space-y-4">
-          <section className="rounded-md border border-border bg-white p-4">
-            <div className="mb-3 text-sm font-semibold text-slate-950">Outstanding breakdown</div>
-            <div className="flex h-4 overflow-hidden rounded-full bg-slate-100">
-              {(aging?.buckets ?? []).map((bucket, index) => (
-                <div
-                  key={bucket.bucket}
-                  className={agingBucketBarClass(index)}
-                  style={{ width: `${String(agingBucketWidth(bucket.totalOutstanding, aging?.buckets ?? []))}%` }}
-                  title={`${bucket.bucket} days: ${money(bucket.totalOutstanding)}`}
-                />
-              ))}
-            </div>
-            <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
-              {(aging?.buckets ?? []).map((bucket, index) => (
-                <div key={bucket.bucket} className="flex items-center gap-2">
-                  <span className={`size-2 rounded-full ${agingBucketDotClass(index)}`} />
-                  <span>{bucket.bucket} days · {money(bucket.totalOutstanding)}</span>
-                </div>
-              ))}
-            </div>
-          </section>
           <div className="grid gap-3 md:grid-cols-4">
             {(aging?.buckets ?? []).map((bucket) => (
-              <div key={bucket.bucket} className="rounded-md border border-border bg-white p-4">
-                <div className="text-xs text-slate-500">{bucket.bucket} days</div>
-                <div className="mt-1 text-xl font-bold text-slate-950">{money(bucket.totalOutstanding)}</div>
-                <div className="text-xs text-slate-400">{bucket.customerCount} customers</div>
-              </div>
+              <MetricCard key={bucket.bucket} label={`${bucket.bucket} days`} value={`${money(bucket.totalOutstanding)} · ${bucket.customerCount} customers`} />
             ))}
           </div>
           <TableShell title="Outstanding aging" loading={agingQuery.isLoading} empty={(aging?.customers ?? []).length === 0}>
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-slate-50 text-xs text-slate-500">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium">Customer</th>
@@ -725,9 +962,9 @@ export function ReportsDashboard() {
             </table>
           </TableShell>
         </div>
-      )}
+      ) : null}
 
-      {tab === "stock" && (
+      {tab === "stock" ? (
         <div className="space-y-4">
           <section className="rounded-md border border-border bg-white p-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto]">
@@ -744,13 +981,18 @@ export function ReportsDashboard() {
                   placeholder="Search product name, SKU, or barcode"
                   className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
                 />
-                {stockProductSearch.trim() && stockProductResults.length > 0 ? (
+                {deferredStockSearch && stockProductResults.length > 0 ? (
                   <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-white shadow-lg">
                     {stockProductResults.map((product) => (
-                      <button key={product.id} type="button" className="block w-full px-3 py-2 text-left text-sm hover:bg-emerald-50" onClick={() => {
-                        setStockProductId(product.id);
-                        setStockProductSearch(product.name);
-                      }}>
+                      <button
+                        key={product.id}
+                        type="button"
+                        className="block w-full px-3 py-2 text-left text-sm hover:bg-emerald-50"
+                        onClick={() => {
+                          setStockProductId(product.id);
+                          setStockProductSearch(product.name);
+                        }}
+                      >
                         <span className="font-medium text-slate-900">{product.name}</span>
                         <span className="ml-2 text-xs text-slate-400">{product.barcode ?? product.sku ?? ""}</span>
                       </button>
@@ -768,11 +1010,15 @@ export function ReportsDashboard() {
                   <option value="adjustment">Adjustment</option>
                 </select>
               </label>
-              <button type="button" className="h-10 self-end rounded-md border border-border px-3 text-sm font-medium text-slate-700 hover:bg-slate-50" onClick={() => {
-                setStockProductSearch("");
-                setStockProductId("");
-                setStockMovementType("");
-              }}>
+              <button
+                type="button"
+                className="h-10 self-end rounded-md border border-border px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setStockProductSearch("");
+                  setStockProductId("");
+                  setStockMovementType("");
+                }}
+              >
                 Clear filters
               </button>
             </div>
@@ -791,7 +1037,7 @@ export function ReportsDashboard() {
               </thead>
               <tbody className="divide-y divide-border">
                 {(stockMovement?.data ?? []).map((row, index) => (
-                  <tr key={`${row.productId}-${row.date}-${row.reference}-${String(index)}`}>
+                  <tr key={`${row.productId}-${row.reference}-${row.date}-${index}`}>
                     <td className="px-4 py-2">{new Date(row.date).toLocaleString("en-IN")}</td>
                     <td className="px-4 py-2 font-medium">{row.productName}</td>
                     <td className="px-4 py-2 capitalize">{row.type}</td>
@@ -804,15 +1050,15 @@ export function ReportsDashboard() {
             </table>
           </TableShell>
         </div>
-      )}
+      ) : null}
 
-      {tab === "comparison" && (
+      {tab === "comparison" ? (
         <div className="space-y-4">
           <section className="rounded-md border border-border bg-white p-4">
             <div className="grid gap-3 md:grid-cols-4">
               <label className="text-xs font-medium text-slate-500">
                 Metric
-                <select value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as ComparisonReport["metric"])} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
+                <select value={comparisonMetric} onChange={(event) => setComparisonMetric(event.target.value as ComparisonMetric)} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
                   <option value="revenue">Revenue</option>
                   <option value="invoices">Invoices</option>
                   <option value="customers">New customers</option>
@@ -821,7 +1067,7 @@ export function ReportsDashboard() {
               </label>
               <label className="text-xs font-medium text-slate-500">
                 Period
-                <select value={comparisonPeriod} onChange={(event) => setComparisonPeriod(event.target.value as ComparisonReport["period"])} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
+                <select value={comparisonPeriod} onChange={(event) => setComparisonPeriod(event.target.value as ComparisonPeriod)} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm">
                   <option value="monthly">Monthly</option>
                   <option value="weekly">Weekly</option>
                 </select>
@@ -835,7 +1081,6 @@ export function ReportsDashboard() {
                 <input type="number" value={comparisonYear2} onChange={(event) => setComparisonYear2(Number(event.target.value))} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
               </label>
             </div>
-            {comparisonYear1 === comparisonYear2 ? <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Select two different years.</div> : null}
           </section>
           <TableShell title="Year comparison" loading={comparisonQuery.isLoading} empty={(comparison?.rows ?? []).length === 0}>
             <table className="w-full min-w-[640px] text-sm">
@@ -853,34 +1098,99 @@ export function ReportsDashboard() {
                     <td className="px-4 py-2 font-medium">{comparisonPeriod === "monthly" ? monthName(row.period) : row.period}</td>
                     <td className="px-4 py-2 text-right">{formatComparisonValue(comparisonMetric, row.year1Value)}</td>
                     <td className="px-4 py-2 text-right">{formatComparisonValue(comparisonMetric, row.year2Value)}</td>
-                    <td className="px-4 py-2 text-right">
-                      <span className={`rounded-full px-2 py-1 text-xs font-semibold ${comparisonBadgeClass(row.changePct)}`}>
-                        {row.changePct === null ? "New" : `${row.changePct >= 0 ? "+" : ""}${row.changePct.toFixed(1)}%`}
-                      </span>
-                    </td>
+                    <td className="px-4 py-2 text-right">{row.changePct == null ? "New" : `${row.changePct >= 0 ? "+" : ""}${row.changePct.toFixed(1)}%`}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </TableShell>
         </div>
-      )}
+      ) : null}
 
-      {tab === "tally" && (
+      {tab === "tally" ? (
         <section className="rounded-md border border-border bg-white p-5">
           <h2 className="text-base font-semibold text-slate-950">Tally Prime XML export</h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Downloads sales vouchers for confirmed invoices, purchase vouchers for received purchase orders, and payment vouchers for expenses in the selected date range.
+            Downloads sales, purchase, and expense vouchers for the selected period.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <MetricCard label="From" value={from} />
             <MetricCard label="To" value={to} />
-            <button type="button" className="h-full min-h-20 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white" onClick={() => void downloadTallyExport()}>
+            <button type="button" className="h-full min-h-20 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white" onClick={() => void downloadApiFile(`/reports/tally-export?${dateRangeQuery(from, to, storeId)}`, `tally-export-${from}-${to}.xml`)}>
               Download XML
             </button>
           </div>
         </section>
-      )}
+      ) : null}
+    </div>
+  );
+}
+
+function ReportsToolbar({
+  tab,
+  from,
+  to,
+  storeId,
+  stores,
+  onFromChange,
+  onToChange,
+  onStoreChange,
+}: Readonly<{
+  tab: Tab;
+  from: string;
+  to: string;
+  storeId: string;
+  stores: StoreOption[];
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+  onStoreChange: (value: string) => void;
+}>) {
+  const hideDateFilter = tab === "inventory" || tab === "aging" || tab === "comparison";
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      {!hideDateFilter ? (
+        <>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            From
+            <input type="date" value={from} onChange={(event) => onFromChange(event.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            To
+            <input type="date" value={to} onChange={(event) => onToChange(event.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
+          </label>
+          <button type="button" className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50" onClick={() => {
+            onFromChange(isoToday());
+            onToChange(isoToday());
+          }}>
+            Today
+          </button>
+          <button type="button" className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50" onClick={() => {
+            onFromChange(isoDaysAgo(6));
+            onToChange(isoToday());
+          }}>
+            Last 7d
+          </button>
+          <button type="button" className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50" onClick={() => {
+            const now = new Date();
+            onFromChange(`${String(now.getFullYear())}-${String(now.getMonth() + 1).padStart(2, "0")}-01`);
+            onToChange(isoToday());
+          }}>
+            This month
+          </button>
+        </>
+      ) : null}
+      {stores.length > 1 ? (
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          Store
+          <select value={storeId} onChange={(event) => onStoreChange(event.target.value)} className="h-9 rounded-md border border-border bg-white px-3 text-sm">
+            <option value="">All stores</option>
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>{store.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -890,44 +1200,28 @@ function ChartCard({ title, children }: Readonly<{ title: string; children: Reac
     <section className="rounded-md border border-border bg-white p-4">
       <div className="mb-4 text-sm font-semibold text-slate-950">{title}</div>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">{children as React.ReactElement}</ResponsiveContainer>
+        <ResponsiveContainer width="100%" height="100%">
+          {children as React.ReactElement}
+        </ResponsiveContainer>
       </div>
     </section>
   );
 }
 
-function ReportList({ title, items }: Readonly<{ title: string; items: string[] }>) {
+function SummaryList({ title, items }: Readonly<{ title: string; items: string[] }>) {
   return (
-    <div>
-      <div className="mb-2 text-sm font-semibold text-slate-950">{title}</div>
-      <div className="space-y-1">
-        {items.length > 0
-          ? items.map((item) => <div key={item} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{item}</div>)
-          : <div className="text-sm text-slate-400">No data yet</div>}
+    <section className="rounded-md border border-border bg-white p-4">
+      <div className="mb-3 text-sm font-semibold text-slate-950">{title}</div>
+      <div className="space-y-2">
+        {items.length > 0 ? items.map((item) => (
+          <div key={item} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {item}
+          </div>
+        )) : (
+          <div className="text-sm text-slate-400">No data yet.</div>
+        )}
       </div>
-    </div>
-  );
-}
-
-function ExportButton({ label, onClick, disabled = false }: Readonly<{ label: string; onClick: () => void; disabled?: boolean }>) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="h-9 rounded-md border border-border px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {label}
-    </button>
-  );
-}
-
-function MetricCard({ label, value }: Readonly<{ label: string; value: string }>) {
-  return (
-    <div className="rounded-md border border-border p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 text-lg font-bold text-slate-950">{value}</div>
-    </div>
+    </section>
   );
 }
 
@@ -955,12 +1249,73 @@ function TableShell({
   );
 }
 
-function money(v: number) {
-  return `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+function ExportButton({ label, onClick }: Readonly<{ label: string; onClick: () => void }>) {
+  return (
+    <button type="button" onClick={onClick} className="h-9 rounded-md border border-border px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+      {label}
+    </button>
+  );
 }
 
-function stockMovementQueryString(from: string, to: string, productId: string, type: string, format?: "csv" | "xlsx"): string {
+function MetricCard({ label, value }: Readonly<{ label: string; value: string }>) {
+  return (
+    <div className="rounded-md border border-border bg-white p-4">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="mt-1 text-lg font-bold text-slate-950">{value}</div>
+    </div>
+  );
+}
+
+function mergeTrendSeries(overview: OverviewReport | undefined) {
+  if (!overview) {
+    return [];
+  }
+
+  const rows = new Map<string, { date: string; revenue: number; purchases: number; expenses: number }>();
+  for (const item of overview.trends.revenue) {
+    rows.set(item.date, { date: item.date.slice(5), revenue: item.value, purchases: 0, expenses: 0 });
+  }
+  for (const item of overview.trends.purchases) {
+    const current = rows.get(item.date) ?? { date: item.date.slice(5), revenue: 0, purchases: 0, expenses: 0 };
+    current.purchases = item.value;
+    rows.set(item.date, current);
+  }
+  for (const item of overview.trends.expenses) {
+    const current = rows.get(item.date) ?? { date: item.date.slice(5), revenue: 0, purchases: 0, expenses: 0 };
+    current.expenses = item.value;
+    rows.set(item.date, current);
+  }
+  return [...rows.values()];
+}
+
+function dateRangeQuery(from: string, to: string, storeId: string, extra: Record<string, string> = {}) {
+  const query = new URLSearchParams({ from, to, ...extra });
+  if (storeId) {
+    query.set("storeId", storeId);
+  }
+  return query.toString();
+}
+
+function optionalStoreQuery(storeId: string) {
+  const query = new URLSearchParams();
+  if (storeId) {
+    query.set("storeId", storeId);
+  }
+  return query.toString();
+}
+
+function stockMovementQueryString(
+  from: string,
+  to: string,
+  storeId: string,
+  productId: string,
+  type: string,
+  format?: "csv" | "xlsx",
+) {
   const query = new URLSearchParams({ from, to, limit: "50" });
+  if (storeId) {
+    query.set("storeId", storeId);
+  }
   if (productId) {
     query.set("productId", productId);
   }
@@ -973,21 +1328,31 @@ function stockMovementQueryString(from: string, to: string, productId: string, t
   return query.toString();
 }
 
-function agingBucketWidth(value: number, buckets: Array<{ totalOutstanding: number }>): number {
-  const total = buckets.reduce((sum, bucket) => sum + bucket.totalOutstanding, 0);
-  if (total <= 0) {
-    return buckets.length > 0 ? 100 / buckets.length : 0;
+function comparisonQueryString(
+  metric: ComparisonMetric,
+  period: ComparisonPeriod,
+  year1: number,
+  year2: number,
+  storeId: string,
+) {
+  const query = new URLSearchParams({
+    metric,
+    period,
+    year1: String(year1),
+    year2: String(year2),
+  });
+  if (storeId) {
+    query.set("storeId", storeId);
   }
-
-  return Math.max((value / total) * 100, value > 0 ? 4 : 0);
+  return query.toString();
 }
 
-function agingBucketBarClass(index: number): string {
-  return ["bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-red-500"][index] ?? "bg-slate-300";
+async function downloadReport(endpoint: string, from: string, to: string, storeId: string, format: "csv" | "xlsx") {
+  await downloadApiFile(`/reports/${endpoint}/export?${dateRangeQuery(from, to, storeId, { format })}`, `${endpoint}-${from}-${to}.${format}`);
 }
 
-function agingBucketDotClass(index: number): string {
-  return ["bg-emerald-500", "bg-amber-400", "bg-orange-500", "bg-red-500"][index] ?? "bg-slate-300";
+function money(value: number) {
+  return `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
 
 function monthName(value: string): string {
@@ -995,22 +1360,12 @@ function monthName(value: string): string {
   if (!Number.isFinite(month) || month < 1 || month > 12) {
     return value;
   }
-
   return new Date(Date.UTC(2026, month - 1, 1)).toLocaleString("en-IN", { month: "short" });
 }
 
-function formatComparisonValue(metric: ComparisonReport["metric"], value: number): string {
+function formatComparisonValue(metric: ComparisonMetric, value: number): string {
   if (metric === "revenue" || metric === "expenses") {
     return money(value);
   }
-
   return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
-}
-
-function comparisonBadgeClass(value: number | null): string {
-  if (value === null) {
-    return "bg-blue-50 text-blue-700";
-  }
-
-  return value >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700";
 }

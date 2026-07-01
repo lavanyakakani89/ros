@@ -49,7 +49,6 @@ export type Permission = typeof Permission[keyof typeof Permission];
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   OWNER: Object.values(Permission),
   MANAGER: Object.values(Permission).filter((permission) => !(new Set<Permission>([
-    Permission.REPORTS_FINANCIAL,
     Permission.SETTINGS_EDIT_PROFILE,
     Permission.WHATSAPP_SETUP,
   ])).has(permission)),

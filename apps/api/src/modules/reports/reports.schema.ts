@@ -63,6 +63,31 @@ export const outstandingSummaryQuerySchema = z.object({
   storeId: z.string().trim().min(1).optional(),
 });
 
+export const overviewReportQuerySchema = reportDateRangeSchema;
+
+export const overviewReportExportQuerySchema = reportExportQuerySchema;
+
+export const purchaseAnalyticsQuerySchema = reportDateRangeSchema.extend({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(25),
+});
+
+export const purchaseAnalyticsExportQuerySchema = reportExportQuerySchema;
+
+export const paymentAnalyticsQuerySchema = reportDateRangeSchema.extend({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(25),
+});
+
+export const paymentAnalyticsExportQuerySchema = reportExportQuerySchema;
+
+export const expenseAnalyticsQuerySchema = reportDateRangeSchema.extend({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(25),
+});
+
+export const expenseAnalyticsExportQuerySchema = reportExportQuerySchema;
+
 export type ReportDateRange = z.infer<typeof reportDateRangeSchema>;
 export type ReportExportQuery = z.infer<typeof reportExportQuerySchema>;
 export type CustomerSalesReportQuery = z.infer<typeof customerSalesReportQuerySchema>;
@@ -75,3 +100,11 @@ export type ComparisonReportQuery = z.infer<typeof comparisonReportQuerySchema>;
 export type TallyExportQuery = z.infer<typeof tallyExportQuerySchema>;
 export type SparklineReportQuery = z.infer<typeof sparklineReportQuerySchema>;
 export type OutstandingSummaryQuery = z.infer<typeof outstandingSummaryQuerySchema>;
+export type OverviewReportQuery = z.infer<typeof overviewReportQuerySchema>;
+export type OverviewReportExportQuery = z.infer<typeof overviewReportExportQuerySchema>;
+export type PurchaseAnalyticsQuery = z.infer<typeof purchaseAnalyticsQuerySchema>;
+export type PurchaseAnalyticsExportQuery = z.infer<typeof purchaseAnalyticsExportQuerySchema>;
+export type PaymentAnalyticsQuery = z.infer<typeof paymentAnalyticsQuerySchema>;
+export type PaymentAnalyticsExportQuery = z.infer<typeof paymentAnalyticsExportQuerySchema>;
+export type ExpenseAnalyticsQuery = z.infer<typeof expenseAnalyticsQuerySchema>;
+export type ExpenseAnalyticsExportQuery = z.infer<typeof expenseAnalyticsExportQuerySchema>;

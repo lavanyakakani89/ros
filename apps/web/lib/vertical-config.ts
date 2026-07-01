@@ -23,6 +23,21 @@ function getStorage(): Storage | null {
   }
 }
 
+function readStoredJson<T>(key: string): T | null {
+  const storage = getStorage();
+  const raw = storage?.getItem(key);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    storage?.removeItem(key);
+    return null;
+  }
+}
+
 export function storeAuthSession(input: StoredAuthSession) {
   const safeSession = toSafeAuthSession(input);
   authSessionMemory = safeSession;
@@ -34,8 +49,7 @@ export function hasStoredAuthSession(): boolean {
     return true;
   }
 
-  const raw = getStorage()?.getItem(authStorageKey);
-  return Boolean(raw);
+  return Boolean(readStoredJson<StoredAuthSession>(authStorageKey));
 }
 
 export function getStoredAuthSession(): StoredAuthSession | null {
@@ -43,16 +57,13 @@ export function getStoredAuthSession(): StoredAuthSession | null {
     return authSessionMemory;
   }
 
-  const raw = getStorage()?.getItem(authStorageKey);
-  if (!raw) {
+  const storedSession = readStoredJson<StoredAuthSession>(authStorageKey);
+  if (!storedSession) {
     return null;
   }
 
-  try {
-    return toSafeAuthSession(JSON.parse(raw) as StoredAuthSession);
-  } catch {
-    return null;
-  }
+  authSessionMemory = toSafeAuthSession(storedSession);
+  return authSessionMemory;
 }
 
 export function clearStoredSession() {
@@ -68,19 +79,34 @@ export function clearStoredSession() {
 
 export function storeTenant(tenant: StoredTenant) {
   tenantMemory = tenant;
-  getStorage()?.removeItem(tenantStorageKey);
+  getStorage()?.setItem(tenantStorageKey, JSON.stringify(tenant));
 }
 
 export function getStoredTenant(): StoredTenant | null {
+  if (tenantMemory) {
+    return tenantMemory;
+  }
+
+  const storedTenant = readStoredJson<StoredTenant>(tenantStorageKey);
+  if (!storedTenant?.name) {
+    return null;
+  }
+
+  tenantMemory = storedTenant;
   return tenantMemory;
 }
 
 export function storeVerticalConfig(config: VerticalConfig) {
   verticalConfigMemory = config;
-  getStorage()?.removeItem(verticalConfigStorageKey);
+  getStorage()?.setItem(verticalConfigStorageKey, JSON.stringify(config));
 }
 
 export function getStoredVerticalConfig(): VerticalConfig | null {
+  if (verticalConfigMemory) {
+    return verticalConfigMemory;
+  }
+
+  verticalConfigMemory = readStoredJson<VerticalConfig>(verticalConfigStorageKey);
   return verticalConfigMemory;
 }
 

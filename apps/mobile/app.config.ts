@@ -43,7 +43,7 @@ const config: ExpoConfig = {
     eas: { projectId: process.env.EAS_PROJECT_ID ?? "d1ce757f-7cab-47cb-bcb2-5eb0eb8b5175" },
   },
   android: {
-    package: "in.sivsanoils.bizbil",
+    package: "in.bizbil.app",
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
       backgroundColor: "#0F6E56",
@@ -51,13 +51,10 @@ const config: ExpoConfig = {
     ...(hasGoogleServices ? { googleServicesFile: "./google-services.json" } : {}),
     permissions: [
       "CAMERA",
-      "READ_EXTERNAL_STORAGE",
-      "WRITE_EXTERNAL_STORAGE",
       "ACCESS_FINE_LOCATION",
       "BLUETOOTH",
       "BLUETOOTH_CONNECT",
       "BLUETOOTH_SCAN",
-      "RECEIVE_BOOT_COMPLETED",
       "VIBRATE",
     ],
   },

@@ -2,8 +2,6 @@ import { Buffer } from "node:buffer";
 
 import type { Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
-import { Printer } from "@node-escpos/core";
-import USB from "@node-escpos/usb-adapter";
 import bwipjs from "bwip-js";
 import puppeteer from "puppeteer";
 
@@ -18,6 +16,20 @@ import type {
 } from "./labels.types.js";
 
 const PRINTER_DPI = 203;
+
+type PrinterDevice = {
+  open(): Promise<void>;
+  close(): Promise<void>;
+};
+
+type PrinterHandle = {
+  image(bitmap: Buffer, mode: string): Promise<void>;
+  feed(lines: number): Promise<void>;
+  cut(): Promise<void>;
+  close(): Promise<void>;
+};
+
+type PrinterConstructor = new (device: PrinterDevice) => PrinterHandle;
 
 export interface ResolvedLabelSheet {
   index: number;
@@ -91,7 +103,7 @@ export async function resolveLabelJob(input: {
         quantity: item.quantity,
         sheet_index: sheetIndex,
         slot_index: slotIndex,
-        fields: await resolveFields(input.fastify, input.canvasJson, product as ResolvedLabelProduct, item.quantity),
+        fields: await resolveFields(input.fastify, input.canvasJson, toResolvedLabelProduct(product), item.quantity),
       });
     }
   }
@@ -117,7 +129,7 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
         .map((label) => {
           const leftMm = label.slot_index === 1 ? input.width_mm : 0;
           return `
-            <section class="label" style="left:${leftMm}mm; top:0mm; width:${input.width_mm}mm; height:${input.height_mm}mm;">
+            <section class="label" style="left:${toCssMm(leftMm)}; top:0mm; width:${toCssMm(input.width_mm)}; height:${toCssMm(input.height_mm)};">
               ${renderLabelFieldMarkup(label.fields)}
             </section>
           `;
@@ -134,22 +146,22 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
     <meta charset="utf-8" />
     <style>
       @page {
-        size: ${sheetWidthMm}mm ${input.height_mm}mm;
+        size: ${toCssMm(sheetWidthMm)} ${toCssMm(input.height_mm)};
         margin: 0;
       }
       html, body {
         margin: 0;
         padding: 0;
         background: #ffffff;
-        width: ${sheetWidthMm}mm;
+        width: ${toCssMm(sheetWidthMm)};
         color: #111827;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
       .sheet {
         position: relative;
-        width: ${sheetWidthMm}mm;
-        height: ${input.height_mm}mm;
+        width: ${toCssMm(sheetWidthMm)};
+        height: ${toCssMm(input.height_mm)};
         overflow: hidden;
         page-break-after: always;
       }
@@ -249,9 +261,7 @@ export async function renderLabelSheetBitmaps(input: ResolvedLabelJob): Promise<
 }
 
 export async function printLabelBitmaps(bitmaps: Buffer[]): Promise<void> {
-  const device = new USB();
-  await device.open();
-  const printer = new Printer(device);
+  const { printer } = await openPrinter();
 
   try {
     for (const [index, bitmap] of bitmaps.entries()) {
@@ -267,9 +277,9 @@ export async function printLabelBitmaps(bitmaps: Buffer[]): Promise<void> {
 }
 
 export async function detectPrinterStatus(): Promise<{ connected: boolean; name: string | null }> {
-  const device = new USB();
   try {
-    await device.open();
+    const { device, printer } = await openPrinter();
+    await printer.close();
     await device.close();
     return {
       connected: true,
@@ -283,14 +293,29 @@ export async function detectPrinterStatus(): Promise<{ connected: boolean; name:
   }
 }
 
+async function openPrinter(): Promise<{ device: PrinterDevice; printer: PrinterHandle }> {
+  const [coreModule, usbModule] = await Promise.all([
+    import("@node-escpos/core") as Promise<{ Printer: PrinterConstructor }>,
+    import("@node-escpos/usb-adapter") as Promise<{ default: new () => PrinterDevice }>,
+  ]);
+
+  const USBAdapter = usbModule.default;
+  const device = new USBAdapter();
+  await device.open();
+
+  const printer = new coreModule.Printer(device);
+
+  return { device, printer };
+}
+
 async function resolveFields(
   fastify: FastifyInstance,
   canvasJson: LabelCanvasDefinition,
   product: ResolvedLabelProduct,
   requestedQuantity: number,
 ): Promise<LabelPreviewField[]> {
-  const packedDate = resolveDateLabel(product.verticalData, ["packedDate", "packed_date", "packDate"]) ?? formatDate(product.batches[0]?.receivedAt ?? null);
-  const bestBefore = resolveDateLabel(product.verticalData, ["bestBefore", "best_before", "expiryDate"]) ?? formatDate(product.batches[0]?.expiryDate ?? null);
+  const packedDate = resolveDateLabel(product.verticalData, ["packedDate", "packed_date", "packDate"]) || formatDate(product.batches[0]?.receivedAt ?? null);
+  const bestBefore = resolveDateLabel(product.verticalData, ["bestBefore", "best_before", "expiryDate"]) || formatDate(product.batches[0]?.expiryDate ?? null);
   const codePayload = product.sku?.trim() || product.barcode?.trim() || product.id;
 
   return Promise.all(
@@ -300,7 +325,7 @@ async function resolveFields(
       if (field.type === "product_name") {
         resolvedContent = product.name;
       } else if (field.type === "price") {
-        resolvedContent = formatMoney(product.sellingPrice);
+        resolvedContent = formatMoney(toNumericValue(product.sellingPrice));
       } else if (field.type === "quantity") {
         resolvedContent = String(requestedQuantity);
       } else if (field.type === "packed_date") {
@@ -313,7 +338,7 @@ async function resolveFields(
         resolvedContent = await generateQrDataUrl(codePayload);
       } else if (field.type === "barcode") {
         resolvedContent = await generateBarcodeDataUrl(codePayload, field);
-      } else if (field.type === "image") {
+      } else {
         resolvedContent = field.imageUrl ? await resolveImageDataUrl(fastify, field.imageUrl) : "";
       }
 
@@ -411,12 +436,12 @@ function renderLabelFieldMarkup(fields: LabelPreviewField[]): string {
   return fields
     .map((field) => {
       const style = [
-        `left:${field.x}mm`,
-        `top:${field.y}mm`,
-        `width:${field.width}mm`,
-        `height:${field.height}mm`,
-        `transform: rotate(${field.rotation}deg)`,
-        `font-size:${field.fontSize ?? 10}pt`,
+        `left:${toCssMm(field.x)}`,
+        `top:${toCssMm(field.y)}`,
+        `width:${toCssMm(field.width)}`,
+        `height:${toCssMm(field.height)}`,
+        `transform: rotate(${toCssDegrees(field.rotation)})`,
+        `font-size:${String(field.fontSize ?? 10)}pt`,
         `font-weight:${field.fontWeight ?? "normal"}`,
       ].join(";");
 
@@ -438,6 +463,26 @@ function placeholderDataUrl(type: LabelCanvasField["type"]): string {
 
 function formatMoney(value: string | number): string {
   return `₹${Number(value).toFixed(2)}`;
+}
+
+function toResolvedLabelProduct(product: {
+  id: string;
+  name: string;
+  sku: string | null;
+  barcode: string | null;
+  sellingPrice: { toNumber(): number } | string | number;
+  mrp: { toNumber(): number } | string | number;
+  currentStock: { toNumber(): number } | string | number;
+  verticalData: unknown;
+  batches: Array<{
+    expiryDate: Date | null;
+    receivedAt: Date;
+  }>;
+}): ResolvedLabelProduct {
+  return {
+    ...product,
+    verticalData: isRecord(product.verticalData) ? product.verticalData : null,
+  };
 }
 
 function formatDate(value: Date | null | undefined): string {
@@ -465,6 +510,30 @@ function resolveDateLabel(verticalData: Record<string, unknown> | null, keys: st
   }
 
   return "";
+}
+
+function toNumericValue(value: { toNumber(): number } | string | number): number {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return Number(value);
+  }
+
+  return value.toNumber();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toCssMm(value: number): string {
+  return `${String(value)}mm`;
+}
+
+function toCssDegrees(value: number): string {
+  return `${String(value)}deg`;
 }
 
 async function launchBrowser() {

@@ -30,36 +30,39 @@ importers:
 
   apps/api:
     dependencies:
-      '@fastify/jwt':
-        specifier: ^8.0.1
-        version: 8.0.1
-      '@fastify/multipart':
-        specifier: ^8.3.1
-        version: 8.3.1
-      '@node-escpos/adapter-network':
-        specifier: npm:@node-escpos/network-adapter@0.0.1
-        version: '@node-escpos/network-adapter@0.0.1'
-      '@node-escpos/core':
-        specifier: ^0.6.0
-        version: 0.6.0
-      '@node-rs/argon2':
-        specifier: ^2.0.2
-        version: 2.0.2
-      '@prisma/client':
-        specifier: ^5.22.0
-        version: 5.22.0(prisma@5.22.0)
       '@bizbil/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@bizbil/vertical-configs':
         specifier: workspace:^
         version: link:../../packages/vertical-configs
+      '@fastify/jwt':
+        specifier: ^8.0.1
+        version: 8.0.1
+      '@fastify/multipart':
+        specifier: ^8.3.1
+        version: 8.3.1
+      '@node-escpos/core':
+        specifier: ^0.6.0
+        version: 0.6.0
+      '@node-escpos/usb-adapter':
+        specifier: ^0.3.1
+        version: 0.3.1
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
+      '@prisma/client':
+        specifier: ^5.22.0
+        version: 5.22.0(prisma@5.22.0)
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(sharp@0.34.5)
       bullmq:
         specifier: ^5.76.4
         version: 5.76.4
+      bwip-js:
+        specifier: ^3.0.4
+        version: 3.4.5
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -124,6 +127,9 @@ importers:
       '@babel/runtime':
         specifier: ^7.29.2
         version: 7.29.2
+      '@bizbil/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@expo/vector-icons':
         specifier: ^14.0.0
         version: 14.1.0(expo-font@12.0.10(expo@51.0.39(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0)))(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0)
@@ -145,9 +151,6 @@ importers:
       '@react-navigation/native-stack':
         specifier: ^6.9.26
         version: 6.11.0(@react-navigation/native@6.1.18(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native-safe-area-context@4.10.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native-screens@3.31.1(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0))(react-native@0.74.5(@babel/core@7.29.0)(@babel/preset-env@7.29.3(@babel/core@7.29.0))(@types/react@18.3.28)(react@18.2.0))(react@18.2.0)
-      '@bizbil/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.100.8(react@18.2.0)
@@ -245,9 +248,15 @@ importers:
       '@types/react':
         specifier: ^18.2.79
         version: 18.3.28
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.4(jiti@2.6.1)
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
 
   apps/print-agent:
     dependencies:
@@ -1796,8 +1805,8 @@ packages:
   '@node-escpos/core@0.6.0':
     resolution: {integrity: sha512-6JccIYy0o5epBcLE9GcxT19YTL4ydQeP3TPj3grsFjHmGZ+D6whwXtGZ5VosW6PbU01dXtxJG2IotPtZPLWTqA==}
 
-  '@node-escpos/network-adapter@0.0.1':
-    resolution: {integrity: sha512-v31WjOs9UVbdDWcfxr3/vnaPjoZC5GbrjZyxrKsadHinXGdjkl9TcY7/EGUMMVmV7AMnKs54jEjaAvts2SYnRA==}
+  '@node-escpos/usb-adapter@0.3.1':
+    resolution: {integrity: sha512-n1e3k73nN6RJAmbRNSrVD3zjlkFvDiXB9u2UsH4V2UxSqU4FFbBO6zn3aVMFJU/SAoIa5GWZqBnRvaH/Q9DAZw==}
 
   '@node-rs/argon2-android-arm-eabi@2.0.2':
     resolution: {integrity: sha512-DV/H8p/jt40lrao5z5g6nM9dPNPGEHL+aK6Iy/og+dbL503Uj0AHLqj1Hk9aVUSCNnsDdUEKp4TVMi0YakDYKw==}
@@ -1885,6 +1894,66 @@ packages:
   '@node-rs/argon2@2.0.2':
     resolution: {integrity: sha512-t64wIsPEtNd4aUPuTAyeL2ubxATCBGmeluaKXEMAFk/8w6AJIVVkeLKMBpgLW6LU2t5cQxT+env/c6jxbtTQBg==}
     engines: {node: '>= 10'}
+
+  '@node-usb/usb-darwin-arm64@3.0.0':
+    resolution: {integrity: sha512-wBnK74ToiFpH8QGsOSkxjx2BllHIaeW57AUIrAEd1ZWdulbR7l63e07efUSi+iQDf7Qd8HLkD1DnA4w92lagcQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@node-usb/usb-darwin-x64@3.0.0':
+    resolution: {integrity: sha512-myCWHDMSO7Xo6bSmCprTAuIj/KBD+z2YpKVnDCv65ZB5vF83gqz+7Qlnbqgr92IarAjPLldkyM5dgpHxGF9l5A==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@node-usb/usb-linux-arm-gnueabihf@3.0.0':
+    resolution: {integrity: sha512-EOQOP7QQf92Nr37jaBlL7W4pkB+9YCVxI/l1PZ19KZr/kqBIArdVw4DbkADmJmLwYl4yIeDsJLuQ2O9xLbYcvA==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [arm]
+    os: [linux]
+
+  '@node-usb/usb-linux-arm64-gnu@3.0.0':
+    resolution: {integrity: sha512-H6TLWmgeK0QSDUUCR1KRGQiNWFnSsv9Ec2Bnet8LQJrRtdb0np92oObgzn7X7nz4rpcuahfxH8H2xnLQatZnWA==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@node-usb/usb-linux-arm64-musl@3.0.0':
+    resolution: {integrity: sha512-d2ROSTlGh0axwSVw3cGXlUEzCW8vJsJOI6T/82xsB/mO+Wy8IC6eRaVzIyEx+hrBiW/TNVI8d9QrIHWG8I9/5A==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@node-usb/usb-linux-x64-gnu@3.0.0':
+    resolution: {integrity: sha512-r3I6kGKiIm6J5qpdte4aHvMXXizLPonwq5f2ZGZGBY9VJUrUVjV5g1wW5spPZoq5E+R1V+metup1zMWd1Topew==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [x64]
+    os: [linux]
+
+  '@node-usb/usb-linux-x64-musl@3.0.0':
+    resolution: {integrity: sha512-Qtzms0RQ4XXsuVwiNSDxXsuubfbzVELB4WH4MyP1ABigibA+yslMLHJLZbZyZA1NpOP32Pikmz6C7o9Ho6Z2LQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [x64]
+    os: [linux]
+
+  '@node-usb/usb-win32-arm64-msvc@3.0.0':
+    resolution: {integrity: sha512-w4WfwMY07MPHF+393sCUTLl8cZMqyUlEvsxVZjDefXe3LsC/EKhxLWYqVOFszlhYGDpe5YLs2VjFLi5miq0ZjQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@node-usb/usb-win32-ia32-msvc@3.0.0':
+    resolution: {integrity: sha512-2531uD4hB1ccesjyapYB//VDEARnhx8u1oljBDy5O7o7qZh74KjNtlYXBZBAmCjtZfqIEH+L+YaBFVg39VdTUQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [ia32]
+    os: [win32]
+
+  '@node-usb/usb-win32-x64-msvc@3.0.0':
+    resolution: {integrity: sha512-8wbRBW1WKzmOWyTJs9n7/rYytYjL+/hvxaW6rlYuHcj0gLDupDJb9l64FhPI8ZZtF19+LVatQeoNtQLoKVRAuQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+    cpu: [x64]
+    os: [win32]
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -2430,6 +2499,9 @@ packages:
 
   '@types/use-sync-external-store@0.0.6':
     resolution: {integrity: sha512-zFDAD+tlpf2r4asuHEj0XH6pY6i0g5NeAHPn+15wk3BV6JA69eERFXC1gyGThDkVa1zCyKr5jox1+2LbV/AMLg==}
+
+  '@types/w3c-web-usb@1.0.14':
+    resolution: {integrity: sha512-Qu3Nn6JFuF4+sHKYl+IcX9vYiI40ogleXzFFSxoE1W94rG98o/kXs8uJ0QSfFzuwBCZWlGfUGpPkgwuuX4PchA==}
 
   '@types/yargs-parser@21.0.3':
     resolution: {integrity: sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ==}
@@ -3194,6 +3266,10 @@ packages:
   busboy@1.6.0:
     resolution: {integrity: sha512-8SFQbg/0hQ9xy3UNTB0YEnsNBbWfhf7RtnzpL7TkBiTBRfrQ9Fxcnz7VJsleJpyp6rVLvXiuORqjlHi5q+PYuA==}
     engines: {node: '>=10.16.0'}
+
+  bwip-js@3.4.5:
+    resolution: {integrity: sha512-qeMBeeHkELC+ZTU3UjUFF0mkIQmhqKzo4B5fYfx98hitsdBMytSuAE9oVz2mE02GQ09u3QmgU/kke0qONumuGQ==}
+    hasBin: true
 
   bytes@3.1.2:
     resolution: {integrity: sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==}
@@ -7377,6 +7453,10 @@ packages:
   url-join@4.0.0:
     resolution: {integrity: sha512-EGXjXJZhIHiQMK2pQukuFcL303nskqIRzWvPvV5O8miOfwoUb9G+a/Cld60kUyeaybEI94wvVClT10DtfeAExA==}
 
+  usb@3.0.0:
+    resolution: {integrity: sha512-oKHicfd16YtVrh+icdjjTE+CNpAohAjbt8ecanLhA0F9mVjXnGsu1UoV9vZg9sWQ51Lyc5XVI/jFdqXw5IjNFQ==}
+    engines: {node: '>= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0'}
+
   use-latest-callback@0.2.6:
     resolution: {integrity: sha512-FvRG9i1HSo0wagmX63Vrm8SnlUU3LMM3WyZkQ76RnslpBrX694AdG4A0zQBx2B3ZifFA0yv/BaEHGBnEax5rZg==}
     peerDependencies:
@@ -9514,10 +9594,10 @@ snapshots:
       ndarray: 1.0.19
       qr-image: 3.2.0
 
-  '@node-escpos/network-adapter@0.0.1':
+  '@node-escpos/usb-adapter@0.3.1':
     dependencies:
       '@node-escpos/adapter': 0.0.1
-      eventemitter3: 4.0.7
+      usb: 3.0.0
 
   '@node-rs/argon2-android-arm-eabi@2.0.2':
     optional: true
@@ -9579,6 +9659,36 @@ snapshots:
       '@node-rs/argon2-win32-arm64-msvc': 2.0.2
       '@node-rs/argon2-win32-ia32-msvc': 2.0.2
       '@node-rs/argon2-win32-x64-msvc': 2.0.2
+
+  '@node-usb/usb-darwin-arm64@3.0.0':
+    optional: true
+
+  '@node-usb/usb-darwin-x64@3.0.0':
+    optional: true
+
+  '@node-usb/usb-linux-arm-gnueabihf@3.0.0':
+    optional: true
+
+  '@node-usb/usb-linux-arm64-gnu@3.0.0':
+    optional: true
+
+  '@node-usb/usb-linux-arm64-musl@3.0.0':
+    optional: true
+
+  '@node-usb/usb-linux-x64-gnu@3.0.0':
+    optional: true
+
+  '@node-usb/usb-linux-x64-musl@3.0.0':
+    optional: true
+
+  '@node-usb/usb-win32-arm64-msvc@3.0.0':
+    optional: true
+
+  '@node-usb/usb-win32-ia32-msvc@3.0.0':
+    optional: true
+
+  '@node-usb/usb-win32-x64-msvc@3.0.0':
+    optional: true
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
@@ -10370,6 +10480,8 @@ snapshots:
   '@types/trusted-types@2.0.7': {}
 
   '@types/use-sync-external-store@0.0.6': {}
+
+  '@types/w3c-web-usb@1.0.14': {}
 
   '@types/yargs-parser@21.0.3': {}
 
@@ -11234,6 +11346,8 @@ snapshots:
   busboy@1.6.0:
     dependencies:
       streamsearch: 1.1.0
+
+  bwip-js@3.4.5: {}
 
   bytes@3.1.2: {}
 
@@ -16132,6 +16246,21 @@ snapshots:
       punycode: 2.3.1
 
   url-join@4.0.0: {}
+
+  usb@3.0.0:
+    dependencies:
+      '@types/w3c-web-usb': 1.0.14
+    optionalDependencies:
+      '@node-usb/usb-darwin-arm64': 3.0.0
+      '@node-usb/usb-darwin-x64': 3.0.0
+      '@node-usb/usb-linux-arm-gnueabihf': 3.0.0
+      '@node-usb/usb-linux-arm64-gnu': 3.0.0
+      '@node-usb/usb-linux-arm64-musl': 3.0.0
+      '@node-usb/usb-linux-x64-gnu': 3.0.0
+      '@node-usb/usb-linux-x64-musl': 3.0.0
+      '@node-usb/usb-win32-arm64-msvc': 3.0.0
+      '@node-usb/usb-win32-ia32-msvc': 3.0.0
+      '@node-usb/usb-win32-x64-msvc': 3.0.0
 
   use-latest-callback@0.2.6(react@18.2.0):
     dependencies:

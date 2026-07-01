@@ -27,7 +27,6 @@ export default function InventoryScreen() {
   const products = productsQuery.data?.data ?? [];
   const filtered = products.filter((product) => product.name?.toLowerCase().includes(search.toLowerCase()) || product.sku?.toLowerCase().includes(search.toLowerCase()));
   const lowStock = products.filter((product) => Number(product.currentStock ?? 0) <= Number(product.reorderLevel ?? 0));
-  const outStock = products.filter((product) => Number(product.currentStock ?? 0) <= 0);
 
   async function submitAdjustment() {
     const payload = stockAdjustmentSchema.parse({

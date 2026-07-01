@@ -12,6 +12,8 @@ export interface QueuedInvoice {
   retryCount: number;
 }
 
+type MobileApiClient = typeof import("./api-client").apiClient;
+
 function uuid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -32,7 +34,7 @@ export async function getQueuedInvoices(): Promise<QueuedInvoice[]> {
   }
 }
 
-export async function syncQueue(apiClient: typeof import("./api-client").apiClient): Promise<{ synced: number; failed: number }> {
+export async function syncQueue(apiClient: MobileApiClient): Promise<{ synced: number; failed: number }> {
   const queue = await getQueuedInvoices();
   const remaining: QueuedInvoice[] = [];
   let synced = 0;
