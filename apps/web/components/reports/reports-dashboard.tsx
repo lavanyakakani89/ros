@@ -581,7 +581,7 @@ export function ReportsDashboard() {
           <div className="grid gap-4 xl:grid-cols-3">
             <SummaryList
               title="Top products"
-              items={(overview?.topProducts ?? []).map((item) => `${item.productName} · ${item.quantitySold} units · ${money(item.totalSales)}`)}
+              items={(overview?.topProducts ?? []).map((item) => formatSummaryParts(item.productName, `${String(item.quantitySold)} units`, money(item.totalSales)))}
             />
             <SummaryList
               title="Top customers"
@@ -642,7 +642,7 @@ export function ReportsDashboard() {
                 <Line type="monotone" dataKey="invoices" stroke="#2563eb" strokeWidth={2} dot={false} />
               </LineChart>
             </ChartCard>
-            <SummaryList title="Fast-moving items" items={(summary?.movingItems ?? []).map((item) => `${item.productName} · ${item.quantitySold} units · ${money(item.totalSales)}`)} />
+            <SummaryList title="Fast-moving items" items={(summary?.movingItems ?? []).map((item) => formatSummaryParts(item.productName, `${String(item.quantitySold)} units`, money(item.totalSales)))} />
           </div>
         </div>
       ) : null}
@@ -767,7 +767,7 @@ export function ReportsDashboard() {
                 <Bar dataKey="value" fill="#ea580c" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ChartCard>
-            <SummaryList title="Top categories" items={(expenses?.topCategories ?? []).map((item) => `${item.category} · ${money(item.total)} · ${item.count} entries`)} />
+            <SummaryList title="Top categories" items={(expenses?.topCategories ?? []).map((item) => formatSummaryParts(item.category, money(item.total), `${String(item.count)} entries`))} />
           </div>
           <TableShell title="Expense categories" loading={expenseQuery.isLoading} empty={(expenses?.categories.data ?? []).length === 0}>
             <table className="w-full min-w-[640px] text-sm">
@@ -855,7 +855,7 @@ export function ReportsDashboard() {
 
       {tab === "gstr" ? (
         <div className="grid gap-4 xl:grid-cols-2">
-          <SummaryList title="GST by rate" items={(summary?.gstByRate ?? []).map((item) => `${item.gstRate}% · ${money(item.totalGst)} · taxable ${money(item.taxableValue)}`)} />
+          <SummaryList title="GST by rate" items={(summary?.gstByRate ?? []).map((item) => formatSummaryParts(`${String(item.gstRate)}%`, money(item.totalGst), `taxable ${money(item.taxableValue)}`))} />
           <SummaryList title="HSN summary" items={(summary?.hsnSummary ?? []).map((item) => `${item.hsnCode} · ${money(item.totalSales)} · GST ${money(item.totalGst)}`)} />
         </div>
       ) : null}
@@ -870,7 +870,7 @@ export function ReportsDashboard() {
               { label: "Closing cash", value: money(dayEnd?.closingCash ?? 0), tone: "amber" },
             ]}
           />
-          <SummaryList title="Payment methods" items={(dayEnd?.paymentMethods ?? []).map((item) => `${item.name} · ${money(item.total)} · ${item.count} txns`)} />
+          <SummaryList title="Payment methods" items={(dayEnd?.paymentMethods ?? []).map((item) => formatSummaryParts(item.name, money(item.total), `${String(item.count)} txns`))} />
         </div>
       ) : null}
 
@@ -934,7 +934,7 @@ export function ReportsDashboard() {
         <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-4">
             {(aging?.buckets ?? []).map((bucket) => (
-              <MetricCard key={bucket.bucket} label={`${bucket.bucket} days`} value={`${money(bucket.totalOutstanding)} · ${bucket.customerCount} customers`} />
+              <MetricCard key={bucket.bucket} label={`${bucket.bucket} days`} value={formatSummaryParts(money(bucket.totalOutstanding), `${String(bucket.customerCount)} customers`)} />
             ))}
           </div>
           <TableShell title="Outstanding aging" loading={agingQuery.isLoading} empty={(aging?.customers ?? []).length === 0}>
@@ -1037,7 +1037,7 @@ export function ReportsDashboard() {
               </thead>
               <tbody className="divide-y divide-border">
                 {(stockMovement?.data ?? []).map((row, index) => (
-                  <tr key={`${row.productId}-${row.reference}-${row.date}-${index}`}>
+                  <tr key={[row.productId, row.reference, row.date, String(index)].join("-")}>
                     <td className="px-4 py-2">{new Date(row.date).toLocaleString("en-IN")}</td>
                     <td className="px-4 py-2 font-medium">{row.productName}</td>
                     <td className="px-4 py-2 capitalize">{row.type}</td>
@@ -1353,6 +1353,10 @@ async function downloadReport(endpoint: string, from: string, to: string, storeI
 
 function money(value: number) {
   return `Rs ${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function formatSummaryParts(...parts: string[]): string {
+  return parts.join(" · ");
 }
 
 function monthName(value: string): string {

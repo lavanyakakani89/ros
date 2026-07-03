@@ -23,7 +23,7 @@ function getStorage(): Storage | null {
   }
 }
 
-function readStoredJson<T>(key: string): T | null {
+function readStoredJson(key: string): object | string | number | boolean | null {
   const storage = getStorage();
   const raw = storage?.getItem(key);
   if (!raw) {
@@ -31,7 +31,8 @@ function readStoredJson<T>(key: string): T | null {
   }
 
   try {
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw) as object | string | number | boolean | null;
+    return parsed;
   } catch {
     storage?.removeItem(key);
     return null;
@@ -49,7 +50,7 @@ export function hasStoredAuthSession(): boolean {
     return true;
   }
 
-  return Boolean(readStoredJson<StoredAuthSession>(authStorageKey));
+  return Boolean(readStoredJson(authStorageKey));
 }
 
 export function getStoredAuthSession(): StoredAuthSession | null {
@@ -57,7 +58,7 @@ export function getStoredAuthSession(): StoredAuthSession | null {
     return authSessionMemory;
   }
 
-  const storedSession = readStoredJson<StoredAuthSession>(authStorageKey);
+  const storedSession = readStoredJson(authStorageKey) as StoredAuthSession | null;
   if (!storedSession) {
     return null;
   }
@@ -87,7 +88,7 @@ export function getStoredTenant(): StoredTenant | null {
     return tenantMemory;
   }
 
-  const storedTenant = readStoredJson<StoredTenant>(tenantStorageKey);
+  const storedTenant = readStoredJson(tenantStorageKey) as StoredTenant | null;
   if (!storedTenant?.name) {
     return null;
   }
@@ -106,7 +107,7 @@ export function getStoredVerticalConfig(): VerticalConfig | null {
     return verticalConfigMemory;
   }
 
-  verticalConfigMemory = readStoredJson<VerticalConfig>(verticalConfigStorageKey);
+  verticalConfigMemory = readStoredJson(verticalConfigStorageKey) as VerticalConfig | null;
   return verticalConfigMemory;
 }
 

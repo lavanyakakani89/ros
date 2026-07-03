@@ -20,6 +20,7 @@ import { LabelCanvasRenderer } from "./label-canvas-renderer";
 
 type StepId = 1 | 2 | 3;
 type OutputType = "pdf" | "print";
+type LabelCanvasFieldPatch = { [K in keyof LabelCanvasField]?: LabelCanvasField[K] | undefined };
 
 const DEFAULT_FIELD_SIZES: Record<LabelFieldType, Partial<Pick<LabelCanvasField, "width" | "height" | "fontSize" | "fontWeight">>> = {
   product_name: { width: 44, height: 9, fontSize: 12, fontWeight: "bold" },
@@ -106,8 +107,9 @@ export function LabelsClient() {
       setTemplates(templateResponse.templates);
       setPrinterStatus(printerResponse);
       setAllProducts(productsResponse.data);
-      if (templateResponse.templates.length > 0) {
-        selectTemplate(templateResponse.templates[0].id, templateResponse.templates);
+      const firstTemplate = templateResponse.templates[0];
+      if (firstTemplate) {
+        selectTemplate(firstTemplate.id, templateResponse.templates);
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Unable to load labels.", "red");
@@ -132,8 +134,8 @@ export function LabelsClient() {
     setDraft({
       id: template.id,
       name: template.name,
-      width_mm: Number(template.width_mm),
-      height_mm: Number(template.height_mm),
+      width_mm: template.width_mm,
+      height_mm: template.height_mm,
       layout_mode: template.layout_mode,
       canvas_json: cloneCanvas(template.canvas_json),
       is_default: template.is_default,
@@ -161,7 +163,7 @@ export function LabelsClient() {
     setDraft((current) => (current ? { ...current, ...patch, canvas_json: patch.canvas_json ?? current.canvas_json } : current));
   }
 
-  function updateField(fieldId: string, patch: Partial<LabelCanvasField>) {
+  function updateField(fieldId: string, patch: LabelCanvasFieldPatch) {
     setDraft((current) => {
       if (!current) {
         return current;
@@ -170,7 +172,7 @@ export function LabelsClient() {
       return {
         ...current,
         canvas_json: {
-          fields: current.canvas_json.fields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field)),
+          fields: current.canvas_json.fields.map((field) => (field.id === fieldId ? applyFieldPatch(field, patch) : field)),
         },
       };
     });
@@ -196,7 +198,9 @@ export function LabelsClient() {
 
   function addField(type: LabelFieldType) {
     const defaults = DEFAULT_FIELD_SIZES[type];
-    const id = `${type}-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+    const cryptoApi = globalThis.crypto;
+    const suffix = typeof cryptoApi.randomUUID === "function" ? cryptoApi.randomUUID() : Date.now().toString(36);
+    const id = `${type}-${suffix}`;
     const field: LabelCanvasField = {
       id,
       type,
@@ -205,11 +209,11 @@ export function LabelsClient() {
       width: defaults.width ?? 24,
       height: defaults.height ?? 8,
       rotation: 0,
-      fontSize: defaults.fontSize,
-      fontWeight: defaults.fontWeight,
-      textContent: type === "static_text" ? "Static text" : undefined,
-      imageUrl: undefined,
-      codeType: type === "barcode" ? "barcode" : type === "qr_code" ? "qr" : undefined,
+      ...(defaults.fontSize !== undefined ? { fontSize: defaults.fontSize } : {}),
+      ...(defaults.fontWeight !== undefined ? { fontWeight: defaults.fontWeight } : {}),
+      ...(type === "static_text" ? { textContent: "Static text" } : {}),
+      ...(type === "barcode" ? { codeType: "barcode" as const } : {}),
+      ...(type === "qr_code" ? { codeType: "qr" as const } : {}),
     };
 
     setDraft((current) => {
@@ -378,7 +382,7 @@ export function LabelsClient() {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `bizbil-labels-${Date.now()}.pdf`;
+        anchor.download = `bizbil-labels-${String(Date.now())}.pdf`;
         anchor.click();
         URL.revokeObjectURL(url);
         notify("PDF downloaded.");
@@ -564,7 +568,7 @@ export function LabelsClient() {
         </section>
       ) : null}
 
-      {step === 2 && draft ? (
+      {step === 2 ? (
         <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -798,12 +802,12 @@ export function LabelsClient() {
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-slate-900">{product.name}</span>
                       <span className="block truncate text-xs text-slate-500">
-                        {product.sku ?? "No SKU"} • {product.barcode ?? "No barcode"} • Stock {Number(product.currentStock ?? 0)}
+                        {product.sku ?? "No SKU"} • {product.barcode ?? "No barcode"} • Stock {Number(product.currentStock)}
                       </span>
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                       <PackagePlus className="size-3.5" aria-hidden="true" />
-                      {selected ? `Qty ${selected.quantity}` : "Add"}
+                      {selected ? `Qty ${String(selected.quantity)}` : "Add"}
                     </span>
                   </button>
                 );
@@ -898,9 +902,9 @@ export function LabelsClient() {
                       {sheet.labels.map((label) => {
                         const labelWidthMm = sheet.layout_mode === "2up" ? sheet.width_mm / 2 : sheet.width_mm;
                         return (
-                          <div key={`${label.product_id}-${sheet.index}-${label.slot_index}`} className="overflow-hidden rounded-lg border border-slate-200 p-2">
-                            <div className="relative" style={{ width: `${Math.max(1, sheet.width_mm * 4)}px`, height: `${Math.max(1, sheet.height_mm * 4)}px` }}>
-                              <div className="absolute top-0" style={{ left: `${label.slot_index * labelWidthMm * 4}px` }}>
+                          <div key={[label.product_id, String(sheet.index), String(label.slot_index)].join("-")} className="overflow-hidden rounded-lg border border-slate-200 p-2">
+                            <div className="relative" style={{ width: Math.max(1, sheet.width_mm * 4), height: Math.max(1, sheet.height_mm * 4) }}>
+                              <div className="absolute top-0" style={{ left: label.slot_index * labelWidthMm * 4 }}>
                                 <LabelCanvasRenderer
                                   template={{ width_mm: labelWidthMm, height_mm: sheet.height_mm }}
                                   fields={label.fields}
@@ -931,6 +935,68 @@ function cloneCanvas(canvas: LabelCanvasDefinition): LabelCanvasDefinition {
   return {
     fields: canvas.fields.map((field) => ({ ...field })),
   };
+}
+
+function applyFieldPatch(field: LabelCanvasField, patch: LabelCanvasFieldPatch): LabelCanvasField {
+  const next: LabelCanvasField = { ...field };
+
+  if (patch.id !== undefined) next.id = patch.id;
+  if (patch.type !== undefined) next.type = patch.type;
+  if (patch.x !== undefined) next.x = patch.x;
+  if (patch.y !== undefined) next.y = patch.y;
+  if (patch.width !== undefined) next.width = patch.width;
+  if (patch.height !== undefined) next.height = patch.height;
+  if (patch.rotation !== undefined) next.rotation = patch.rotation;
+
+  if ("fontSize" in patch) {
+    if (patch.fontSize === undefined) {
+      delete next.fontSize;
+    } else {
+      next.fontSize = patch.fontSize;
+    }
+  }
+
+  if ("fontWeight" in patch) {
+    if (patch.fontWeight === undefined) {
+      delete next.fontWeight;
+    } else {
+      next.fontWeight = patch.fontWeight;
+    }
+  }
+
+  if ("textContent" in patch) {
+    if (patch.textContent === undefined) {
+      delete next.textContent;
+    } else {
+      next.textContent = patch.textContent;
+    }
+  }
+
+  if ("imageUrl" in patch) {
+    if (patch.imageUrl === undefined) {
+      delete next.imageUrl;
+    } else {
+      next.imageUrl = patch.imageUrl;
+    }
+  }
+
+  if ("codeType" in patch) {
+    if (patch.codeType === undefined) {
+      delete next.codeType;
+    } else {
+      next.codeType = patch.codeType;
+    }
+  }
+
+  if ("resolved_content" in patch) {
+    if (patch.resolved_content === undefined) {
+      delete next.resolved_content;
+    } else {
+      next.resolved_content = patch.resolved_content;
+    }
+  }
+
+  return next;
 }
 
 function StepperButton({

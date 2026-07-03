@@ -763,7 +763,6 @@ function navigationIconClass(href: string): string {
     return "text-teal-600";
   }
 
-  if (["/inventory", "/inventory/expiry", "/inventory/warranty", "/categories", "/purchases", "/purchase-returns", "/delivery"].includes(href)) {
   if (["/inventory", "/inventory/expiry", "/inventory/warranty", "/labels", "/categories", "/purchases", "/purchase-returns", "/delivery"].includes(href)) {
     return "text-blue-600";
   }
