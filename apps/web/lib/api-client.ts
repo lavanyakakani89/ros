@@ -266,8 +266,18 @@ export async function downloadApiFile(path: string, filename: string): Promise<v
   URL.revokeObjectURL(url);
 }
 
+const MAX_PRODUCTS_PAGE_SIZE = 100;
+
+function clampProductPageSize(limit: number | undefined): number {
+  if (limit === undefined) {
+    return MAX_PRODUCTS_PAGE_SIZE;
+  }
+
+  return Math.min(Math.max(1, Math.floor(limit)), MAX_PRODUCTS_PAGE_SIZE);
+}
+
 export async function listProducts(options: { lowStock?: boolean; page?: number; limit?: number; search?: string } = {}): Promise<PaginatedResponse<ProductRecord>> {
-  const query = new URLSearchParams({ limit: String(options.limit ?? 100) });
+  const query = new URLSearchParams({ limit: String(clampProductPageSize(options.limit)) });
   if (options.page) {
     query.set("page", String(options.page));
   }
@@ -299,7 +309,7 @@ export async function lookupProductByCode(code: string): Promise<ProductRecord |
 }
 
 export async function listAllProducts(options: { lowStock?: boolean; search?: string; pageSize?: number } = {}): Promise<PaginatedResponse<ProductRecord>> {
-  const limit = options.pageSize ?? 100;
+  const limit = clampProductPageSize(options.pageSize);
   const productsById = new Map<string, ProductRecord>();
   let page = 1;
   let total = 0;
