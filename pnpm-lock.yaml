@@ -242,6 +242,9 @@ importers:
         specifier: ^4.5.0
         version: 4.5.7(@types/react@18.3.28)(immer@11.1.4)(react@18.2.0)
     devDependencies:
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.39.4
       '@react-native/gradle-plugin':
         specifier: 0.74.87
         version: 0.74.87

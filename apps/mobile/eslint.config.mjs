@@ -5,9 +5,16 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(appRoot, "../..");
 const pnpmDir = path.resolve(appRoot, "../../node_modules/.pnpm");
 
 function resolveWorkspacePackage(packageName) {
+  try {
+    return path.dirname(require.resolve(`${packageName}/package.json`, { paths: [appRoot, repoRoot] }));
+  } catch {
+    // Fall back to pnpm's virtual store when the package is not linked into this workspace.
+  }
+
   const entries = fs.readdirSync(pnpmDir, { withFileTypes: true });
   const encodedName = packageName.replace("/", "+");
   const match = entries.find((entry) => entry.isDirectory() && (entry.name === encodedName || entry.name.startsWith(`${encodedName}@`)));
