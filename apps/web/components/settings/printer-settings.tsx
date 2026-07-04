@@ -21,6 +21,7 @@ interface PrinterConfig {
   bluetoothDeviceId?: string | null;
   bluetoothDeviceName?: string | null;
   localPrinterName?: string | null;
+  labelPrinterName?: string | null;
   localAgentUrl?: string | null;
   isActive: boolean;
   lastTestedAt?: string | null;
@@ -98,6 +99,7 @@ export function PrinterSettings() {
       bluetoothDeviceId: formString(form, "bluetoothDeviceId") || null,
       bluetoothDeviceName: formString(form, "bluetoothDeviceName") || null,
       localPrinterName: formString(form, "localPrinterName") || null,
+      labelPrinterName: formString(form, "labelPrinterName") || null,
       localAgentUrl: formString(form, "localAgentUrl") || DEFAULT_LOCAL_AGENT_URL,
       isActive: form.get("isActive") === "on",
     });
@@ -173,6 +175,16 @@ export function PrinterSettings() {
             />
           </label>
           <label className="block text-sm font-medium text-slate-700">
+            Label printer name
+            <input
+              name="labelPrinterName"
+              list="bizbil-local-printers"
+              defaultValue={printer?.labelPrinterName ?? printer?.localPrinterName ?? ""}
+              placeholder="Example: ATPOS Labels"
+              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-700">
             Local agent URL
             <input
               name="localAgentUrl"
@@ -228,6 +240,9 @@ export function PrinterSettings() {
               </div>
             );
           })}
+        </div>
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Labels can use the same local agent, but select a separate Windows queue here if you want receipts and labels to go to different printers.
         </div>
         {testResult?.previewText ? (
           <pre className="mt-4 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testResult.previewText}</pre>

@@ -898,6 +898,7 @@ model PrinterConfig {
   bluetoothDeviceId String?    @map("bluetooth_device_id")
   bluetoothDeviceName String?  @map("bluetooth_device_name")
   localPrinterName String?     @map("local_printer_name")
+  labelPrinterName  String?     @map("label_printer_name")
   localAgentUrl    String?     @default("http://127.0.0.1:9211") @map("local_agent_url")
   isActive         Boolean     @default(true) @map("is_active")
   lastTestedAt     DateTime?   @map("last_tested_at")

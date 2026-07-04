@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { PrinterConn } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import type { z } from "zod";
 
@@ -12,7 +13,7 @@ import {
   labelTemplateCreateSchema,
   labelTemplateParamsSchema,
 } from "./labels.schema.js";
-import { detectPrinterStatus, printLabelBitmaps, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
+import { printLabelBitmaps, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
 import type { LabelTemplateRecord } from "./labels.types.js";
 
 const labelTemplateUpdateSchema = labelTemplateCreateSchema.partial();
@@ -157,6 +158,12 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       outputType: input.output_type,
     });
 
+    const printer = await fastify.prisma.printerConfig.findUnique({
+      where: {
+        tenantId: request.tenant.id,
+      },
+    });
+
     if (input.output_type === "pdf") {
       const pdf = await renderLabelPdfBuffer(preview);
       reply.header("Content-Type", "application/pdf");
@@ -175,13 +182,27 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
         outputType: job.outputType,
         printedAt: job.printedAt,
       },
-      printer: await detectPrinterStatus(),
+      printer: {
+        connected: Boolean(printer?.isActive && printer.connectionType !== PrinterConn.NONE),
+        name: null,
+        printer,
+      },
       preview,
     };
   });
 
-  fastify.get("/api/labels/printer-status", async () => {
-    return detectPrinterStatus();
+  fastify.get("/api/labels/printer-status", async (request) => {
+    const printer = await fastify.prisma.printerConfig.findUnique({
+      where: {
+        tenantId: request.tenant.id,
+      },
+    });
+
+    return {
+      connected: Boolean(printer?.isActive && printer.connectionType !== PrinterConn.NONE),
+      name: printer?.localPrinterName ?? null,
+      printer,
+    };
   });
 
   done();

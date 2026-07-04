@@ -21,6 +21,20 @@ import { LabelCanvasRenderer } from "./label-canvas-renderer";
 type StepId = 1 | 2 | 3;
 type OutputType = "pdf" | "print";
 type LabelCanvasFieldPatch = { [K in keyof LabelCanvasField]?: LabelCanvasField[K] | undefined };
+type LabelPrinterConnectionType = "USB_PRINTNODE" | "NETWORK" | "BLUETOOTH" | "LOCAL_AGENT" | "NONE";
+type LabelPrinterConfig = {
+  id: string;
+  connectionType: LabelPrinterConnectionType;
+  paperSize: "THERMAL_2" | "THERMAL_3" | "THERMAL_4" | "A5" | "A4";
+  localPrinterName?: string | null;
+  labelPrinterName?: string | null;
+  localAgentUrl?: string | null;
+  networkIp?: string | null;
+  networkPort?: number | null;
+  printNodePrinterId?: string | null;
+  bluetoothDeviceName?: string | null;
+  isActive: boolean;
+};
 
 const DEFAULT_FIELD_SIZES: Record<LabelFieldType, Partial<Pick<LabelCanvasField, "width" | "height" | "fontSize" | "fontWeight">>> = {
   product_name: { width: 44, height: 9, fontSize: 12, fontWeight: "bold" },
@@ -46,7 +60,7 @@ export function LabelsClient() {
   const [selectedItems, setSelectedItems] = useState<Array<{ product_id: string; quantity: number }>>([]);
   const [previewJob, setPreviewJob] = useState<LabelPreviewJob | null>(null);
   const [outputType, setOutputType] = useState<OutputType>("pdf");
-  const [printerStatus, setPrinterStatus] = useState<{ connected: boolean; name: string | null } | null>(null);
+  const [printerStatus, setPrinterStatus] = useState<{ connected: boolean; name: string | null; printer: LabelPrinterConfig | null } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"green" | "red" | "amber">("green");
   const [busy, setBusy] = useState(false);
@@ -100,7 +114,7 @@ export function LabelsClient() {
     try {
       const [templateResponse, printerResponse, productsResponse] = await Promise.all([
         api.get<{ templates: LabelTemplateRecord[] }>("/labels/templates"),
-        api.get<{ connected: boolean; name: string | null }>("/labels/printer-status"),
+        api.get<{ connected: boolean; name: string | null; printer: LabelPrinterConfig | null }>("/labels/printer-status"),
         listAllProducts({ pageSize: 500 }),
       ]);
 
@@ -387,13 +401,13 @@ export function LabelsClient() {
         URL.revokeObjectURL(url);
         notify("PDF downloaded.");
       } else {
-        const response = await postJson<{ preview: LabelPreviewJob; printer: { connected: boolean; name: string | null } }>("/labels/print", {
+        const response = await postJson<{ preview: LabelPreviewJob; printer: { connected: boolean; name: string | null; printer: LabelPrinterConfig | null } }>("/labels/print", {
           ...payload,
           output_type: "print",
         });
         setPreviewJob(response.preview);
         setPrinterStatus(response.printer);
-        notify(response.printer.connected ? "Labels sent to printer." : "Printer not detected. PDF fallback is available.", response.printer.connected ? "green" : "amber");
+        notify(response.printer.connected ? "Labels sent to printer." : "Printer not configured. PDF fallback is available.", response.printer.connected ? "green" : "amber");
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Label printing failed.", "red");
@@ -874,9 +888,19 @@ export function LabelsClient() {
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="font-medium text-slate-700">Printer</span>
-                <span className={cn("font-semibold", printerStatus?.connected ? "text-emerald-700" : "text-red-700")}>{printerStatus?.connected ? "Connected" : "Disconnected"}</span>
+                <span className={cn("font-semibold", printerStatus?.connected ? "text-emerald-700" : "text-red-700")}>{printerStatus?.connected ? "Configured" : "Not configured"}</span>
               </div>
-              <div className="mt-1 text-xs text-slate-500">{printerStatus?.name ?? "ATPOS HQ450 L"}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {printerStatus?.printer?.connectionType === "LOCAL_AGENT" && (printerStatus.printer.labelPrinterName || printerStatus.printer.localPrinterName)
+                  ? `${printerStatus.printer.labelPrinterName ?? printerStatus.printer.localPrinterName} | Local Agent`
+                  : printerStatus?.printer?.connectionType === "NETWORK" && printerStatus.printer.networkIp
+                    ? `${printerStatus.printer.networkIp}:${String(printerStatus.printer.networkPort ?? 9100)} | Network ESC/POS`
+                    : printerStatus?.printer?.connectionType === "USB_PRINTNODE" && printerStatus.printer.printNodePrinterId
+                      ? `PrintNode printer ${printerStatus.printer.printNodePrinterId}`
+                      : printerStatus?.printer?.connectionType === "BLUETOOTH" && printerStatus.printer.bluetoothDeviceName
+                        ? `${printerStatus.printer.bluetoothDeviceName} | Bluetooth`
+                        : printerStatus?.name ?? "No printer selected in Settings > Printer setup"}
+              </div>
             </div>
 
             <div className="mt-4 flex items-center gap-2">

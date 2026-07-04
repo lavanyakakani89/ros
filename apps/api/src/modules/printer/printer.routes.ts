@@ -14,6 +14,7 @@ const printerSchema = z.object({
   bluetoothDeviceId: z.string().trim().optional().nullable(),
   bluetoothDeviceName: z.string().trim().optional().nullable(),
   localPrinterName: z.string().trim().optional().nullable(),
+  labelPrinterName: z.string().trim().optional().nullable(),
   localAgentUrl: z.string().trim().url().optional().nullable(),
   isActive: z.coerce.boolean().default(true),
 });
@@ -48,6 +49,7 @@ export const printerRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       bluetoothDeviceId: input.bluetoothDeviceId ?? null,
       bluetoothDeviceName: input.bluetoothDeviceName ?? null,
       localPrinterName: input.localPrinterName ?? null,
+      labelPrinterName: input.labelPrinterName ?? null,
       localAgentUrl: input.localAgentUrl ?? "http://127.0.0.1:9211",
       isActive: input.isActive,
     };
@@ -83,11 +85,13 @@ export const printerRoutes: FastifyPluginCallback = (fastify, _options, done) =>
         paperSize: PaperSize.THERMAL_3,
         bluetoothDeviceId: input.deviceId,
         bluetoothDeviceName: input.deviceName,
+        labelPrinterName: null,
       },
       update: {
         connectionType: PrinterConn.BLUETOOTH,
         bluetoothDeviceId: input.deviceId,
         bluetoothDeviceName: input.deviceName,
+        labelPrinterName: null,
         isActive: true,
       },
     });

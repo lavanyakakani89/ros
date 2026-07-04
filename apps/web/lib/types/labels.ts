@@ -90,6 +90,19 @@ export interface LabelPrintJobResponse {
   printer: {
     connected: boolean;
     name: string | null;
+    printer?: {
+      id: string;
+      connectionType: "USB_PRINTNODE" | "NETWORK" | "BLUETOOTH" | "LOCAL_AGENT" | "NONE";
+      paperSize: "THERMAL_2" | "THERMAL_3" | "THERMAL_4" | "A5" | "A4";
+      localPrinterName?: string | null;
+      labelPrinterName?: string | null;
+      localAgentUrl?: string | null;
+      networkIp?: string | null;
+      networkPort?: number | null;
+      printNodePrinterId?: string | null;
+      bluetoothDeviceName?: string | null;
+      isActive: boolean;
+    } | null;
   };
   preview: LabelPreviewJob;
 }
