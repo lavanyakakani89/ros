@@ -257,41 +257,17 @@ async function listPrinters(): Promise<WindowsPrinter[]> {
   }
 
   try {
-    const queries = [
-      "Get-Printer | Select-Object Name,DriverName,PortName,Default,PrinterStatus | ConvertTo-Json -Compress",
+    const output = await runPowerShell([
+      "-NoProfile",
+      "-Command",
       "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,Default,PrinterStatus | ConvertTo-Json -Compress",
-    ];
-    const printers = new Map<string, WindowsPrinter>();
-
-    for (const query of queries) {
-      try {
-        const output = await runPowerShell(["-NoProfile", "-Command", query]);
-        const parsed = JSON.parse(output || "[]") as unknown;
-        const items = Array.isArray(parsed) ? parsed : [parsed];
-        for (const item of items) {
-          if (!item || typeof item !== "object") {
-            continue;
-          }
-
-          const printer = toWindowsPrinter(item as Record<string, unknown>);
-          if (!printer.name) {
-            continue;
-          }
-
-          const existing = printers.get(printer.name);
-          printers.set(printer.name, {
-            ...existing,
-            ...printer,
-            isDefault: (existing?.isDefault ?? false) || printer.isDefault,
-          });
-        }
-      } catch {
-        // Fall back to the other query. Some Windows builds expose printers
-        // more reliably through Get-Printer, while others only have Win32_Printer.
-      }
-    }
-
-    return [...printers.values()];
+    ]);
+    const parsed = JSON.parse(output || "[]") as unknown;
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return items
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map(toWindowsPrinter)
+      .filter((printer) => printer.name.length > 0);
   } catch {
     return [];
   }
@@ -300,7 +276,7 @@ async function listPrinters(): Promise<WindowsPrinter[]> {
 function toWindowsPrinter(item: Record<string, unknown>): WindowsPrinter {
   const printer: WindowsPrinter = {
     name: stringValue(item.Name) ?? "",
-    isDefault: booleanValue(item.Default),
+    isDefault: Boolean(item.Default),
   };
 
   const driverName = stringValue(item.DriverName);
@@ -319,22 +295,6 @@ function toWindowsPrinter(item: Record<string, unknown>): WindowsPrinter {
   }
 
   return printer;
-}
-
-function booleanValue(value: unknown): boolean {
-  if (typeof value === "boolean") {
-    return value;
-  }
-
-  if (typeof value === "number") {
-    return value !== 0;
-  }
-
-  if (typeof value === "string") {
-    return value.toLowerCase() === "true" || value === "1";
-  }
-
-  return false;
 }
 
 function stringValue(value: unknown): string | undefined {
