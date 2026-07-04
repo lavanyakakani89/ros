@@ -183,14 +183,19 @@ export function EcommerceSettingsClient() {
 
   async function loadSettings() {
     setError("");
-    const [response, families] = await Promise.all([
-      api.get<EcommerceSettingsResponse>("/storefront/settings"),
-      api.get<EcommerceFamilyCatalogResponse>("/storefront/product-families"),
-    ]);
-    setData(response);
-    setFamilyData(families);
-    setForm(formFromSettings(response));
-    setLoading(false);
+    try {
+      const [response, families] = await Promise.all([
+        api.get<EcommerceSettingsResponse>("/storefront/settings"),
+        api.get<EcommerceFamilyCatalogResponse>("/storefront/product-families"),
+      ]);
+      setData(response);
+      setFamilyData(families);
+      setForm(formFromSettings(response));
+    } catch (loadError) {
+      setError(readError(loadError));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -1011,5 +1016,9 @@ function versionedMediaUrl(path: string): string {
 }
 
 function readError(error: unknown): string {
+  if (error instanceof Error && error.message === "Forbidden") {
+    return "You do not have permission to manage ecommerce settings.";
+  }
+
   return error instanceof Error ? error.message : "Request failed";
 }

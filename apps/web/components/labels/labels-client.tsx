@@ -891,15 +891,7 @@ export function LabelsClient() {
                 <span className={cn("font-semibold", printerStatus?.connected ? "text-emerald-700" : "text-red-700")}>{printerStatus?.connected ? "Configured" : "Not configured"}</span>
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                {printerStatus?.printer?.connectionType === "LOCAL_AGENT" && (printerStatus.printer.labelPrinterName || printerStatus.printer.localPrinterName)
-                  ? `${printerStatus.printer.labelPrinterName ?? printerStatus.printer.localPrinterName} | Local Agent`
-                  : printerStatus?.printer?.connectionType === "NETWORK" && printerStatus.printer.networkIp
-                    ? `${printerStatus.printer.networkIp}:${String(printerStatus.printer.networkPort ?? 9100)} | Network ESC/POS`
-                    : printerStatus?.printer?.connectionType === "USB_PRINTNODE" && printerStatus.printer.printNodePrinterId
-                      ? `PrintNode printer ${printerStatus.printer.printNodePrinterId}`
-                      : printerStatus?.printer?.connectionType === "BLUETOOTH" && printerStatus.printer.bluetoothDeviceName
-                        ? `${printerStatus.printer.bluetoothDeviceName} | Bluetooth`
-                        : printerStatus?.name ?? "No printer selected in Settings > Printer setup"}
+                {formatPrinterStatus(printerStatus)}
               </div>
             </div>
 
@@ -1021,6 +1013,32 @@ function applyFieldPatch(field: LabelCanvasField, patch: LabelCanvasFieldPatch):
   }
 
   return next;
+}
+
+function formatPrinterStatus(status: { connected: boolean; name: string | null; printer: LabelPrinterConfig | null } | null): string {
+  const printer = status?.printer;
+  if (!printer) {
+    return "No printer selected in Settings > Printer setup";
+  }
+
+  if (printer.connectionType === "LOCAL_AGENT") {
+    const printerName = printer.labelPrinterName ?? printer.localPrinterName;
+    return printerName ? `${printerName} | Local Agent` : "Local Agent printer not selected";
+  }
+
+  if (printer.connectionType === "NETWORK" && printer.networkIp) {
+    return `${printer.networkIp}:${String(printer.networkPort ?? 9100)} | Network ESC/POS`;
+  }
+
+  if (printer.connectionType === "USB_PRINTNODE" && printer.printNodePrinterId) {
+    return `PrintNode printer ${printer.printNodePrinterId}`;
+  }
+
+  if (printer.connectionType === "BLUETOOTH" && printer.bluetoothDeviceName) {
+    return `${printer.bluetoothDeviceName} | Bluetooth`;
+  }
+
+  return status.name ?? "No printer selected in Settings > Printer setup";
 }
 
 function StepperButton({

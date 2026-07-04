@@ -207,6 +207,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         }
       } catch (error) {
         if (!cancelled) {
+          if (error instanceof Error && error.message === "Forbidden") {
+            setStores([]);
+            setStoreLoadError(null);
+            return;
+          }
+
           setStoreLoadError(error instanceof Error ? error.message : "Store list unavailable");
         }
       }
