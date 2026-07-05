@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { PrinterConn } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import type { z } from "zod";
 
@@ -13,8 +12,10 @@ import {
   labelTemplateCreateSchema,
   labelTemplateParamsSchema,
 } from "./labels.schema.js";
-import { printLabelBitmaps, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
+import { buildLabelEscposBytes, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
 import type { LabelTemplateRecord } from "./labels.types.js";
+
+const DEFAULT_LOCAL_AGENT_URL = "http://127.0.0.1:9211";
 
 const labelTemplateUpdateSchema = labelTemplateCreateSchema.partial();
 
@@ -172,7 +173,8 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     }
 
     const bitmaps = await renderLabelSheetBitmaps(preview);
-    await printLabelBitmaps(bitmaps);
+    const bytes = await buildLabelEscposBytes(bitmaps);
+    const printerStatus = resolveLabelPrinterStatus(printer);
 
     return {
       job: {
@@ -182,10 +184,11 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
         outputType: job.outputType,
         printedAt: job.printedAt,
       },
-      printer: {
-        connected: Boolean(printer?.isActive && printer.connectionType !== PrinterConn.NONE),
-        name: null,
-        printer,
+      printer: printerStatus,
+      print: {
+        bytesBase64: bytes.toString("base64"),
+        printerName: printerStatus.name,
+        agentUrl: printer?.localAgentUrl ?? DEFAULT_LOCAL_AGENT_URL,
       },
       preview,
     };
@@ -198,11 +201,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       },
     });
 
-    return {
-      connected: Boolean(printer?.isActive && printer.connectionType !== PrinterConn.NONE),
-      name: printer?.localPrinterName ?? null,
-      printer,
-    };
+    return resolveLabelPrinterStatus(printer);
   });
 
   done();
@@ -279,6 +278,25 @@ async function resolveTemplate(
     canvasJson: fallbackCanvas,
     isDefault: false,
   } satisfies ResolvedTemplate;
+}
+
+type LabelPrinterStatusSource = {
+  isActive: boolean;
+  localPrinterName: string | null;
+  labelPrinterName: string | null;
+} | null;
+
+function resolveLabelPrinterStatus(printer: LabelPrinterStatusSource): {
+  connected: boolean;
+  name: string | null;
+  printer: LabelPrinterStatusSource;
+} {
+  const name = printer?.labelPrinterName ?? null;
+  return {
+    connected: Boolean(name),
+    name,
+    printer,
+  };
 }
 
 function serializeDefaultTemplate(template: LabelTemplateRecord): LabelTemplateView {

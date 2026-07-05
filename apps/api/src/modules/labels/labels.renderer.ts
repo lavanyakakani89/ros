@@ -260,52 +260,59 @@ export async function renderLabelSheetBitmaps(input: ResolvedLabelJob): Promise<
   }
 }
 
-export async function printLabelBitmaps(bitmaps: Buffer[]): Promise<void> {
-  const { printer } = await openPrinter();
+export async function buildLabelEscposBytes(bitmaps: Buffer[]): Promise<Buffer> {
+  const coreModule = (await import("@node-escpos/core")) as unknown as {
+    default: new (adapter: EscposCaptureAdapter, options?: Record<string, unknown>) => {
+      image(image: unknown, density?: string): Promise<void> | void;
+      feed(lines: number): unknown;
+      cut(partial?: boolean, feed?: number): unknown;
+      close(): Promise<unknown>;
+    };
+    Image: { load(data: Buffer | Uint8Array, type?: string | null): Promise<unknown> };
+  };
 
-  try {
-    for (const [index, bitmap] of bitmaps.entries()) {
-      await printer.image(bitmap, "d24");
-      if (index < bitmaps.length - 1) {
-        await printer.feed(1);
-      }
+  const adapter = new EscposCaptureAdapter();
+  const printer = new coreModule.default(adapter, {});
+
+  for (const [index, bitmap] of bitmaps.entries()) {
+    const image = await coreModule.Image.load(bitmap, "image/png");
+    await printer.image(image, "d24");
+    if (index < bitmaps.length - 1) {
+      printer.feed(1);
     }
-    await printer.cut();
-  } finally {
-    await printer.close();
   }
+  printer.cut();
+  await printer.close();
+
+  return adapter.toBuffer();
 }
 
-export async function detectPrinterStatus(): Promise<{ connected: boolean; name: string | null }> {
-  try {
-    const { device, printer } = await openPrinter();
-    await printer.close();
-    await device.close();
-    return {
-      connected: true,
-      name: "ATPOS HQ450 L",
-    };
-  } catch {
-    return {
-      connected: false,
-      name: null,
-    };
+class EscposCaptureAdapter {
+  private readonly chunks: Buffer[] = [];
+
+  open(callback?: ((error: Error | null) => void) | undefined): this {
+    callback?.(null);
+    return this;
   }
-}
 
-async function openPrinter(): Promise<{ device: PrinterDevice; printer: PrinterHandle }> {
-  const [coreModule, usbModule] = await Promise.all([
-    import("@node-escpos/core") as Promise<{ Printer: PrinterConstructor }>,
-    import("@node-escpos/usb-adapter") as Promise<{ default: new () => PrinterDevice }>,
-  ]);
+  write(data: Buffer | string, callback?: ((error: Error | null) => void) | undefined): this {
+    this.chunks.push(Buffer.isBuffer(data) ? Buffer.from(data) : Buffer.from(data));
+    callback?.(null);
+    return this;
+  }
 
-  const USBAdapter = usbModule.default;
-  const device = new USBAdapter();
-  await device.open();
+  read(_callback?: ((data: Buffer) => void) | undefined): void {
+    return;
+  }
 
-  const printer = new coreModule.Printer(device);
+  close(callback?: ((error: Error | null) => void) | undefined): this {
+    callback?.(null);
+    return this;
+  }
 
-  return { device, printer };
+  toBuffer(): Buffer {
+    return Buffer.concat(this.chunks);
+  }
 }
 
 async function resolveFields(

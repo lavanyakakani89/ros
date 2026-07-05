@@ -16,6 +16,7 @@ import type {
   LabelTemplateDraft,
   LabelTemplateRecord,
 } from "@/lib/types/labels";
+import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { LabelCanvasRenderer } from "./label-canvas-renderer";
 
 type StepId = 1 | 2 | 3;
@@ -401,13 +402,29 @@ export function LabelsClient() {
         URL.revokeObjectURL(url);
         notify("PDF downloaded.");
       } else {
-        const response = await postJson<{ preview: LabelPreviewJob; printer: { connected: boolean; name: string | null; printer: LabelPrinterConfig | null } }>("/labels/print", {
+        const response = await postJson<{
+          preview: LabelPreviewJob;
+          printer: { connected: boolean; name: string | null; printer: LabelPrinterConfig | null };
+          print?: { bytesBase64: string; printerName: string | null; agentUrl: string | null };
+        }>("/labels/print", {
           ...payload,
           output_type: "print",
         });
         setPreviewJob(response.preview);
         setPrinterStatus(response.printer);
-        notify(response.printer.connected ? "Labels sent to printer." : "Printer not configured. PDF fallback is available.", response.printer.connected ? "green" : "amber");
+        const printerName = response.print?.printerName ?? response.printer.name ?? response.printer.printer?.labelPrinterName ?? null;
+        if (!printerName) {
+          notify("Select a label printer in Settings > Printer setup.", "red");
+          return;
+        }
+
+        await printViaLocalAgent({
+          agentUrl: response.print?.agentUrl ?? response.printer.printer?.localAgentUrl ?? undefined,
+          printerName,
+          bytesBase64: response.print?.bytesBase64,
+          jobName: "BizBil label print",
+        });
+        notify(`Labels sent to ${printerName}.`, "green");
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Label printing failed.", "red");
@@ -1022,8 +1039,7 @@ function formatPrinterStatus(status: { connected: boolean; name: string | null; 
   }
 
   if (printer.connectionType === "LOCAL_AGENT") {
-    const printerName = printer.labelPrinterName ?? printer.localPrinterName;
-    return printerName ? `${printerName} | Local Agent` : "Local Agent printer not selected";
+    return printer.labelPrinterName ? `${printer.labelPrinterName} | Local Agent` : "Label printer not selected";
   }
 
   if (printer.connectionType === "NETWORK" && printer.networkIp) {

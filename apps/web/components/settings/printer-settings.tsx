@@ -66,10 +66,34 @@ export function PrinterSettings() {
       await queryClient.invalidateQueries({ queryKey: ["printer-config"] });
     },
   });
-  const testPrinter = useMutation({
+  const testSavedPrinter = useMutation({
     mutationFn: () => createAuthenticatedApiClient().post<TestResponse>("/printer/test", {}),
     onSuccess: (result) => {
       void handleTestPrinterResult(result);
+    },
+  });
+  const testSelectedPrinter = useMutation({
+    mutationFn: async ({ printerName, kind }: { printerName: string; kind: "receipt" | "label" }) => {
+      if (!printerName.trim()) {
+        throw new Error("Choose a Windows printer first.");
+      }
+
+      const bytesBase64 = buildEscposTestBase64([
+        "BizBil printer test",
+        kind === "receipt" ? `Receipt printer: ${printerName}` : `Label printer: ${printerName}`,
+        new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+        "If this prints, billing print is ready.",
+      ]);
+
+      return printViaLocalAgent({
+        agentUrl,
+        printerName,
+        bytesBase64,
+        jobName: kind === "receipt" ? "BizBil receipt printer test" : "BizBil label printer test",
+      });
+    },
+    onSuccess: (_result, variables) => {
+      setMessage(`${variables.kind === "receipt" ? "Receipt" : "Label"} printer test sent to ${variables.printerName}.`);
     },
   });
   const checkAgent = useMutation({
@@ -106,7 +130,7 @@ export function PrinterSettings() {
   }
 
   const printer = printerQuery.data?.printer;
-  const error = printerQuery.error ?? savePrinter.error ?? testPrinter.error ?? checkAgent.error ?? loadAgentPrinters.error;
+  const error = printerQuery.error ?? savePrinter.error ?? testSavedPrinter.error ?? checkAgent.error ?? loadAgentPrinters.error ?? testSelectedPrinter.error;
 
   useEffect(() => {
     if (printer?.localAgentUrl) {
@@ -166,17 +190,23 @@ export function PrinterSettings() {
           <TextInput name="bluetoothDeviceName" label="Bluetooth device name" defaultValue={printer?.bluetoothDeviceName ?? ""} />
           <PrinterPicker
             name="localPrinterName"
-            label="Local Windows printer name"
+            label="Receipt printer"
             defaultValue={printer?.localPrinterName ?? ""}
             printers={agentPrinters}
-            placeholder="Select a Windows printer"
+            placeholder="Select a Receipt printer"
+            testButtonLabel="Test receipt printer"
+            onTest={(printerName) => testSelectedPrinter.mutate({ printerName, kind: "receipt" })}
+            testPending={testSelectedPrinter.isPending}
           />
           <PrinterPicker
             name="labelPrinterName"
-            label="Label printer name"
-            defaultValue={printer?.labelPrinterName ?? printer?.localPrinterName ?? ""}
+            label="Label printer"
+            defaultValue={printer?.labelPrinterName ?? ""}
             printers={agentPrinters}
             placeholder="Select a label printer"
+            testButtonLabel="Test label printer"
+            onTest={(printerName) => testSelectedPrinter.mutate({ printerName, kind: "label" })}
+            testPending={testSelectedPrinter.isPending}
           />
           <label className="block text-sm font-medium text-slate-700">
             Local agent URL
@@ -198,9 +228,9 @@ export function PrinterSettings() {
             <Save className="size-4" aria-hidden="true" />
             Save printer
           </button>
-          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => testPrinter.mutate()} disabled={testPrinter.isPending}>
+          <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => testSavedPrinter.mutate()} disabled={testSavedPrinter.isPending}>
             <Printer className="size-4" aria-hidden="true" />
-            Test print
+            Test saved config
           </button>
           <button type="button" className="inline-flex h-10 items-center gap-2 rounded-md border border-border px-4 text-sm font-medium text-slate-700" onClick={() => checkAgent.mutate()} disabled={checkAgent.isPending}>
             <RefreshCcw className="size-4" aria-hidden="true" />
@@ -257,28 +287,56 @@ function PrinterPicker({
   defaultValue,
   printers,
   placeholder,
+  testButtonLabel,
+  onTest,
+  testPending,
 }: Readonly<{
   name: string;
   label: string;
   defaultValue: string;
   printers: LocalAgentPrinter[];
   placeholder: string;
+  testButtonLabel?: string;
+  onTest?: (printerName: string) => void;
+  testPending?: boolean;
 }>) {
+  const [selectedValue, setSelectedValue] = useState(defaultValue);
   const optionValues = printers.map((item) => item.name);
-  const selectedValue = defaultValue.trim();
+  const normalizedValue = selectedValue.trim();
   const showSelect = printers.length > 0;
-  const savedValueMissing = selectedValue.length > 0 && !optionValues.includes(selectedValue);
+  const savedValueMissing = normalizedValue.length > 0 && !optionValues.includes(normalizedValue);
   const selectOptions = savedValueMissing
-    ? [{ name: selectedValue, isDefault: false, label: `${selectedValue} (saved)` }, ...printers]
+    ? [{ name: normalizedValue, isDefault: false, label: `${normalizedValue} (saved)` }, ...printers]
     : printers;
 
+  useEffect(() => {
+    setSelectedValue(defaultValue);
+  }, [defaultValue]);
+
+  const canTest = Boolean(onTest && normalizedValue);
+
   return (
-    <label className="block text-sm font-medium text-slate-700">
-      {label}
+    <div className="block text-sm font-medium text-slate-700">
+      <div className="flex items-center justify-between gap-2">
+        <label htmlFor={name}>{label}</label>
+        {onTest ? (
+          <button
+            type="button"
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => onTest(normalizedValue)}
+            disabled={!canTest || testPending}
+          >
+            <Printer className="size-3.5" aria-hidden="true" />
+            {testButtonLabel ?? "Test printer"}
+          </button>
+        ) : null}
+      </div>
       {showSelect ? (
         <select
+          id={name}
           name={name}
-          defaultValue={selectedValue}
+          value={selectedValue}
+          onChange={(event) => setSelectedValue(event.target.value)}
           className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
         >
           <option value="">{placeholder}</option>
@@ -291,8 +349,10 @@ function PrinterPicker({
       ) : (
         <>
           <input
+            id={name}
             name={name}
-            defaultValue={selectedValue}
+            value={selectedValue}
+            onChange={(event) => setSelectedValue(event.target.value)}
             placeholder="Load Windows printers to choose from the list"
             className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
           />
@@ -301,8 +361,44 @@ function PrinterPicker({
           </div>
         </>
       )}
-    </label>
+    </div>
   );
+}
+
+function buildEscposTestBase64(lines: string[]): string {
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [new Uint8Array([0x1b, 0x40])];
+
+  for (const line of lines) {
+    chunks.push(encoder.encode(line));
+    chunks.push(encoder.encode("\n"));
+  }
+
+  chunks.push(new Uint8Array([0x1b, 0x64, 0x04]));
+  chunks.push(new Uint8Array([0x1d, 0x56, 0x00]));
+
+  return bytesToBase64(concatUint8Arrays(chunks));
+}
+
+function concatUint8Arrays(chunks: Uint8Array[]): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return result;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 function formString(form: FormData, key: string): string {
