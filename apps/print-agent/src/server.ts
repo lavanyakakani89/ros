@@ -297,7 +297,7 @@ async function listPrinters(): Promise<WindowsPrinter[]> {
     const output = await runPowerShell([
       "-NoProfile",
       "-Command",
-      "Get-CimInstance Win32_Printer | Select-Object Name,DriverName,PortName,Default,PrinterStatus | ConvertTo-Json -Compress",
+      "Add-Type -AssemblyName System.Printing; $server=[System.Printing.LocalPrintServer]::new(); $default = if ($server.DefaultPrintQueue) { $server.DefaultPrintQueue.Name } else { '' }; $server.GetPrintQueues() | ForEach-Object { [pscustomobject]@{ Name=$_.Name; DriverName=$_.QueueDriver.Name; PortName=$_.QueuePort.Name; Status=[string]$_.QueueStatus; Default=($_.Name -eq $default) } } | ConvertTo-Json -Compress",
     ]);
     const parsed = JSON.parse(output || "[]") as unknown;
     const items = Array.isArray(parsed) ? parsed : [parsed];
