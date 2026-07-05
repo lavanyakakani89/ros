@@ -401,7 +401,7 @@ async function dispatchEscposReceipt(bytes: Buffer, printer: PrinterConfig | nul
       status: "local_agent_payload",
       message: "Send these ESC/POS bytes to the BizBil Local Print Agent.",
       bytesBase64: bytes.toString("base64"),
-      printerName: printer.labelPrinterName ?? printer.localPrinterName,
+      printerName: printer.localPrinterName ?? printer.labelPrinterName,
       agentUrl: printer.localAgentUrl ?? "http://127.0.0.1:9211",
     };
   }
