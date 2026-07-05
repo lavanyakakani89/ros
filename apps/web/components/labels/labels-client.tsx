@@ -405,7 +405,7 @@ export function LabelsClient() {
         const response = await postJson<{
           preview: LabelPreviewJob;
           printer: { connected: boolean; name: string | null; printer: LabelPrinterConfig | null };
-          print?: { bytesBase64: string; printerName: string | null; agentUrl: string | null };
+          print?: { pageImagesBase64: string[]; paperWidthMm: number; paperHeightMm: number; printerName: string | null; agentUrl: string | null };
         }>("/labels/print", {
           ...payload,
           output_type: "print",
@@ -421,7 +421,9 @@ export function LabelsClient() {
         await printViaLocalAgent({
           agentUrl: response.print?.agentUrl ?? response.printer.printer?.localAgentUrl ?? undefined,
           printerName,
-          bytesBase64: response.print?.bytesBase64,
+          pageImagesBase64: response.print?.pageImagesBase64,
+          paperWidthMm: response.print?.paperWidthMm,
+          paperHeightMm: response.print?.paperHeightMm,
           jobName: "BizBil label print",
         });
         notify(`Labels sent to ${printerName}.`, "green");

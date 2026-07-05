@@ -13,6 +13,8 @@ interface LocalAgentPrintRequest {
   printerName?: string | null | undefined;
   bytesBase64?: string | undefined;
   pageImagesBase64?: string[] | undefined;
+  paperWidthMm?: number | undefined;
+  paperHeightMm?: number | undefined;
   jobName?: string;
 }
 
@@ -45,6 +47,14 @@ export async function printViaLocalAgent(input: LocalAgentPrintRequest): Promise
 
   if (pageImagesBase64 && pageImagesBase64.length > 0) {
     body.pageImagesBase64 = pageImagesBase64;
+  }
+
+  if (typeof input.paperWidthMm === "number" && Number.isFinite(input.paperWidthMm) && input.paperWidthMm > 0) {
+    body.paperWidthMm = input.paperWidthMm;
+  }
+
+  if (typeof input.paperHeightMm === "number" && Number.isFinite(input.paperHeightMm) && input.paperHeightMm > 0) {
+    body.paperHeightMm = input.paperHeightMm;
   }
 
   const response = await fetch(`${normalizeAgentUrl(input.agentUrl)}/print`, {

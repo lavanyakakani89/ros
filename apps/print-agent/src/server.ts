@@ -35,6 +35,8 @@ interface PrintRequest {
   port?: number;
   payloadBase64?: string;
   pageImagesBase64?: string[];
+  paperWidthMm?: number;
+  paperHeightMm?: number;
   jobName?: string;
 }
 
@@ -51,6 +53,8 @@ type ValidatedPrintRequest = {
   printMode: PrintMode;
   payloadBase64?: string;
   pageImagesBase64?: string[];
+  paperWidthMm?: number;
+  paperHeightMm?: number;
   jobName: string;
   printerName?: string;
   host?: string;
@@ -170,6 +174,8 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
 
   const pageImagesBase64 = normalizeBase64Array(input.pageImagesBase64);
   const payloadBase64 = typeof input.payloadBase64 === "string" && input.payloadBase64.trim() ? input.payloadBase64.trim() : undefined;
+  const paperWidthMm = normalizePositiveNumber(input.paperWidthMm);
+  const paperHeightMm = normalizePositiveNumber(input.paperHeightMm);
 
   if (!payloadBase64 && pageImagesBase64.length === 0) {
     throw new HttpError(400, "payloadBase64 or pageImagesBase64 is required.");
@@ -202,6 +208,8 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
     printMode: pageImagesBase64.length > 0 ? "IMAGE_PAGES" : "RAW",
     ...(payloadBase64 ? { payloadBase64 } : {}),
     ...(pageImagesBase64.length > 0 ? { pageImagesBase64 } : {}),
+    ...(paperWidthMm ? { paperWidthMm } : {}),
+    ...(paperHeightMm ? { paperHeightMm } : {}),
     jobName: sanitizeJobName(input.jobName ?? "BizBil invoice"),
     port: input.port ?? defaultTcpPort,
   };
@@ -238,6 +246,8 @@ async function dispatchPrint(payload: ValidatedPrintRequest): Promise<void> {
       printerName: payload.printerName ?? "",
       jobName: payload.jobName,
       pageImagesBase64: payload.pageImagesBase64 ?? [],
+      ...(payload.paperWidthMm ? { paperWidthMm: payload.paperWidthMm } : {}),
+      ...(payload.paperHeightMm ? { paperHeightMm: payload.paperHeightMm } : {}),
     });
     return;
   }
@@ -362,7 +372,7 @@ async function printRawToWindowsPrinter(input: { printerName: string; jobName: s
   }
 }
 
-async function printImagePagesToWindowsPrinter(input: { printerName: string; jobName: string; pageImagesBase64: string[] }): Promise<void> {
+async function printImagePagesToWindowsPrinter(input: { printerName: string; jobName: string; pageImagesBase64: string[]; paperWidthMm?: number; paperHeightMm?: number }): Promise<void> {
   const dir = await mkdtemp(join(os.tmpdir(), "bizbil-print-"));
   const scriptPath = join(dir, "print-images.ps1");
 
@@ -386,6 +396,8 @@ async function printImagePagesToWindowsPrinter(input: { printerName: string; job
       dir,
       "-JobName",
       input.jobName,
+      ...(input.paperWidthMm ? ["-PaperWidthMm", String(input.paperWidthMm)] : []),
+      ...(input.paperHeightMm ? ["-PaperHeightMm", String(input.paperHeightMm)] : []),
     ]);
   } finally {
     await rm(dir, { force: true, recursive: true });
@@ -529,7 +541,9 @@ const imagePrinterPowerShell = String.raw`
 param(
   [Parameter(Mandatory = $true)][string]$PrinterName,
   [Parameter(Mandatory = $true)][string]$Folder,
-  [Parameter(Mandatory = $true)][string]$JobName
+  [Parameter(Mandatory = $true)][string]$JobName,
+  [double]$PaperWidthMm = 0,
+  [double]$PaperHeightMm = 0
 )
 
 Add-Type -AssemblyName System.Drawing
@@ -551,6 +565,13 @@ try {
   $document.OriginAtMargins = $true
   $document.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
   $document.PrinterSettings.PrinterName = $PrinterName
+
+  if ($PaperWidthMm -gt 0 -and $PaperHeightMm -gt 0) {
+    $paperWidth = [int][Math]::Max(1, [Math]::Round(($PaperWidthMm / 25.4) * 100))
+    $paperHeight = [int][Math]::Max(1, [Math]::Round(($PaperHeightMm / 25.4) * 100))
+    $document.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Custom', $paperWidth, $paperHeight)
+    $document.DefaultPageSettings.Landscape = $PaperWidthMm -gt $PaperHeightMm
+  }
 
   $document.add_PrintPage({
     param($sender, $e)
@@ -590,4 +611,12 @@ function normalizeBase64Array(values?: string[] | null): string[] {
   }
 
   return values.map((value) => (typeof value === "string" ? value.trim() : "")).filter((value) => value.length > 0);
+}
+
+function normalizePositiveNumber(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return value;
 }

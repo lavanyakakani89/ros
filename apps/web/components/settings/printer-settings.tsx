@@ -94,16 +94,17 @@ export function PrinterSettings() {
         });
       }
 
-      return createAuthenticatedApiClient().post<TestResponse>("/printer/test-label", {
+      const pageImagesBase64 = [buildLabelTestPageBase64(printerName)];
+      return printViaLocalAgent({
+        agentUrl,
         printerName,
+        pageImagesBase64,
+        paperWidthMm: 100,
+        paperHeightMm: 50,
+        jobName: "BizBil label printer test",
       });
     },
-    onSuccess: (result, variables) => {
-      if (result.status === "local_agent_payload") {
-        void handleTestPrinterResult(result);
-        return;
-      }
-
+    onSuccess: (_result, variables) => {
       setMessage(`${variables.kind === "receipt" ? "Receipt" : "Label"} printer test sent to ${variables.printerName}.`);
     },
   });
@@ -389,6 +390,41 @@ function buildEscposTestBase64(lines: string[]): string {
   chunks.push(Uint8Array.from([0x1d, 0x56, 0x00]));
 
   return bytesToBase64(concatUint8Arrays(chunks));
+}
+
+function buildLabelTestPageBase64(printerName: string): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 600;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas is unavailable in this browser.");
+  }
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.strokeStyle = "#d1d5db";
+  context.lineWidth = 4;
+  context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+
+  context.fillStyle = "#111827";
+  context.font = "bold 56px monospace";
+  context.fillText("BizBil label test", 60, 110);
+
+  context.font = "36px monospace";
+  context.fillText(`Printer: ${printerName}`, 60, 190);
+  context.fillText(new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), 60, 250);
+  context.fillText("If this prints, label printing is ready.", 60, 330);
+
+  const dataUrl = canvas.toDataURL("image/png");
+  const base64 = dataUrl.split(",", 2)[1];
+  if (!base64) {
+    throw new Error("Unable to build label test image.");
+  }
+
+  return base64;
 }
 
 function concatUint8Arrays(chunks: Uint8Array[]): Uint8Array {

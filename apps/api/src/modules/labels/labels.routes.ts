@@ -12,7 +12,7 @@ import {
   labelTemplateCreateSchema,
   labelTemplateParamsSchema,
 } from "./labels.schema.js";
-import { buildLabelEscposBytes, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
+import { renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
 import type { LabelTemplateRecord } from "./labels.types.js";
 
 const DEFAULT_LOCAL_AGENT_URL = "http://127.0.0.1:9211";
@@ -173,8 +173,9 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     }
 
     const bitmaps = await renderLabelSheetBitmaps(preview);
-    const bytes = await buildLabelEscposBytes(bitmaps);
     const printerStatus = resolveLabelPrinterStatus(printer);
+    const paperWidthMm = preview.layout_mode === "2up" ? preview.width_mm * 2 : preview.width_mm;
+    const paperHeightMm = preview.height_mm;
 
     return {
       job: {
@@ -186,7 +187,9 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
       },
       printer: printerStatus,
       print: {
-        bytesBase64: bytes.toString("base64"),
+        pageImagesBase64: bitmaps.map((bitmap) => bitmap.toString("base64")),
+        paperWidthMm,
+        paperHeightMm,
         printerName: printerStatus.name,
         agentUrl: printer?.localAgentUrl ?? DEFAULT_LOCAL_AGENT_URL,
       },
