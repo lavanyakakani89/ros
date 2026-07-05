@@ -273,6 +273,78 @@ export async function buildLabelEscposBytes(bitmaps: Buffer[]): Promise<Buffer> 
   return adapter.toBuffer();
 }
 
+export async function buildLabelTestEscposBytes(printerName: string): Promise<Buffer> {
+  const bitmap = await renderLabelTestBitmap(printerName);
+  return buildLabelEscposBytes([bitmap]);
+}
+
+async function renderLabelTestBitmap(printerName: string): Promise<Buffer> {
+  const browser = await launchBrowser();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({
+      width: 1200,
+      height: 600,
+      deviceScaleFactor: 1,
+    });
+    await page.setContent(
+      `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body {
+        margin: 0;
+        width: 1200px;
+        height: 600px;
+        background: #ffffff;
+        font-family: monospace;
+        color: #111827;
+      }
+      .frame {
+        box-sizing: border-box;
+        width: 1160px;
+        height: 560px;
+        margin: 20px;
+        padding: 40px;
+        border: 4px solid #d1d5db;
+      }
+      .title {
+        font-size: 56px;
+        font-weight: 700;
+        line-height: 1.1;
+        margin: 0 0 24px 0;
+      }
+      .line {
+        font-size: 36px;
+        line-height: 1.35;
+        margin: 0 0 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <div class="title">BizBil label test</div>
+      <div class="line">Printer: ${escapeHtml(printerName)}</div>
+      <div class="line">${escapeHtml(new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }))}</div>
+      <div class="line">If this prints, label printing is ready.</div>
+    </div>
+  </body>
+</html>`,
+      { waitUntil: "networkidle0" },
+    );
+
+    const screenshot = await page.screenshot({
+      type: "png",
+      fullPage: true,
+      omitBackground: false,
+    });
+    return Buffer.from(screenshot);
+  } finally {
+    await browser.close();
+  }
+}
+
 class EscposCaptureAdapter {
   private readonly chunks: Buffer[] = [];
 
@@ -541,5 +613,6 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }

@@ -2,6 +2,7 @@ import { PaperSize, PrinterConn } from "@prisma/client";
 import type { FastifyPluginCallback, FastifyReply } from "fastify";
 import { z } from "zod";
 
+import { buildLabelTestEscposBytes } from "../labels/labels.renderer.js";
 import { testPrinterForTenant } from "./printer.service.js";
 
 const printerSchema = z.object({
@@ -22,6 +23,10 @@ const printerSchema = z.object({
 const bluetoothPairSchema = z.object({
   deviceId: z.string().trim().min(1),
   deviceName: z.string().trim().min(1),
+});
+
+const labelTestSchema = z.object({
+  printerName: z.string().trim().min(1),
 });
 
 export const printerRoutes: FastifyPluginCallback = (fastify, _options, done) => {
@@ -71,6 +76,26 @@ export const printerRoutes: FastifyPluginCallback = (fastify, _options, done) =>
 
   fastify.post("/api/printer/test", async (request, reply) => {
     return handlePrinter(reply, () => testPrinterForTenant({ fastify, tenant: request.tenant }));
+  });
+
+  fastify.post("/api/printer/test-label", async (request, reply) => {
+    const input = labelTestSchema.parse(request.body);
+    return handlePrinter(reply, async () => {
+      const printer = await fastify.prisma.printerConfig.findUnique({
+        where: {
+          tenantId: request.tenant.id,
+        },
+      });
+
+      const bytes = await buildLabelTestEscposBytes(input.printerName);
+      return {
+        status: "local_agent_payload",
+        message: "Label printer test ready.",
+        bytesBase64: bytes.toString("base64"),
+        printerName: input.printerName,
+        agentUrl: printer?.localAgentUrl ?? "http://127.0.0.1:9211",
+      };
+    });
   });
 
   fastify.post("/api/printer/bluetooth-pair", async (request) => {
