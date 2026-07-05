@@ -164,26 +164,20 @@ export function PrinterSettings() {
           <TextInput name="printNodePrinterId" label="PrintNode printer ID" defaultValue={printer?.printNodePrinterId ?? ""} />
           <TextInput name="bluetoothDeviceId" label="Bluetooth device ID" defaultValue={printer?.bluetoothDeviceId ?? ""} />
           <TextInput name="bluetoothDeviceName" label="Bluetooth device name" defaultValue={printer?.bluetoothDeviceName ?? ""} />
-          <label className="block text-sm font-medium text-slate-700">
-            Local Windows printer name
-            <input
-              name="localPrinterName"
-              list="bizbil-local-printers"
-              defaultValue={printer?.localPrinterName ?? ""}
-              placeholder="Example: ATPOS 80C"
-              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
-            />
-          </label>
-          <label className="block text-sm font-medium text-slate-700">
-            Label printer name
-            <input
-              name="labelPrinterName"
-              list="bizbil-local-printers"
-              defaultValue={printer?.labelPrinterName ?? printer?.localPrinterName ?? ""}
-              placeholder="Example: ATPOS Labels"
-              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
-            />
-          </label>
+          <PrinterPicker
+            name="localPrinterName"
+            label="Local Windows printer name"
+            defaultValue={printer?.localPrinterName ?? ""}
+            printers={agentPrinters}
+            placeholder="Select a Windows printer"
+          />
+          <PrinterPicker
+            name="labelPrinterName"
+            label="Label printer name"
+            defaultValue={printer?.labelPrinterName ?? printer?.localPrinterName ?? ""}
+            printers={agentPrinters}
+            placeholder="Select a label printer"
+          />
           <label className="block text-sm font-medium text-slate-700">
             Local agent URL
             <input
@@ -194,10 +188,6 @@ export function PrinterSettings() {
             />
           </label>
         </div>
-        <datalist id="bizbil-local-printers">
-          {agentPrinters.map((item) => <option key={item.name} value={item.name}>{item.isDefault ? `${item.name} (default)` : item.name}</option>)}
-        </datalist>
-
         <label className="mt-4 flex items-center gap-2 text-sm font-medium text-slate-700">
           <input name="isActive" type="checkbox" defaultChecked={printer?.isActive ?? true} className="size-4 rounded border-border" />
           Active printer
@@ -261,6 +251,60 @@ function TextInput({ name, label, defaultValue, type = "text" }: Readonly<{ name
   );
 }
 
+function PrinterPicker({
+  name,
+  label,
+  defaultValue,
+  printers,
+  placeholder,
+}: Readonly<{
+  name: string;
+  label: string;
+  defaultValue: string;
+  printers: LocalAgentPrinter[];
+  placeholder: string;
+}>) {
+  const optionValues = printers.map((item) => item.name);
+  const selectedValue = defaultValue.trim();
+  const showSelect = printers.length > 0;
+  const savedValueMissing = selectedValue.length > 0 && !optionValues.includes(selectedValue);
+  const selectOptions = savedValueMissing
+    ? [{ name: selectedValue, isDefault: false, label: `${selectedValue} (saved)` }, ...printers]
+    : printers;
+
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      {showSelect ? (
+        <select
+          name={name}
+          defaultValue={selectedValue}
+          className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+        >
+          <option value="">{placeholder}</option>
+          {selectOptions.map((item) => (
+            <option key={item.name} value={item.name}>
+              {printerOptionLabel(item)}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <input
+            name={name}
+            defaultValue={selectedValue}
+            placeholder="Load Windows printers to choose from the list"
+            className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+          />
+          <div className="mt-1 text-xs font-normal text-slate-500">
+            {placeholder}
+          </div>
+        </>
+      )}
+    </label>
+  );
+}
+
 function formString(form: FormData, key: string): string {
   const value = form.get(key);
   return typeof value === "string" ? value.trim() : "";
@@ -272,4 +316,12 @@ function modeHelp(value: PrinterConn): string {
   if (value === "USB_PRINTNODE") return "Use PrintNode for USB printers attached to a PC.";
   if (value === "BLUETOOTH") return "Returns base64 ESC/POS bytes for browser Bluetooth handoff.";
   return "Use PDF print/download only.";
+}
+
+function printerOptionLabel(item: LocalAgentPrinter & { label?: string }): string {
+  if ("label" in item && item.label) {
+    return item.label;
+  }
+
+  return item.isDefault ? `${item.name} (default)` : item.name;
 }
