@@ -17,20 +17,6 @@ import type {
 
 const PRINTER_DPI = 203;
 
-type PrinterDevice = {
-  open(): Promise<void>;
-  close(): Promise<void>;
-};
-
-type PrinterHandle = {
-  image(bitmap: Buffer, mode: string): Promise<void>;
-  feed(lines: number): Promise<void>;
-  cut(): Promise<void>;
-  close(): Promise<void>;
-};
-
-type PrinterConstructor = new (device: PrinterDevice) => PrinterHandle;
-
 export interface ResolvedLabelSheet {
   index: number;
   width_mm: number;
@@ -290,22 +276,22 @@ export async function buildLabelEscposBytes(bitmaps: Buffer[]): Promise<Buffer> 
 class EscposCaptureAdapter {
   private readonly chunks: Buffer[] = [];
 
-  open(callback?: ((error: Error | null) => void) | undefined): this {
+  open(callback?: (error: Error | null) => void): this {
     callback?.(null);
     return this;
   }
 
-  write(data: Buffer | string, callback?: ((error: Error | null) => void) | undefined): this {
+  write(data: Buffer | string, callback?: (error: Error | null) => void): this {
     this.chunks.push(Buffer.isBuffer(data) ? Buffer.from(data) : Buffer.from(data));
     callback?.(null);
     return this;
   }
 
-  read(_callback?: ((data: Buffer) => void) | undefined): void {
+  read(): void {
     return;
   }
 
-  close(callback?: ((error: Error | null) => void) | undefined): this {
+  close(callback?: (error: Error | null) => void): this {
     callback?.(null);
     return this;
   }
