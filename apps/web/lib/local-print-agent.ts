@@ -12,6 +12,7 @@ interface LocalAgentPrintRequest {
   agentUrl?: string | null | undefined;
   printerName?: string | null | undefined;
   bytesBase64?: string | undefined;
+  pageImagesBase64?: string[] | undefined;
   jobName?: string;
 }
 
@@ -23,12 +24,27 @@ interface LocalAgentPrintResponse {
 }
 
 export async function printViaLocalAgent(input: LocalAgentPrintRequest): Promise<LocalAgentPrintResponse> {
-  if (!input.bytesBase64) {
+  if (!input.printerName?.trim()) {
+    throw new Error("Select the Windows printer name in Settings > Printer setup.");
+  }
+
+  const pageImagesBase64 = input.pageImagesBase64?.filter((page) => typeof page === "string" && page.trim().length > 0);
+  if (!input.bytesBase64 && (!pageImagesBase64 || pageImagesBase64.length === 0)) {
     throw new Error("Printer payload was not returned by BizBil.");
   }
 
-  if (!input.printerName?.trim()) {
-    throw new Error("Select the Windows printer name in Settings > Printer setup.");
+  const body: Record<string, unknown> = {
+    connectionType: "WINDOWS",
+    printerName: input.printerName.trim(),
+    jobName: input.jobName ?? "BizBil invoice",
+  };
+
+  if (input.bytesBase64) {
+    body.payloadBase64 = input.bytesBase64;
+  }
+
+  if (pageImagesBase64 && pageImagesBase64.length > 0) {
+    body.pageImagesBase64 = pageImagesBase64;
   }
 
   const response = await fetch(`${normalizeAgentUrl(input.agentUrl)}/print`, {
@@ -36,12 +52,7 @@ export async function printViaLocalAgent(input: LocalAgentPrintRequest): Promise
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      connectionType: "WINDOWS",
-      printerName: input.printerName.trim(),
-      payloadBase64: input.bytesBase64,
-      jobName: input.jobName ?? "BizBil invoice",
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

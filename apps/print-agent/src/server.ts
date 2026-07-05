@@ -26,6 +26,7 @@ const maxPayloadBytes = Number(
 const defaultTcpPort = 9100;
 
 type PrintConnection = "WINDOWS" | "NETWORK";
+type PrintMode = "RAW" | "IMAGE_PAGES";
 
 interface PrintRequest {
   connectionType?: string;
@@ -33,6 +34,7 @@ interface PrintRequest {
   host?: string;
   port?: number;
   payloadBase64?: string;
+  pageImagesBase64?: string[];
   jobName?: string;
 }
 
@@ -46,7 +48,9 @@ interface WindowsPrinter {
 
 type ValidatedPrintRequest = {
   connectionType: PrintConnection;
-  payloadBase64: string;
+  printMode: PrintMode;
+  payloadBase64?: string;
+  pageImagesBase64?: string[];
   jobName: string;
   printerName?: string;
   host?: string;
@@ -93,12 +97,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       requireAgentKey(request);
       const payload = validatePrintRequest(await readJsonBody<PrintRequest>(request));
       await dispatchPrint(payload);
-      sendJson(response, 200, {
-        status: "printed",
-        message: "Print job sent to local printer.",
-        jobName: payload.jobName,
-        bytes: Buffer.from(payload.payloadBase64, "base64").length,
-      });
+    sendJson(response, 200, {
+      status: "printed",
+      message: "Print job sent to local printer.",
+      jobName: payload.jobName,
+      bytes: payload.payloadBase64 ? Buffer.from(payload.payloadBase64, "base64").length : 0,
+    });
       return;
     }
 
@@ -164,13 +168,25 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
     throw new HttpError(400, "connectionType must be WINDOWS or NETWORK.");
   }
 
-  if (typeof input.payloadBase64 !== "string" || !input.payloadBase64.trim()) {
-    throw new HttpError(400, "payloadBase64 is required.");
+  const pageImagesBase64 = normalizeBase64Array(input.pageImagesBase64);
+  const payloadBase64 = typeof input.payloadBase64 === "string" && input.payloadBase64.trim() ? input.payloadBase64.trim() : undefined;
+
+  if (!payloadBase64 && pageImagesBase64.length === 0) {
+    throw new HttpError(400, "payloadBase64 or pageImagesBase64 is required.");
   }
 
-  const bytes = Buffer.from(input.payloadBase64, "base64");
-  if (bytes.length === 0 || bytes.length > maxPayloadBytes) {
-    throw new HttpError(400, `ESC/POS payload must be between 1 and ${String(maxPayloadBytes)} bytes.`);
+  if (payloadBase64) {
+    const bytes = Buffer.from(payloadBase64, "base64");
+    if (bytes.length === 0 || bytes.length > maxPayloadBytes) {
+      throw new HttpError(400, `ESC/POS payload must be between 1 and ${String(maxPayloadBytes)} bytes.`);
+    }
+  }
+
+  if (pageImagesBase64.length > 0) {
+    const pageBytes = pageImagesBase64.reduce((sum, page) => sum + Buffer.from(page, "base64").length, 0);
+    if (pageBytes === 0 || pageBytes > maxPayloadBytes * 8) {
+      throw new HttpError(400, `Label image payload must be between 1 and ${String(maxPayloadBytes * 8)} bytes.`);
+    }
   }
 
   if (connectionType === "WINDOWS" && !input.printerName?.trim()) {
@@ -183,7 +199,9 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
 
   const result: ValidatedPrintRequest = {
     connectionType,
-    payloadBase64: input.payloadBase64,
+    printMode: pageImagesBase64.length > 0 ? "IMAGE_PAGES" : "RAW",
+    ...(payloadBase64 ? { payloadBase64 } : {}),
+    ...(pageImagesBase64.length > 0 ? { pageImagesBase64 } : {}),
     jobName: sanitizeJobName(input.jobName ?? "BizBil invoice"),
     port: input.port ?? defaultTcpPort,
   };
@@ -202,12 +220,11 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
 }
 
 async function dispatchPrint(payload: ValidatedPrintRequest): Promise<void> {
-  const bytes = Buffer.from(payload.payloadBase64, "base64");
-
   if (payload.connectionType === "NETWORK") {
     if (!payload.host) {
       throw new HttpError(400, "host is required for NETWORK printing.");
     }
+    const bytes = Buffer.from(payload.payloadBase64 ?? "", "base64");
     await sendTcp(payload.host, payload.port, bytes);
     return;
   }
@@ -216,6 +233,16 @@ async function dispatchPrint(payload: ValidatedPrintRequest): Promise<void> {
     throw new HttpError(501, "Windows spooler printing is only available on Windows.");
   }
 
+  if (payload.printMode === "IMAGE_PAGES") {
+    await printImagePagesToWindowsPrinter({
+      printerName: payload.printerName ?? "",
+      jobName: payload.jobName,
+      pageImagesBase64: payload.pageImagesBase64 ?? [],
+    });
+    return;
+  }
+
+  const bytes = Buffer.from(payload.payloadBase64 ?? "", "base64");
   await printRawToWindowsPrinter({
     printerName: payload.printerName ?? "",
     jobName: payload.jobName,
@@ -327,6 +354,36 @@ async function printRawToWindowsPrinter(input: { printerName: string; jobName: s
       input.printerName,
       "-Path",
       dataPath,
+      "-JobName",
+      input.jobName,
+    ]);
+  } finally {
+    await rm(dir, { force: true, recursive: true });
+  }
+}
+
+async function printImagePagesToWindowsPrinter(input: { printerName: string; jobName: string; pageImagesBase64: string[] }): Promise<void> {
+  const dir = await mkdtemp(join(os.tmpdir(), "bizbil-print-"));
+  const scriptPath = join(dir, "print-images.ps1");
+
+  try {
+    await Promise.all(
+      input.pageImagesBase64.map(async (page, index) => {
+        const pagePath = join(dir, `page-${String(index).padStart(3, "0")}.png`);
+        await writeFile(pagePath, Buffer.from(page, "base64"));
+      }),
+    );
+    await writeFile(scriptPath, imagePrinterPowerShell, "utf8");
+    await runPowerShell([
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath,
+      "-PrinterName",
+      input.printerName,
+      "-Folder",
+      dir,
       "-JobName",
       input.jobName,
     ]);
@@ -467,3 +524,70 @@ try {
   [RawPrinterHelper]::ClosePrinter($handle) | Out-Null
 }
 `;
+
+const imagePrinterPowerShell = String.raw`
+param(
+  [Parameter(Mandatory = $true)][string]$PrinterName,
+  [Parameter(Mandatory = $true)][string]$Folder,
+  [Parameter(Mandatory = $true)][string]$JobName
+)
+
+Add-Type -AssemblyName System.Drawing
+
+$pagePaths = Get-ChildItem -Path $Folder -Filter '*.png' | Sort-Object Name
+if (-not $pagePaths) {
+  throw "No label images were found in '$Folder'."
+}
+
+$images = @()
+try {
+  foreach ($pagePath in $pagePaths) {
+    $images += [System.Drawing.Image]::FromFile($pagePath.FullName)
+  }
+
+  $index = 0
+  $document = New-Object System.Drawing.Printing.PrintDocument
+  $document.DocumentName = $JobName
+  $document.OriginAtMargins = $true
+  $document.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
+  $document.PrinterSettings.PrinterName = $PrinterName
+
+  $document.add_PrintPage({
+    param($sender, $e)
+
+    $image = $images[$index]
+    if ($null -eq $image) {
+      $e.HasMorePages = $false
+      return
+    }
+
+    $bounds = $e.MarginBounds
+    if ($bounds.Width -le 0 -or $bounds.Height -le 0) {
+      $bounds = $e.PageBounds
+    }
+
+    $e.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $e.Graphics.DrawImage($image, $bounds)
+
+    $index++
+    $e.HasMorePages = $index -lt $images.Count
+  })
+
+  $document.Print()
+}
+finally {
+  foreach ($image in $images) {
+    if ($image) {
+      $image.Dispose()
+    }
+  }
+}
+`;
+
+function normalizeBase64Array(values?: string[] | null): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.map((value) => (typeof value === "string" ? value.trim() : "")).filter((value) => value.length > 0);
+}

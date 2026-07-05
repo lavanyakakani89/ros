@@ -78,18 +78,28 @@ export function PrinterSettings() {
         throw new Error("Choose a Windows printer first.");
       }
 
-      const bytesBase64 = buildEscposTestBase64([
-        "BizBil printer test",
-        kind === "receipt" ? `Receipt printer: ${printerName}` : `Label printer: ${printerName}`,
-        new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-        "If this prints, billing print is ready.",
-      ]);
+      if (kind === "receipt") {
+        const bytesBase64 = buildEscposTestBase64([
+          "BizBil printer test",
+          `Receipt printer: ${printerName}`,
+          new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+          "If this prints, billing print is ready.",
+        ]);
 
+        return printViaLocalAgent({
+          agentUrl,
+          printerName,
+          bytesBase64,
+          jobName: "BizBil receipt printer test",
+        });
+      }
+
+      const pageImagesBase64 = [buildLabelTestPageBase64(printerName)];
       return printViaLocalAgent({
         agentUrl,
         printerName,
-        bytesBase64,
-        jobName: kind === "receipt" ? "BizBil receipt printer test" : "BizBil label printer test",
+        pageImagesBase64,
+        jobName: "BizBil label printer test",
       });
     },
     onSuccess: (_result, variables) => {
@@ -367,17 +377,52 @@ function PrinterPicker({
 
 function buildEscposTestBase64(lines: string[]): string {
   const encoder = new TextEncoder();
-  const chunks: Uint8Array[] = [new Uint8Array([0x1b, 0x40])];
+  const chunks: Uint8Array[] = [Uint8Array.from([0x1b, 0x40])];
 
   for (const line of lines) {
     chunks.push(encoder.encode(line));
-    chunks.push(encoder.encode("\n"));
+    chunks.push(Uint8Array.from([0x0a]));
   }
 
-  chunks.push(new Uint8Array([0x1b, 0x64, 0x04]));
-  chunks.push(new Uint8Array([0x1d, 0x56, 0x00]));
+  chunks.push(Uint8Array.from([0x1b, 0x64, 0x04]));
+  chunks.push(Uint8Array.from([0x1d, 0x56, 0x00]));
 
   return bytesToBase64(concatUint8Arrays(chunks));
+}
+
+function buildLabelTestPageBase64(printerName: string): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 600;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas is unavailable in this browser.");
+  }
+
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.strokeStyle = "#d1d5db";
+  context.lineWidth = 4;
+  context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+
+  context.fillStyle = "#111827";
+  context.font = "bold 56px monospace";
+  context.fillText("BizBil label test", 60, 110);
+
+  context.font = "36px monospace";
+  context.fillText(`Printer: ${printerName}`, 60, 190);
+  context.fillText(new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }), 60, 250);
+  context.fillText("If this prints, label printing is ready.", 60, 330);
+
+  const dataUrl = canvas.toDataURL("image/png");
+  const base64 = dataUrl.split(",", 2)[1];
+  if (!base64) {
+    throw new Error("Unable to build label test image.");
+  }
+
+  return base64;
 }
 
 function concatUint8Arrays(chunks: Uint8Array[]): Uint8Array {
@@ -395,9 +440,12 @@ function concatUint8Arrays(chunks: Uint8Array[]): Uint8Array {
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+  const chunkSize = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
+
   return btoa(binary);
 }
 
