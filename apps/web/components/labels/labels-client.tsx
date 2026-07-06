@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Eye, Minus, PackagePlus, Printer, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 
 import type { ProductRecord } from "@/lib/api-client";
-import { apiUrl, createAuthenticatedApiClient, listAllProducts } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, listAllProducts, refreshAuthSession } from "@/lib/api-client";
 import { getImpersonationHeaderToken } from "@/lib/impersonation";
 import { cn } from "@/lib/utils";
 import type {
@@ -377,16 +377,9 @@ export function LabelsClient() {
     setBusy(true);
     try {
       if (outputType === "pdf") {
-        const response = await fetch(apiUrl("/labels/print"), {
-          method: "POST",
-          credentials: "include",
-          headers: authHeaders({
-            "Content-Type": "application/json",
-          }),
-          body: JSON.stringify({
-            ...payload,
-            output_type: "pdf",
-          }),
+        const response = await postJsonResponse("/labels/print", {
+          ...payload,
+          output_type: "pdf",
         });
 
         if (!response.ok) {
@@ -458,6 +451,16 @@ export function LabelsClient() {
   }
 
   async function postJson<T>(path: string, payload: object): Promise<T> {
+    const response = await postJsonResponse(path, payload);
+
+    if (!response.ok) {
+      throw new Error(await readError(response));
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  async function postJsonResponse(path: string, payload: object, retry = true): Promise<Response> {
     const response = await fetch(apiUrl(path), {
       method: "POST",
       credentials: "include",
@@ -467,11 +470,16 @@ export function LabelsClient() {
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) {
-      throw new Error(await readError(response));
+    if (response.status === 401 && retry) {
+      try {
+        await refreshAuthSession();
+        return postJsonResponse(path, payload, false);
+      } catch {
+        throw new Error("Session expired. Please sign in again.");
+      }
     }
 
-    return response.json() as Promise<T>;
+    return response;
   }
 
   function authHeaders(base: HeadersInit): Headers {

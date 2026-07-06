@@ -393,23 +393,29 @@ function buildEscposTestBase64(lines: string[]): string {
 }
 
 function buildLabelTestPageBase64(printerName: string): string {
+  const logicalWidth = 1200;
+  const logicalHeight = 600;
   const canvas = document.createElement("canvas");
-  canvas.width = 1200;
-  canvas.height = 600;
+  // Draw the diagnostic label at printer-like density before sending it to the agent.
+  const rasterScale = 203 / 96;
+  canvas.width = Math.round(logicalWidth * rasterScale);
+  canvas.height = Math.round(logicalHeight * rasterScale);
 
   const context = canvas.getContext("2d");
   if (!context) {
     throw new Error("Canvas is unavailable in this browser.");
   }
 
+  context.scale(rasterScale, rasterScale);
+
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillRect(0, 0, logicalWidth, logicalHeight);
 
-  context.strokeStyle = "#d1d5db";
+  context.strokeStyle = "#111111";
   context.lineWidth = 4;
-  context.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+  context.strokeRect(20, 20, logicalWidth - 40, logicalHeight - 40);
 
-  context.fillStyle = "#111827";
+  context.fillStyle = "#000000";
   context.font = "bold 56px monospace";
   context.fillText("BizBil label test", 60, 110);
 

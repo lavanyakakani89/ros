@@ -15,6 +15,7 @@ import type {
   ResolvedLabelProduct,
 } from "./labels.types.js";
 
+const CSS_DPI = 96;
 const PRINTER_DPI = 203;
 
 export interface ResolvedLabelSheet {
@@ -140,9 +141,10 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
         padding: 0;
         background: #ffffff;
         width: ${toCssMm(sheetWidthMm)};
-        color: #111827;
+        color: #000000;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        text-rendering: geometricPrecision;
       }
       .sheet {
         position: relative;
@@ -166,7 +168,7 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
         justify-content: flex-start;
         white-space: pre-wrap;
         overflow: hidden;
-        color: #111827;
+        color: #000000;
         line-height: 1.1;
       }
       .field img {
@@ -190,8 +192,8 @@ export async function renderLabelPdfBuffer(input: ResolvedLabelJob): Promise<Buf
     const page = await browser.newPage();
     const totalWidthMm = input.layout_mode === "2up" ? input.width_mm * 2 : input.width_mm;
     await page.setViewport({
-      width: Math.max(1, Math.round((totalWidthMm * 96) / 25.4)),
-      height: Math.max(1, Math.round((input.height_mm * 96) / 25.4)),
+      width: Math.max(1, Math.round((totalWidthMm * CSS_DPI) / 25.4)),
+      height: Math.max(1, Math.round((input.height_mm * CSS_DPI) / 25.4)),
       deviceScaleFactor: 1,
     });
     await page.setContent(renderLabelSheetsHtml(input), { waitUntil: "networkidle0" });
