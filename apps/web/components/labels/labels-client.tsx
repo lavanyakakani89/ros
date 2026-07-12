@@ -473,7 +473,7 @@ export function LabelsClient() {
     if (response.status === 401 && retry) {
       try {
         await refreshAuthSession();
-        return postJsonResponse(path, payload, false);
+        return await postJsonResponse(path, payload, false);
       } catch {
         throw new Error("Session expired. Please sign in again.");
       }
