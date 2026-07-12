@@ -407,7 +407,7 @@ async function callPhonePeApi(
   let body: string | undefined;
   if (options.payload) {
     const encodedPayload = Buffer.from(JSON.stringify(options.payload)).toString("base64");
-    headers["X-VERIFY"] = `${sha256(`${encodedPayload}${path}${secret}`)}###${config.saltIndex}`;
+    headers["X-VERIFY"] = `${sha256(`${encodedPayload}${path}${secret}`)}###${String(config.saltIndex)}`;
     body = JSON.stringify({ request: encodedPayload });
     if (config.providerId) {
       headers["X-PROVIDER-ID"] = config.providerId;
@@ -417,7 +417,7 @@ async function callPhonePeApi(
       headers["X-CALL-MODE"] = "POST";
     }
   } else {
-    headers["X-VERIFY"] = `${sha256(`${path}${secret}`)}###${config.saltIndex}`;
+    headers["X-VERIFY"] = `${sha256(`${path}${secret}`)}###${String(config.saltIndex)}`;
     if (config.providerId) {
       headers["X-PROVIDER-ID"] = config.providerId;
     }
@@ -450,7 +450,7 @@ function verifyCallbackSignature(signature: string, encodedPayload: string, conf
   if (!secret) {
     return false;
   }
-  const expected = `${sha256(`${encodedPayload}${secret}`)}###${config.saltIndex}`;
+  const expected = `${sha256(`${encodedPayload}${secret}`)}###${String(config.saltIndex)}`;
   return safeStringEqual(signature, expected);
 }
 
