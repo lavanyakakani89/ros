@@ -31,6 +31,7 @@ import { stockCountRoutes } from "./modules/inventory/stock-count.routes.js";
 import { labelsRoutes } from "./modules/labels/labels.routes.js";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
+import { phonePeRoutes } from "./modules/payment-integrations/phonepe.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { paymentMethodsRoutes } from "./modules/payment-methods/payment-methods.routes.js";
 import { payrollRoutes } from "./modules/payroll/payroll.routes.js";
@@ -160,6 +161,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(templatesRoutes);
   await fastify.register(printerRoutes);
   await fastify.register(paymentsRoutes);
+  await fastify.register(phonePeRoutes);
   await fastify.register(paymentMethodsRoutes);
   await fastify.register(payrollRoutes);
   await fastify.register(deliveryRoutes);

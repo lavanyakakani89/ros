@@ -1,6 +1,7 @@
 import { InvoiceStatus, PaymentMethodType, PaymentMode, type Prisma, type PrismaClient } from "@prisma/client";
 
 import type { PaymentListQuery, RecordPaymentInput } from "./payments.types.js";
+import { PHONEPE_INTEGRATION_PROVIDER } from "../payment-integrations/phonepe.config.js";
 
 export class PaymentsRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -65,6 +66,9 @@ export class PaymentsRepository {
         : await findDefaultMethodForMode(tx, tenantId, invoice.storeId, input.mode ?? PaymentMode.CASH);
       if (!paymentMethod) {
         throw new Error("Payment method not found");
+      }
+      if (paymentMethod.integrationProvider === PHONEPE_INTEGRATION_PROVIDER) {
+        throw new Error("PhonePe payments can only be recorded through the verified PhonePe flow.");
       }
       if (paymentMethod.type === PaymentMethodType.CREDIT) {
         throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
@@ -197,6 +201,7 @@ async function findDefaultMethodForMode(
       shortCode: mode === PaymentMode.CREDIT ? "CRED" : mode,
       isActive: true,
       deletedAt: null,
+      integrationProvider: null,
     },
   });
 }

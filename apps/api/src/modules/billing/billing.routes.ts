@@ -32,6 +32,7 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
       amount: z.coerce.number().positive().optional(),
       paymentMethodId: z.string().trim().min(1).optional(),
       referenceNumber: z.string().trim().min(1).optional(),
+      integrationAttemptId: z.string().trim().min(1).optional(),
     })).optional(),
     delivery: z.object({
       customerId: z.string().min(1),

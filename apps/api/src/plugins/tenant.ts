@@ -21,6 +21,7 @@ const publicRoutePrefixes = [
   "/api/superadmin/",
   "/api/payments/razorpay/webhook",
   "/api/whatsapp/webhook",
+  "/api/public/payment-integrations/phonepe/",
   "/api/public/storefront/",
   "/api/public/whatsapp/",
 ];

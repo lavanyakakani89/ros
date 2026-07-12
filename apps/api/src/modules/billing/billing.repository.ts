@@ -1,6 +1,7 @@
 import { CreditNoteStatus, InvoiceStatus, PaymentMethodType, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateConfirmedPosInvoiceInput, CreateInvoiceInput, InvoiceListQuery, PosPaymentInput } from "./billing.types.js";
+import { PHONEPE_INTEGRATION_PROVIDER } from "../payment-integrations/phonepe.config.js";
 
 export interface StockWarning {
   productId: string;
@@ -12,9 +13,10 @@ export interface StockWarning {
 
 interface SplitPaymentInput {
   mode: PaymentMode;
-  amount: number;
+  amount?: number | undefined;
   paymentMethodId?: string | undefined;
   referenceNumber?: string | undefined;
+  integrationAttemptId?: string | undefined;
 }
 
 interface ExistingPaymentInput {
@@ -22,6 +24,7 @@ interface ExistingPaymentInput {
   mode: PaymentMode | null;
   amount: Prisma.Decimal;
   cashierId: string | null;
+  paymentIntegrationAttemptId: string | null;
 }
 
 interface EditedPaymentState {
@@ -94,6 +97,21 @@ export class BillingRepository {
     delivery?: CreateConfirmedPosInvoiceInput["delivery"] | undefined;
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const normalizedPayments = normalizePosPayments(input.payments, input.totals.grandTotal);
+      const payablePayments = normalizedPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
+      const amountPaid = roundMoney(payablePayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0));
+      if (amountPaid > input.totals.grandTotal + 0.01) {
+        throw new Error("Payment amount cannot exceed invoice total");
+      }
+
+      const duplicateInvoice = await findRecordedPhonePeInvoice(tx, input.tenantId, payablePayments);
+      if (duplicateInvoice) {
+        return {
+          ...duplicateInvoice,
+          stockWarnings: [],
+        };
+      }
+
       const sequence = await allocateInvoiceSequence(tx, input.tenantId, input.datePart);
 
       const invoice = await tx.invoice.create({
@@ -165,40 +183,38 @@ export class BillingRepository {
         })),
       );
 
-      const normalizedPayments = normalizePosPayments(input.payments, input.totals.grandTotal);
-      const payablePayments = normalizedPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
-      const amountPaid = roundMoney(payablePayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0));
-      if (amountPaid > input.totals.grandTotal + 0.01) {
-        throw new Error("Payment amount cannot exceed invoice total");
-      }
-
       const paymentRows = [];
       let firstPaymentMethodId: string | null = null;
       for (const payment of payablePayments) {
+        const paymentAmount = roundMoney(payment.amount ?? 0);
         const paymentMethod = await findMethodForPayment(tx, input.tenantId, invoice.storeId, {
           mode: payment.mode,
-          amount: payment.amount ?? 0,
+          amount: paymentAmount,
           ...(payment.paymentMethodId ? { paymentMethodId: payment.paymentMethodId } : {}),
           ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
+          ...(payment.integrationAttemptId ? { integrationAttemptId: payment.integrationAttemptId } : {}),
         });
         if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
         const resolvedMode = resolvePaymentMode(payment.mode, paymentMethod);
         if (resolvedMode === PaymentMode.CREDIT) {
           throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
         }
-        if (paymentMethod.requiresReference && !payment.referenceNumber?.trim()) {
+        const phonePeAttempt = await validatePhonePePaymentAttempt(tx, input.tenantId, paymentMethod, payment);
+        const resolvedReferenceNumber = phonePeAttempt?.referenceNumber ?? payment.referenceNumber?.trim();
+        if (paymentMethod.requiresReference && !resolvedReferenceNumber) {
           throw new Error(`Reference required for ${paymentMethod.name}`);
         }
         firstPaymentMethodId ??= paymentMethod.id;
         paymentRows.push({
           tenantId: input.tenantId,
           invoiceId: invoice.id,
-          amount: payment.amount ?? 0,
+          amount: paymentAmount,
           paymentMethodId: paymentMethod.id,
+          ...(phonePeAttempt ? { paymentIntegrationAttemptId: phonePeAttempt.id } : {}),
           mode: resolvedMode,
           createdBy: input.confirmedBy,
           cashierId: input.confirmedBy,
-          ...(payment.referenceNumber?.trim() ? { referenceNumber: payment.referenceNumber.trim() } : {}),
+          ...(resolvedReferenceNumber ? { referenceNumber: resolvedReferenceNumber } : {}),
         });
       }
       if (paymentRows.length > 0) {
@@ -538,7 +554,7 @@ export class BillingRepository {
 
       const splitPayments = readSplitPayments(invoice.verticalData);
       const payableSplitPayments = splitPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
-      const splitAmountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + payment.amount, 0));
+      const splitAmountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0));
       if (splitAmountPaid > invoice.grandTotal.toNumber() + 0.01) {
         throw new Error("Split payment amount cannot exceed invoice total");
       }
@@ -560,7 +576,7 @@ export class BillingRepository {
           paymentRows.push({
             tenantId,
             invoiceId,
-            amount: payment.amount,
+            amount: payment.amount ?? 0,
             paymentMethodId: paymentMethod.id,
             mode: resolvedMode,
             createdBy: confirmedBy,
@@ -799,7 +815,7 @@ async function reconcileEditedInvoicePayments(
   const splitPayments = readSplitPayments(input.verticalData);
   if (splitPayments.length > 0) {
     const payableSplitPayments = splitPayments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
-    const amountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + payment.amount, 0));
+    const amountPaid = roundMoney(payableSplitPayments.reduce((sum, payment) => sum + (payment.amount ?? 0), 0));
     if (amountPaid > input.grandTotal + 0.01) {
       throw new Error("Split payment amount cannot exceed invoice total");
     }
@@ -815,8 +831,12 @@ async function reconcileEditedInvoicePayments(
     if (payableSplitPayments.length > 0) {
       await tx.payment.createMany({
         data: await Promise.all(payableSplitPayments.map(async (payment) => {
+          const paymentAmount = roundMoney(payment.amount ?? 0);
           const paymentMethod = await findMethodForPayment(tx, input.tenantId, null, payment);
           if (!paymentMethod) throw new Error(`Payment method ${payment.mode} not found`);
+          if (paymentMethod.integrationProvider === PHONEPE_INTEGRATION_PROVIDER) {
+            throw new Error("PhonePe payments cannot be edited through split payments. Recreate the bill with a fresh verified PhonePe attempt.");
+          }
           const resolvedMode = resolvePaymentMode(payment.mode, paymentMethod);
           if (resolvedMode === PaymentMode.CREDIT) {
             throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
@@ -828,7 +848,7 @@ async function reconcileEditedInvoicePayments(
           return {
             tenantId: input.tenantId,
             invoiceId: input.invoiceId,
-            amount: payment.amount,
+            amount: paymentAmount,
             paymentMethodId: paymentMethod.id,
             mode: resolvedMode,
             createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
@@ -870,21 +890,35 @@ async function reconcileEditedInvoicePayments(
 
   const amountPaid = roundMoney(input.grandTotal);
   if (input.existingPayments.length === 1 && input.existingPayments[0]) {
-      const existingPayment = input.existingPayments[0];
-      const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
-      if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
-      const resolvedMode = resolvePaymentMode(input.selectedPaymentMode, paymentMethod);
-      if (resolvedMode === PaymentMode.CREDIT) {
-        throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+    const existingPayment = input.existingPayments[0];
+    if (existingPayment.paymentIntegrationAttemptId) {
+      if (existingPayment.mode !== input.selectedPaymentMode || Math.abs(existingPayment.amount.toNumber() - amountPaid) > 0.01) {
+        throw new Error("PhonePe payments cannot be edited to a different amount or payment mode. Recreate the bill with a fresh verified PhonePe attempt.");
       }
-      await tx.payment.update({
+      return {
+        paymentMode: input.selectedPaymentMode,
+        amountPaid,
+        amountDue: 0,
+        status: InvoiceStatus.PAID,
+      };
+    }
+    const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
+    if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
+    if (paymentMethod.integrationProvider === PHONEPE_INTEGRATION_PROVIDER) {
+      throw new Error("PhonePe payments can only be recorded through the verified PhonePe flow.");
+    }
+    const resolvedMode = resolvePaymentMode(input.selectedPaymentMode, paymentMethod);
+    if (resolvedMode === PaymentMode.CREDIT) {
+      throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
+    }
+    await tx.payment.update({
       where: {
         id: existingPayment.id,
       },
-        data: {
-          amount: amountPaid,
-          paymentMethodId: paymentMethod.id,
-          mode: resolvedMode,
+      data: {
+        amount: amountPaid,
+        paymentMethodId: paymentMethod.id,
+        mode: resolvedMode,
         ...(existingPayment.mode !== input.selectedPaymentMode
           ? {
               referenceNumber: null,
@@ -902,6 +936,9 @@ async function reconcileEditedInvoicePayments(
     });
     const paymentMethod = await findDefaultMethodForMode(tx, input.tenantId, null, input.selectedPaymentMode);
     if (!paymentMethod) throw new Error(`Payment method ${input.selectedPaymentMode} not found`);
+    if (paymentMethod.integrationProvider === PHONEPE_INTEGRATION_PROVIDER) {
+      throw new Error("PhonePe payments can only be recorded through the verified PhonePe flow.");
+    }
     const resolvedMode = resolvePaymentMode(input.selectedPaymentMode, paymentMethod);
     if (resolvedMode === PaymentMode.CREDIT) {
       throw new Error("Credit is not a received payment. Keep the invoice unpaid or use split payment with a credit balance.");
@@ -969,6 +1006,7 @@ function normalizePosPayments(payments: PosPaymentInput[], grandTotal: number): 
       ...(amount !== undefined ? { amount: roundMoney(amount) } : {}),
       ...(payment.paymentMethodId ? { paymentMethodId: payment.paymentMethodId } : {}),
       ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
+      ...(payment.integrationAttemptId ? { integrationAttemptId: payment.integrationAttemptId } : {}),
     }];
   });
 }
@@ -1012,6 +1050,98 @@ async function findDefaultMethodForMode(
       deletedAt: null,
     },
   });
+}
+
+async function findRecordedPhonePeInvoice(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  payments: SplitPaymentInput[],
+) {
+  const integrationAttemptId = payments.find((payment) => payment.integrationAttemptId?.trim())?.integrationAttemptId?.trim();
+  if (!integrationAttemptId) {
+    return null;
+  }
+
+  const payment = await tx.payment.findFirst({
+    where: {
+      tenantId,
+      paymentIntegrationAttemptId: integrationAttemptId,
+    },
+    select: {
+      invoiceId: true,
+    },
+  });
+  if (!payment) {
+    return null;
+  }
+
+  return tx.invoice.findFirst({
+    where: {
+      tenantId,
+      id: payment.invoiceId,
+    },
+    include: invoiceInclude,
+  });
+}
+
+async function validatePhonePePaymentAttempt(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  paymentMethod: { id: string; integrationProvider: string | null },
+  payment: SplitPaymentInput,
+) {
+  const integrationAttemptId = payment.integrationAttemptId?.trim();
+  if (paymentMethod.integrationProvider !== PHONEPE_INTEGRATION_PROVIDER) {
+    if (integrationAttemptId) {
+      throw new Error("PhonePe attempts can only be used with PhonePe-integrated payment methods");
+    }
+    return null;
+  }
+
+  if (!integrationAttemptId) {
+    throw new Error("Use the verified PhonePe attempt before saving the invoice");
+  }
+
+  const attempt = await tx.paymentIntegrationAttempt.findFirst({
+    where: {
+      id: integrationAttemptId,
+      tenantId,
+      paymentMethodId: paymentMethod.id,
+    },
+    include: {
+      paymentMethod: true,
+    },
+  });
+  if (!attempt) {
+    throw new Error("PhonePe payment attempt not found");
+  }
+  if (attempt.paymentMethod.integrationProvider !== PHONEPE_INTEGRATION_PROVIDER) {
+    throw new Error("Selected PhonePe attempt does not match the payment method");
+  }
+  if (attempt.status !== "SUCCESS" && attempt.status !== "MANUAL_OVERRIDE") {
+    throw new Error("PhonePe payment is not verified yet");
+  }
+
+  const attemptAmount = roundMoney(attempt.amount.toNumber());
+  const paymentAmount = roundMoney(payment.amount ?? 0);
+  if (Math.abs(attemptAmount - paymentAmount) > 0.01) {
+    throw new Error("PhonePe payment amount does not match the verified attempt");
+  }
+
+  const referenceNumber = attempt.referenceNumber?.trim();
+  if (!referenceNumber) {
+    throw new Error("PhonePe verification did not return a reference number");
+  }
+
+  const providedReferenceNumber = payment.referenceNumber?.trim();
+  if (providedReferenceNumber && providedReferenceNumber !== referenceNumber) {
+    throw new Error("PhonePe reference number does not match the verified attempt");
+  }
+
+  return {
+    id: attempt.id,
+    referenceNumber,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

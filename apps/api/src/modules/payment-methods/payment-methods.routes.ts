@@ -1,7 +1,16 @@
-import { InvoiceStatus, PaymentMethodType, PaymentMode, SettlementStatus, UserRole } from "@prisma/client";
+import { InvoiceStatus, PaymentMethodType, PaymentMode, Prisma, SettlementStatus, UserRole } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import QRCode from "qrcode";
 import { z } from "zod";
+
+import {
+  buildStoredPhonePeIntegrationConfig,
+  parseStoredPhonePeIntegrationConfig,
+  PHONEPE_INTEGRATION_PROVIDER,
+  phonePeIntegrationConfigInputSchema,
+  phonePeIntegrationProviderSchema,
+  toPublicPhonePeIntegrationConfig,
+} from "../payment-integrations/phonepe.config.js";
 
 const paymentMethodTypeSchema = z.preprocess((value) => toUpperString(value, "CUSTOM"), z.nativeEnum(PaymentMethodType));
 const settlementStatusSchema = z.preprocess((value) => toUpperString(value, ""), z.nativeEnum(SettlementStatus));
@@ -35,6 +44,9 @@ const methodPayloadSchema = z.object({
   opening_balance: z.coerce.number().finite().optional(),
   settlement_frequency: z.preprocess((value) => value === null || value === "" || value === undefined ? null : toUpperString(value, ""), z.enum(["DAILY", "WEEKLY", "MONTHLY"]).nullable()).optional(),
   allowed_roles: roleListSchema.optional(),
+  integration_provider: phonePeIntegrationProviderSchema.optional(),
+  integration_config: phonePeIntegrationConfigInputSchema.nullable().optional(),
+  manual_override_allowed: z.boolean().optional(),
   storeId: z.string().min(1).optional(),
 });
 
@@ -125,9 +137,23 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     const input = createMethodSchema.parse(request.body);
     const store = await getStore(request.tenant.id, input.storeId ?? request.storeId ?? undefined);
     const type = input.type ?? PaymentMethodType.CUSTOM;
-    const upiQrData = type === PaymentMethodType.UPI ? await buildQrOrThrow(input.upi_id, request.tenant.name) : null;
-    const method = await fastify.prisma.paymentMethod.create({
-      data: {
+    const integrationProvider = input.integration_provider ?? null;
+    if (integrationProvider === PHONEPE_INTEGRATION_PROVIDER && !supportsPhonePeMethodType(type)) {
+      throw statusError("PhonePe integration is supported only for Card and UPI payment methods", 400);
+    }
+    const integrationConfig = integrationProvider === PHONEPE_INTEGRATION_PROVIDER
+      ? buildPhonePeConfigOrStatusError(input.integration_config, {
+          requiresTerminalId: type === PaymentMethodType.CARD,
+        })
+      : null;
+    const upiQrData = type === PaymentMethodType.UPI && input.upi_id
+      ? await buildQrOrThrow(input.upi_id, request.tenant.name)
+      : null;
+    const requiresReference = integrationProvider === PHONEPE_INTEGRATION_PROVIDER ? true : input.requires_reference ?? false;
+    const referenceLabel = integrationProvider === PHONEPE_INTEGRATION_PROVIDER
+      ? (input.reference_label?.trim() || "PhonePe reference")
+      : input.reference_label ?? null;
+    const createData: Prisma.PaymentMethodUncheckedCreateInput = {
         tenantId: request.tenant.id,
         storeId: store.id,
         name: input.name,
@@ -137,8 +163,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         icon: input.icon ?? defaultIcon(type),
         keyboardShortcut: input.keyboard_shortcut ?? null,
         displayOrder: input.display_order ?? 100,
-        requiresReference: input.requires_reference ?? false,
-        referenceLabel: input.reference_label ?? null,
+        requiresReference,
+        referenceLabel,
         allowsSplit: input.allows_split ?? true,
         upiId: input.upi_id ?? null,
         upiQrData,
@@ -146,7 +172,12 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         openingBalance: input.opening_balance ?? 0,
         settlementFrequency: input.settlement_frequency ?? null,
         allowedRoles: input.allowed_roles ?? [],
-      },
+        integrationProvider,
+        ...(integrationConfig ? { integrationConfig: integrationConfig as unknown as Prisma.InputJsonValue } : {}),
+        manualOverrideAllowed: input.manual_override_allowed ?? true,
+      };
+    const method = await fastify.prisma.paymentMethod.create({
+      data: createData,
       include: { partner: true, _count: { select: { payments: true } } },
     });
     return reply.status(201).send(formatMethod(method));
@@ -185,12 +216,33 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     }
     const nextType = input.type ?? existing.type;
     const nextUpiId = input.upi_id !== undefined ? input.upi_id : existing.upiId;
+    const existingPhonePeConfig = parseStoredPhonePeIntegrationConfig(existing.integrationConfig);
+    const nextIntegrationProvider = input.integration_provider !== undefined
+      ? input.integration_provider
+      : existing.integrationProvider;
+    if (nextIntegrationProvider === PHONEPE_INTEGRATION_PROVIDER && !supportsPhonePeMethodType(nextType)) {
+      throw statusError("PhonePe integration is supported only for Card and UPI payment methods", 400);
+    }
+    const integrationConfig = nextIntegrationProvider === PHONEPE_INTEGRATION_PROVIDER
+      ? buildPhonePeConfigOrStatusError(input.integration_config, {
+          existing: existingPhonePeConfig,
+          requiresTerminalId: nextType === PaymentMethodType.CARD,
+        })
+      : input.integration_provider !== undefined
+        ? null
+        : undefined;
     const upiQrData = nextType === PaymentMethodType.UPI && input.upi_id !== undefined
-      ? await buildQrOrThrow(nextUpiId, request.tenant.name)
+      ? nextUpiId
+        ? await buildQrOrThrow(nextUpiId, request.tenant.name)
+        : null
       : undefined;
-    const method = await fastify.prisma.paymentMethod.update({
-      where: { id },
-      data: {
+    const requiresReference = nextIntegrationProvider === PHONEPE_INTEGRATION_PROVIDER
+      ? true
+      : input.requires_reference;
+    const referenceLabel = nextIntegrationProvider === PHONEPE_INTEGRATION_PROVIDER
+      ? (input.reference_label?.trim() || existing.referenceLabel || "PhonePe reference")
+      : input.reference_label;
+    const updateData: Prisma.PaymentMethodUncheckedUpdateInput = {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.short_code !== undefined ? { shortCode: input.short_code } : {}),
         ...(input.type !== undefined ? { type: input.type } : {}),
@@ -199,8 +251,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         ...(input.keyboard_shortcut !== undefined ? { keyboardShortcut: input.keyboard_shortcut } : {}),
         ...(input.display_order !== undefined ? { displayOrder: input.display_order } : {}),
         ...(input.is_active !== undefined ? { isActive: input.is_active } : {}),
-        ...(input.requires_reference !== undefined ? { requiresReference: input.requires_reference } : {}),
-        ...(input.reference_label !== undefined ? { referenceLabel: input.reference_label } : {}),
+        ...(requiresReference !== undefined ? { requiresReference } : {}),
+        ...(referenceLabel !== undefined ? { referenceLabel } : {}),
         ...(input.allows_split !== undefined ? { allowsSplit: input.allows_split } : {}),
         ...(input.upi_id !== undefined ? { upiId: input.upi_id } : {}),
         ...(upiQrData !== undefined ? { upiQrData } : {}),
@@ -208,8 +260,14 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         ...(input.opening_balance !== undefined ? { openingBalance: input.opening_balance } : {}),
         ...(input.settlement_frequency !== undefined ? { settlementFrequency: input.settlement_frequency } : {}),
         ...(input.allowed_roles !== undefined ? { allowedRoles: input.allowed_roles } : {}),
+        ...(input.integration_provider !== undefined ? { integrationProvider: input.integration_provider } : {}),
+        ...(integrationConfig !== undefined ? { integrationConfig: integrationConfig ? integrationConfig as unknown as Prisma.InputJsonValue : Prisma.JsonNull } : {}),
+        ...(input.manual_override_allowed !== undefined ? { manualOverrideAllowed: input.manual_override_allowed } : {}),
         ...(input.is_active === true ? { deletedAt: null } : {}),
-      },
+      };
+    const method = await fastify.prisma.paymentMethod.update({
+      where: { id },
+      data: updateData,
       include: { partner: true, _count: { select: { payments: true } } },
     });
     return formatMethod(method);
@@ -265,6 +323,9 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     for (const leg of input.payments) {
       const method = methodById.get(leg.payment_method_id);
       if (!method) throw statusError("Payment method not found or inactive", 400);
+      if (method.integrationProvider === PHONEPE_INTEGRATION_PROVIDER) {
+        throw statusError("PhonePe payments must be completed through the verified PhonePe flow", 400);
+      }
       if (method.requiresReference && !leg.reference_number) throw statusError(`Reference required for ${method.name}`, 400);
       if (method.allowedRoles.length > 0 && !method.allowedRoles.includes(request.user.role)) throw statusError(`Payment method "${method.name}" is not available for your role`, 403);
     }
@@ -642,6 +703,10 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
   }
 };
 
+function supportsPhonePeMethodType(type: PaymentMethodType): boolean {
+  return type === PaymentMethodType.CARD || type === PaymentMethodType.UPI;
+}
+
 function ensureManager(role: UserRole) {
   if (role !== UserRole.OWNER && role !== UserRole.MANAGER) {
     throw statusError("Only owners and managers can manage payment methods", 403);
@@ -652,6 +717,17 @@ function statusError(message: string, statusCode: number) {
   const error = new Error(message) as Error & { statusCode: number };
   error.statusCode = statusCode;
   return error;
+}
+
+function buildPhonePeConfigOrStatusError(
+  input: z.infer<typeof phonePeIntegrationConfigInputSchema> | null | undefined,
+  options: { existing?: ReturnType<typeof parseStoredPhonePeIntegrationConfig>; requiresTerminalId: boolean },
+) {
+  try {
+    return buildStoredPhonePeIntegrationConfig(input, options);
+  } catch (error) {
+    throw statusError(error instanceof Error ? error.message : "Invalid PhonePe configuration", 400);
+  }
 }
 
 async function buildQrOrThrow(upiId: string | null | undefined, storeName: string) {
@@ -705,10 +781,16 @@ function formatMethod(method: {
   openingBalance: { toNumber: () => number };
   settlementFrequency: string | null;
   allowedRoles: string[];
+  integrationProvider: string | null;
+  integrationConfig: unknown;
+  manualOverrideAllowed: boolean;
   deletedAt: Date | null;
   partner?: unknown;
   _count?: { payments: number };
 }) {
+  const phonePeConfig = method.integrationProvider === PHONEPE_INTEGRATION_PROVIDER
+    ? toPublicPhonePeIntegrationConfig(parseStoredPhonePeIntegrationConfig(method.integrationConfig))
+    : null;
   return {
     id: method.id,
     name: method.name,
@@ -730,6 +812,9 @@ function formatMethod(method: {
     opening_balance: method.openingBalance.toNumber(),
     settlement_frequency: method.settlementFrequency?.toLowerCase() ?? null,
     allowed_roles: method.allowedRoles,
+    integration_provider: method.integrationProvider?.toLowerCase() ?? null,
+    integration_config: phonePeConfig,
+    manual_override_allowed: method.manualOverrideAllowed,
     deleted_at: method.deletedAt,
     transaction_count: method._count?.payments ?? 0,
   };

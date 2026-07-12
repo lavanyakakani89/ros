@@ -45,6 +45,7 @@ model Tenant {
   deliveryLocationPings DeliveryLocationPing[]
   payments           Payment[]
   paymentMethods     PaymentMethod[]
+  paymentIntegrationAttempts PaymentIntegrationAttempt[]
   partners           Partner[]
   settlements        Settlement[]
   payrollDisbursements PayrollDisbursement[]
@@ -185,6 +186,7 @@ model Store {
   userAssignments  StoreUserAssignment[]
   invoices         Invoice[]
   paymentMethods   PaymentMethod[]
+  paymentIntegrationAttempts PaymentIntegrationAttempt[]
   partners         Partner[]
   purchaseOrders   PurchaseOrder[]
   expenses         Expense[]
@@ -664,12 +666,16 @@ model PaymentMethod {
   openingBalance      Decimal              @default(0) @map("opening_balance") @db.Decimal(12, 2)
   settlementFrequency SettlementFrequency? @map("settlement_frequency")
   allowedRoles        String[]             @default([]) @map("allowed_roles")
+  integrationProvider String?              @map("integration_provider") @db.VarChar(32)
+  integrationConfig   Json?                @map("integration_config")
+  manualOverrideAllowed Boolean            @default(true) @map("manual_override_allowed")
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
   deletedAt           DateTime?            @map("deleted_at")
   invoices            Invoice[]
   payments            Payment[]
   payrollDisbursements PayrollDisbursement[]
+  paymentIntegrationAttempts PaymentIntegrationAttempt[]
   settlements         Settlement[]
 
   @@unique([storeId, shortCode])
@@ -677,6 +683,44 @@ model PaymentMethod {
   @@index([tenantId, storeId, isActive, displayOrder])
   @@index([partnerId])
   @@map("payment_methods")
+}
+
+model PaymentIntegrationAttempt {
+  id                    String        @id @default(cuid())
+  tenantId              String        @map("tenant_id")
+  tenant                Tenant        @relation(fields: [tenantId], references: [id])
+  storeId               String        @map("store_id")
+  store                 Store         @relation(fields: [storeId], references: [id])
+  paymentMethodId       String        @map("payment_method_id")
+  paymentMethod         PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  payment               Payment?      @relation
+  provider              String        @db.VarChar(32)
+  channel               String        @db.VarChar(16)
+  externalOrderId       String        @map("external_order_id") @db.VarChar(64)
+  externalTransactionId String        @map("external_transaction_id") @db.VarChar(64)
+  amount                Decimal       @db.Decimal(12, 2)
+  status                String        @db.VarChar(24)
+  providerState         String?       @map("provider_state") @db.VarChar(32)
+  referenceNumber       String?       @map("reference_number") @db.VarChar(128)
+  providerReferenceId   String?       @map("provider_reference_id") @db.VarChar(128)
+  responseCode          String?       @map("response_code") @db.VarChar(64)
+  qrString              String?       @map("qr_string") @db.Text
+  qrDataUrl             String?       @map("qr_data_url") @db.Text
+  expiresAt             DateTime?     @map("expires_at")
+  rawInitResponse       Json?         @map("raw_init_response")
+  rawStatusResponse     Json?         @map("raw_status_response")
+  rawCallbackPayload    Json?         @map("raw_callback_payload")
+  manualOverrideBy      String?       @map("manual_override_by")
+  manualOverrideReason  String?       @map("manual_override_reason") @db.VarChar(256)
+  completedAt           DateTime?     @map("completed_at")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  @@unique([externalTransactionId])
+  @@index([tenantId, paymentMethodId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([storeId, createdAt])
+  @@map("payment_integration_attempts")
 }
 
 enum WhatsappDirection {
@@ -955,6 +999,8 @@ model Payment {
   invoice            Invoice       @relation(fields: [invoiceId], references: [id])
   paymentMethodId    String        @map("payment_method_id")
   paymentMethod      PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentIntegrationAttemptId String?       @unique @map("payment_integration_attempt_id")
+  paymentIntegrationAttempt   PaymentIntegrationAttempt? @relation(fields: [paymentIntegrationAttemptId], references: [id], onDelete: SetNull)
   amount             Decimal       @db.Decimal(12, 2)
   mode               PaymentMode?
   referenceNumber    String?       @map("reference_number") @db.VarChar(128)

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl, createAuthenticatedApiClient, downloadApiFile, getCurrentVerticalConfig, listAllProducts, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
 import type { InvoiceRecord } from "@/components/billing/invoice-history";
+import { PhonePePaymentDialog, type PhonePeAttemptView } from "@/components/billing/phonepe-payment-dialog";
 import { useBillingStore } from "@/lib/billing-store";
 import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getPendingInvoiceCounts, queueInvoice, syncPendingInvoices } from "@/lib/offline-queue";
@@ -130,7 +131,14 @@ interface PaymentMethodRecord {
   upi_id: string | null;
   upi_qr_data: string | null;
   allowed_roles: string[];
+  integration_provider: "phonepe" | null;
+  manual_override_allowed: boolean;
 }
+
+type PhonePeIntegratedPaymentMethod = PaymentMethodRecord & {
+  integration_provider: "phonepe";
+  type: "card" | "upi";
+};
 
 interface PosInvoicePanelProps {
   editingInvoice?: InvoiceRecord | null;
@@ -148,6 +156,11 @@ interface PasteWhatsappOrderResponse {
     line: string;
     reason: string;
   }>;
+}
+
+interface PhonePeDialogState {
+  method: PhonePeIntegratedPaymentMethod;
+  attempt: PhonePeAttemptView;
 }
 
 export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraftReady }: PosInvoicePanelProps) {
@@ -176,6 +189,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [selectedPaymentMode, setSelectedPaymentMode] = useState<PaymentMode>("CASH");
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<string | null>(null);
   const [referenceNumber, setReferenceNumber] = useState("");
+  const [phonePeDialog, setPhonePeDialog] = useState<PhonePeDialogState | null>(null);
+  const [isSyncingPhonePe, setIsSyncingPhonePe] = useState(false);
+  const [isManualOverridePending, setIsManualOverridePending] = useState(false);
+  const [manualPhonePeReference, setManualPhonePeReference] = useState("");
+  const [manualPhonePeReason, setManualPhonePeReason] = useState("");
+  const phonePeCompletionRef = useRef<string | null>(null);
+  const currentRole = getStoredAuthSession()?.user?.role ?? "STAFF";
+  const canManualOverridePhonePe = currentRole === "OWNER" || currentRole === "MANAGER";
   const [amountReceived, setAmountReceived] = useState(0);
   const [appliedCoupon, setAppliedCoupon] = useState("");
   const [couponDiscount, setCouponDiscount] = useState(0);
@@ -247,6 +268,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const products = knownProducts;
   const paymentMethods = useMemo(() => paymentMethodsQuery.data ?? [], [paymentMethodsQuery.data]);
   const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedPaymentMethodId) ?? paymentMethods[0] ?? null;
+  const splitEligiblePaymentMethods = useMemo(() => paymentMethods.filter((method) => !isPhonePeIntegratedMethod(method)), [paymentMethods]);
   const customerResults = useMemo(
     () => (customersQuery.data?.data ?? []).map(normalizeCustomer),
     [customersQuery.data?.data],
@@ -325,10 +347,15 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const current = selectedPaymentMethodId ? paymentMethods.find((method) => method.id === selectedPaymentMethodId) : null;
     const next = current ?? paymentMethods[0];
     if (!next) return;
-    setSelectedPaymentMethodId(next.id);
+    if (selectedPaymentMethodId !== next.id) {
+      setSelectedPaymentMethodId(next.id);
+    }
     setSelectedPaymentMode(paymentMethodToMode(next));
-    setSplitEntries((current) => current.map((entry) => entry.paymentMethodId ? entry : { ...entry, paymentMethodId: next.id, mode: paymentMethodToMode(next) }));
-  }, [paymentMethods, selectedPaymentMethodId]);
+    if (useSplit) {
+      const splitDefault = splitEligiblePaymentMethods[0] ?? next;
+      setSplitEntries((currentEntries) => currentEntries.map((entry) => entry.paymentMethodId ? entry : { ...entry, paymentMethodId: splitDefault.id, mode: paymentMethodToMode(splitDefault) }));
+    }
+  }, [paymentMethods, selectedPaymentMethodId, splitEligiblePaymentMethods, useSplit]);
 
   useEffect(() => {
     if (!selectedCustomer) {
@@ -494,7 +521,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       if (shortcut) {
         event.preventDefault();
         selectPaymentMethod(shortcut);
-        void confirmInvoice(paymentMethodToMode(shortcut), shortcut.id);
+        if (isPhonePeIntegratedMethod(shortcut)) {
+          void startPhonePePayment(shortcut);
+        } else {
+          void confirmInvoice({ paymentMode: paymentMethodToMode(shortcut), paymentMethodId: shortcut.id });
+        }
         return;
       }
       if (key.toLowerCase() === "h") {
@@ -589,6 +620,166 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     `;
     printWindow.setTimeout(() => printWindow.print(), 0);
   }
+
+  function isPhonePeIntegratedMethod(method: PaymentMethodRecord | null | undefined): method is PhonePeIntegratedPaymentMethod {
+    return Boolean(method && method.integration_provider === "phonepe" && (method.type === "card" || method.type === "upi"));
+  }
+
+  function closePhonePeDialog() {
+    setPhonePeDialog(null);
+    setIsSyncingPhonePe(false);
+    setIsManualOverridePending(false);
+    setManualPhonePeReference("");
+    setManualPhonePeReason("");
+    phonePeCompletionRef.current = null;
+  }
+
+  function canStartPhonePePayment(method: PhonePeIntegratedPaymentMethod): boolean {
+    if (!online) {
+      notify("PhonePe verification needs internet. Use manual override after connectivity is restored.", "red");
+      return false;
+    }
+    if (lines.filter((line) => line.productId).length === 0) {
+      notify("Add at least one product.", "red");
+      return false;
+    }
+    if (useSplit) {
+      notify("PhonePe auto verification currently works on single-method bills only. Use split rows with manual references if needed.", "amber");
+      return false;
+    }
+    if (isEditMode) {
+      notify("PhonePe auto verification is available on new bills. Save invoice edits separately or use manual override.", "amber");
+      return false;
+    }
+    if (deliveryRequired && (!selectedCustomer || !(deliveryAddress.trim() || selectedCustomer.address || "").trim())) {
+      notify("Select a customer and enter a delivery address before collecting payment.", "red");
+      return false;
+    }
+    if (!isPhonePeIntegratedMethod(method)) {
+      notify("This payment method is not configured for PhonePe.", "red");
+      return false;
+    }
+    return true;
+  }
+
+  async function completePhonePeAttempt(method: PhonePeIntegratedPaymentMethod, attempt: PhonePeAttemptView) {
+    const reference = attempt.reference_number?.trim();
+    if (!reference) {
+      notify("PhonePe payment completed but no reference number was returned. Use manual override to continue.", "red");
+      phonePeCompletionRef.current = null;
+      return;
+    }
+    if (phonePeCompletionRef.current === attempt.id) {
+      return;
+    }
+
+    phonePeCompletionRef.current = attempt.id;
+    setReferenceNumber(reference);
+    const saved = await confirmInvoice({
+      paymentMode: paymentMethodToMode(method),
+      paymentMethodId: method.id,
+      referenceNumber: reference,
+      integrationAttemptId: attempt.id,
+    });
+    if (saved) {
+      closePhonePeDialog();
+      return;
+    }
+
+    phonePeCompletionRef.current = null;
+  }
+
+  async function syncPhonePeAttempt(quiet = false) {
+    if (!phonePeDialog) {
+      return;
+    }
+
+    setIsSyncingPhonePe(true);
+    try {
+      const attempt = await createAuthenticatedApiClient().post<PhonePeAttemptView>(`/payment-integrations/phonepe/attempts/${phonePeDialog.attempt.id}/status-sync`, {});
+      setPhonePeDialog((current) => current ? { ...current, attempt } : current);
+      if (attempt.status === "success" || attempt.status === "manual_override") {
+        await completePhonePeAttempt(phonePeDialog.method, attempt);
+      } else if (!quiet && (attempt.status === "failed" || attempt.status === "expired")) {
+        notify(attempt.message, "red");
+      }
+    } catch (error) {
+      if (!quiet) {
+        notify(error instanceof Error ? error.message : "Unable to refresh PhonePe payment status.", "red");
+      }
+    } finally {
+      setIsSyncingPhonePe(false);
+    }
+  }
+
+  async function startPhonePePayment(method: PhonePeIntegratedPaymentMethod) {
+    if (!canStartPhonePePayment(method)) {
+      return;
+    }
+
+    setIsSyncingPhonePe(true);
+    setManualPhonePeReference("");
+    setManualPhonePeReason("");
+    phonePeCompletionRef.current = null;
+
+    try {
+      const attempt = await createAuthenticatedApiClient().post<PhonePeAttemptView>("/payment-integrations/phonepe/init", {
+        payment_method_id: method.id,
+        amount: totals.grandTotal,
+        channel: method.type === "card" ? "card" : "upi",
+        order_label: buildPhonePeOrderLabel(editingInvoice?.invoiceNumber),
+        ...(notes.trim() ? { invoice_name: notes.trim().slice(0, 120) } : {}),
+      });
+      setPhonePeDialog({ method, attempt });
+      setManualPhonePeReference(attempt.reference_number ?? "");
+      if (attempt.status === "success" || attempt.status === "manual_override") {
+        await completePhonePeAttempt(method, attempt);
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Unable to start PhonePe payment.", "red");
+    } finally {
+      setIsSyncingPhonePe(false);
+    }
+  }
+
+  async function submitPhonePeManualOverride() {
+    if (!phonePeDialog) {
+      return;
+    }
+    if (!canManualOverridePhonePe) {
+      notify("Manual override is restricted to owners and managers.", "red");
+      return;
+    }
+    if (!manualPhonePeReference.trim()) {
+      notify("Enter the PhonePe reference number before using manual override.", "red");
+      return;
+    }
+
+    setIsManualOverridePending(true);
+    try {
+      const attempt = await createAuthenticatedApiClient().post<PhonePeAttemptView>(`/payment-integrations/phonepe/attempts/${phonePeDialog.attempt.id}/manual-override`, {
+        reference_number: manualPhonePeReference.trim(),
+        ...(manualPhonePeReason.trim() ? { reason: manualPhonePeReason.trim() } : {}),
+      });
+      setPhonePeDialog((current) => current ? { ...current, attempt } : current);
+      await completePhonePeAttempt(phonePeDialog.method, attempt);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Unable to record PhonePe manual override.", "red");
+    } finally {
+      setIsManualOverridePending(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!phonePeDialog || phonePeDialog.attempt.status !== "pending") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void syncPhonePeAttempt(true);
+    }, 4_000);
+    return () => window.clearInterval(timer);
+  }, [phonePeDialog?.attempt.id, phonePeDialog?.attempt.status]);
 
   function notify(message: string, tone: StatusTone = "green") {
     setStatus(message);
@@ -826,27 +1017,33 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     }
   }
 
-  async function confirmInvoice(paymentModeOverride?: PaymentMode, paymentMethodIdOverride?: string) {
+  async function confirmInvoice(overrides?: { paymentMode?: PaymentMode; paymentMethodId?: string; referenceNumber?: string; integrationAttemptId?: string }) {
     const activeLines = lines.filter((line) => line.productId);
     if (activeLines.length === 0) {
       notify("Add at least one product.", "red");
-      return;
+      return false;
     }
 
     const splitPaymentEntries = normalizedSplitEntries();
-    const paymentMethodId = useSplit ? splitPaymentEntries[0]?.paymentMethodId ?? selectedPaymentMethod?.id ?? null : paymentMethodIdOverride ?? selectedPaymentMethodId;
+    const paymentMethodId = useSplit ? splitPaymentEntries[0]?.paymentMethodId ?? selectedPaymentMethod?.id ?? null : overrides?.paymentMethodId ?? selectedPaymentMethodId;
     const activePaymentMethod = paymentMethodId ? paymentMethods.find((method) => method.id === paymentMethodId) ?? selectedPaymentMethod : selectedPaymentMethod;
-    const paymentMode = useSplit ? splitPaymentEntries[0]?.mode ?? "CASH" : paymentModeOverride ?? selectedPaymentMode;
+    const paymentMode = useSplit ? splitPaymentEntries[0]?.mode ?? "CASH" : overrides?.paymentMode ?? selectedPaymentMode;
+    const resolvedReferenceNumber = useSplit ? "" : overrides?.referenceNumber ?? referenceNumber;
+    const integrationAttemptId = useSplit ? "" : overrides?.integrationAttemptId?.trim() ?? "";
     if (!useSplit && !paymentMethodId) {
       notify("Select a payment method.", "red");
-      return;
+      return false;
     }
     if (!useSplit) {
       setSelectedPaymentMode(paymentMode);
     }
-    if (!useSplit && activePaymentMethod?.requires_reference && !referenceNumber.trim()) {
+    if (!useSplit && activePaymentMethod && isPhonePeIntegratedMethod(activePaymentMethod) && !integrationAttemptId) {
+      notify("Use the PhonePe button to start the verified payment attempt.", "red");
+      return false;
+    }
+    if (!useSplit && activePaymentMethod?.requires_reference && !resolvedReferenceNumber.trim()) {
       notify(`${activePaymentMethod.reference_label || "Reference number"} is required.`, "red");
-      return;
+      return false;
     }
     const customerId = selectedCustomer?.id;
     const scheduledDeliveryAt = deliveryRequired ? toIsoDateTime(scheduledDeliveryTime) : undefined;
@@ -861,7 +1058,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
     if (deliveryRequired && (!customerId || !deliveryPayload?.deliveryAddress || deliveryPayload.deliveryAddress.length < 5)) {
       notify("Select a customer and enter a delivery address.", "red");
-      return;
+      return false;
     }
 
     if (selectedCustomer) {
@@ -886,6 +1083,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       }
       if (splitPaymentEntries.some((entry) => !entry.paymentMethodId)) {
         notify("Select a method for every split payment row.", "red");
+        return;
+      }
+      const phonePeSplitRow = splitPaymentEntries.find((entry) => {
+        const method = paymentMethods.find((item) => item.id === entry.paymentMethodId);
+        return isPhonePeIntegratedMethod(method);
+      });
+      if (phonePeSplitRow) {
+        notify("PhonePe methods cannot be used in split payments. Use a single verified PhonePe attempt instead.", "red");
         return;
       }
       const missingReference = splitPaymentEntries.find((entry) => {
@@ -941,11 +1146,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       if (!online) {
         if (isEditMode) {
           notify("Invoice edits need internet because stock and payments must be reconciled immediately.", "red");
-          return;
+          return false;
         }
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, referenceNumber);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, resolvedReferenceNumber, integrationAttemptId);
         clearBill();
-        return;
+        return true;
       }
 
       if (editingInvoice) {
@@ -979,7 +1184,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           queryClient.invalidateQueries({ queryKey: ["products"] }),
         ]);
         onEditComplete?.();
-        return;
+        return true;
       }
 
       const payments = useSplit
@@ -989,7 +1194,8 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               mode: paymentMode,
               amount: totals.grandTotal,
               ...(paymentMethodId ? { paymentMethodId } : {}),
-              ...(referenceNumber.trim() ? { referenceNumber: referenceNumber.trim() } : {}),
+              ...(resolvedReferenceNumber.trim() ? { referenceNumber: resolvedReferenceNumber.trim() } : {}),
+              ...(integrationAttemptId ? { integrationAttemptId } : {}),
             }]
           : [];
       const created = await createAuthenticatedApiClient().post<InvoiceMutationResult>("/billing/invoices/pos-confirm", {
@@ -1033,14 +1239,16 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
       }
       await queryClient.invalidateQueries({ queryKey: ["invoices"] });
       clearBill({ preserveLastBill: true });
+      return true;
     } catch (error) {
       if (!isEditMode && isNetworkError(error)) {
-        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, referenceNumber);
+        await queueOfflineInvoice(invoicePayload, deliveryPayload, paymentMode, splitPaymentEntries, paymentMethodId, resolvedReferenceNumber, integrationAttemptId);
         clearBill();
-        return;
+        return true;
       }
 
       notify(error instanceof Error ? error.message : isEditMode ? "Unable to update invoice." : "Unable to create invoice.", "red");
+      return false;
     } finally {
       setIsSubmitting(false);
       focusBarcodeSoon();
@@ -1054,6 +1262,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     splitPayments: SplitEntry[] = [],
     paymentMethodId?: string | null,
     paymentReferenceNumber?: string,
+    integrationAttemptId?: string,
   ) {
     await queueInvoice(
       {
@@ -1066,6 +1275,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 mode: paymentMode,
                 ...(paymentMethodId ? { paymentMethodId } : {}),
                 ...(paymentReferenceNumber?.trim() ? { referenceNumber: paymentReferenceNumber.trim() } : {}),
+                ...(integrationAttemptId?.trim() ? { integrationAttemptId: integrationAttemptId.trim() } : {}),
               },
             }),
       },
@@ -1640,7 +1850,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                   <select
                     value={entry.paymentMethodId ?? selectedPaymentMethodId ?? ""}
                     onChange={(event) => {
-                      const method = paymentMethods.find((item) => item.id === event.target.value);
+                      const method = splitEligiblePaymentMethods.find((item) => item.id === event.target.value) ?? paymentMethods.find((item) => item.id === event.target.value);
                       setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? {
                         ...item,
                         paymentMethodId: method?.id,
@@ -1650,7 +1860,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                     }}
                     className="h-9 flex-1 rounded-md border border-border px-2 text-sm"
                   >
-                    {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+                    {splitEligiblePaymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
                   </select>
                   <input type="number" min="0" value={entry.amount} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} className="h-9 w-28 rounded-md border border-border px-2 text-sm" />
                   {index > 0 ? <button className="text-sm text-red-600" onClick={() => setSplitEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove</button> : null}
@@ -1667,13 +1877,17 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             ))}
             <button
               className="text-left text-sm font-medium text-emerald-700"
+              disabled={splitEligiblePaymentMethods.length === 0}
               onClick={() => {
-                const method = paymentMethods[0];
+                const method = splitEligiblePaymentMethods[0] ?? paymentMethods[0];
                 setSplitEntries((current) => [...current, { mode: method ? paymentMethodToMode(method) : "CASH", paymentMethodId: method?.id, amount: 0 }]);
               }}
             >
               Add payment method
             </button>
+            {splitEligiblePaymentMethods.length === 0 ? (
+              <div className="text-xs text-amber-600">No split-compatible payment methods are configured. Use a single verified PhonePe payment or add a non-PhonePe method.</div>
+            ) : null}
             {Math.abs(splitTotal() - totals.grandTotal) > 0.01 ? (
               <div className="text-xs text-amber-600">Split total ₹{splitTotal().toFixed(2)} | Remaining ₹{(totals.grandTotal - splitTotal()).toFixed(2)}</div>
             ) : <div className="text-xs text-emerald-700">Split total matches the bill. Any payment button will record these split rows.</div>}
@@ -1683,13 +1897,20 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         {!useSplit ? (
           <div className="mt-4 grid gap-2 rounded-md border border-border bg-slate-50 p-3">
             <div className="text-xs font-semibold text-slate-600">Selected payment: {selectedPaymentMethod?.name ?? selectedPaymentMode}</div>
-            {selectedPaymentMethod?.requires_reference ? (
+            {selectedPaymentMethod?.requires_reference && !isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
               <label className="block text-sm font-medium text-slate-700">
                 {selectedPaymentMethod.reference_label || "Reference number"}
                 <input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder={`Enter ${(selectedPaymentMethod.reference_label || "reference").toLowerCase()}`} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" autoFocus />
               </label>
             ) : null}
-            {selectedPaymentMethod?.type === "upi" && selectedPaymentMethod.upi_qr_data ? (
+            {isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
+              <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                {selectedPaymentMethod.type === "card"
+                  ? "Click the Card button to push the amount to the PhonePe terminal. BizBil will wait for the verified reference before saving the invoice."
+                  : "Click the UPI button to generate a PhonePe QR and BizBil will verify the payment before saving the invoice."}
+              </div>
+            ) : null}
+            {selectedPaymentMethod?.type === "upi" && selectedPaymentMethod.upi_qr_data && !isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
               <div className="flex items-center gap-3 rounded-md border border-border bg-white p-2">
                 <img src={selectedPaymentMethod.upi_qr_data} width={96} height={96} alt="UPI QR" className="size-24 rounded-sm border border-slate-200" />
                 <div className="min-w-0 flex-1">
@@ -1727,7 +1948,11 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               }}
               onClick={() => {
                 selectPaymentMethod(method);
-                void confirmInvoice(paymentMethodToMode(method), method.id);
+                if (isPhonePeIntegratedMethod(method)) {
+                  void startPhonePePayment(method);
+                } else {
+                  void confirmInvoice({ paymentMode: paymentMethodToMode(method), paymentMethodId: method.id });
+                }
               }}
               disabled={isSubmitting || lines.length === 0 || paymentMethodsQuery.isLoading}
             >
@@ -1736,7 +1961,13 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
                 <span className="text-xs font-medium text-slate-600">Uses split rows</span>
               ) : (
                 <span className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-slate-500">{method.short_code}</span>
+                  <span className="text-xs font-medium text-slate-500">
+                    {isPhonePeIntegratedMethod(method)
+                      ? method.type === "card"
+                        ? "PhonePe terminal"
+                        : "PhonePe QR verify"
+                      : method.short_code}
+                  </span>
                   {method.keyboard_shortcut ? (
                     <kbd className="inline-flex rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-700">
                       {method.keyboard_shortcut.replace("Ctrl+", "^")}
@@ -1783,6 +2014,24 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           </div>
         ) : null}
       </aside>
+
+      {phonePeDialog ? (
+        <PhonePePaymentDialog
+          methodName={phonePeDialog.method.name}
+          attempt={phonePeDialog.attempt}
+          canManualOverride={canManualOverridePhonePe}
+          syncing={isSyncingPhonePe}
+          completingInvoice={isSubmitting}
+          manualReference={manualPhonePeReference}
+          manualReason={manualPhonePeReason}
+          manualOverridePending={isManualOverridePending}
+          onManualReferenceChange={setManualPhonePeReference}
+          onManualReasonChange={setManualPhonePeReason}
+          onRefresh={() => void syncPhonePeAttempt()}
+          onManualOverride={() => void submitPhonePeManualOverride()}
+          onClose={closePhonePeDialog}
+        />
+      ) : null}
 
       {showPasteOrder ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
@@ -2245,6 +2494,11 @@ function paymentMethodToMode(method: PaymentMethodRecord): PaymentMode {
   if (method.type === "credit") return "CREDIT";
   if (method.type === "cash") return "CASH";
   return "CASH";
+}
+
+function buildPhonePeOrderLabel(existingInvoiceNumber?: string | null): string {
+  const source = existingInvoiceNumber?.trim() || `POS-${Date.now().toString(36).toUpperCase()}`;
+  return source.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/-+/g, "-").slice(0, 48);
 }
 
 function escapeHtml(value: string): string {

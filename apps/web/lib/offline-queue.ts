@@ -40,6 +40,7 @@ interface OfflineInvoiceEnvelope {
     mode: string;
     paymentMethodId?: string;
     referenceNumber?: string;
+    integrationAttemptId?: string;
   };
   splitPayments?: Array<{
     mode: string;
@@ -98,6 +99,7 @@ export async function syncPendingInvoices(getApiClient: () => Promise<{ post: <T
               mode: envelope.autoPay.mode,
               ...(envelope.autoPay.paymentMethodId ? { paymentMethodId: envelope.autoPay.paymentMethodId } : {}),
               ...(envelope.autoPay.referenceNumber ? { referenceNumber: envelope.autoPay.referenceNumber } : {}),
+              ...(envelope.autoPay.integrationAttemptId ? { integrationAttemptId: envelope.autoPay.integrationAttemptId } : {}),
             }]
           : [];
       const created = await apiClient.post<{ id: string; grandTotal?: string | number }>("/billing/invoices/pos-confirm", {

@@ -26,6 +26,7 @@ export interface PosPaymentInput {
   amount?: number | undefined;
   paymentMethodId?: string | undefined;
   referenceNumber?: string | undefined;
+  integrationAttemptId?: string | undefined;
 }
 
 export interface PosDeliveryInput {

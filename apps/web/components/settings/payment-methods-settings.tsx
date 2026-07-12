@@ -9,6 +9,20 @@ import { getStoredTenant } from "@/lib/vertical-config";
 
 type PaymentMethodType = "cash" | "upi" | "card" | "credit" | "custom";
 type SettlementFrequency = "daily" | "weekly" | "monthly" | null;
+type IntegrationProvider = "phonepe" | null;
+
+interface PhonePeIntegrationConfigRecord {
+  environment: "production" | "uat";
+  merchant_id: string;
+  store_id: string;
+  terminal_id: string | null;
+  provider_id: string | null;
+  salt_index: number;
+  salt_key_configured: boolean;
+  qr_expiry_seconds: number;
+  handover_timeout_seconds: number;
+  auto_accept: boolean;
+}
 
 interface PartnerRecord {
   id: string;
@@ -35,6 +49,9 @@ interface PaymentMethodRecord {
   opening_balance: number;
   settlement_frequency: SettlementFrequency;
   allowed_roles: string[];
+  integration_provider: IntegrationProvider;
+  integration_config: PhonePeIntegrationConfigRecord | null;
+  manual_override_allowed: boolean;
   transaction_count: number;
 }
 
@@ -55,6 +72,19 @@ interface MethodFormState {
   settlement_frequency: "" | "daily" | "weekly" | "monthly";
   opening_balance: string;
   allowed_roles: string[];
+  integration_provider: "" | "phonepe";
+  manual_override_allowed: boolean;
+  phonepe_environment: "production" | "uat";
+  phonepe_merchant_id: string;
+  phonepe_store_id: string;
+  phonepe_terminal_id: string;
+  phonepe_provider_id: string;
+  phonepe_salt_index: string;
+  phonepe_salt_key: string;
+  phonepe_salt_key_configured: boolean;
+  phonepe_qr_expiry_seconds: string;
+  phonepe_handover_timeout_seconds: string;
+  phonepe_auto_accept: boolean;
   is_default?: boolean;
   transaction_count?: number;
 }
@@ -153,6 +183,19 @@ export function PaymentMethodsSettings() {
       settlement_frequency: "",
       opening_balance: "0",
       allowed_roles: [],
+      integration_provider: "",
+      manual_override_allowed: true,
+      phonepe_environment: "production",
+      phonepe_merchant_id: "",
+      phonepe_store_id: "",
+      phonepe_terminal_id: "",
+      phonepe_provider_id: "",
+      phonepe_salt_index: "1",
+      phonepe_salt_key: "",
+      phonepe_salt_key_configured: false,
+      phonepe_qr_expiry_seconds: "180",
+      phonepe_handover_timeout_seconds: "60",
+      phonepe_auto_accept: false,
     });
   }
 
@@ -260,7 +303,17 @@ function MethodDrawer({ form, partners, onChange, onClose, onSave, isSaving, err
   error: string | null;
 }>) {
   const isDefaultLocked = Boolean(form.is_default);
-  const isValid = form.name.trim() && form.short_code.trim() && (form.type !== "upi" || /^[\w.-]+@[\w.-]+$/.test(form.upi_id.trim()));
+  const supportsPhonePe = form.type === "card" || form.type === "upi";
+  const phonePeSelected = form.integration_provider === "phonepe";
+  const hasStaticUpiConfig = form.type !== "upi" || phonePeSelected || /^[\w.-]+@[\w.-]+$/.test(form.upi_id.trim());
+  const hasPhonePeConfig = !phonePeSelected || Boolean(
+    form.phonepe_merchant_id.trim() &&
+    form.phonepe_store_id.trim() &&
+    form.phonepe_salt_index.trim() &&
+    (form.phonepe_salt_key.trim() || form.phonepe_salt_key_configured) &&
+    (form.type !== "card" || form.phonepe_terminal_id.trim()),
+  );
+  const isValid = form.name.trim() && form.short_code.trim() && hasStaticUpiConfig && hasPhonePeConfig;
   const set = <K extends keyof MethodFormState>(key: K, value: MethodFormState[K]) => onChange({ ...form, [key]: value });
 
   return (
@@ -279,7 +332,19 @@ function MethodDrawer({ form, partners, onChange, onClose, onSave, isSaving, err
           <TextField label="Short code" value={form.short_code} onChange={(value) => set("short_code", value.toUpperCase().slice(0, 12))} disabled={isDefaultLocked} required />
           <label className="block text-sm font-medium text-slate-700">
             Type
-            <select value={form.type} disabled={isDefaultLocked} onChange={(event) => set("type", event.target.value as PaymentMethodType)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm">
+            <select
+              value={form.type}
+              disabled={isDefaultLocked}
+              onChange={(event) => {
+                const nextType = event.target.value as PaymentMethodType;
+                onChange({
+                  ...form,
+                  type: nextType,
+                  integration_provider: nextType === "card" || nextType === "upi" ? form.integration_provider : "",
+                });
+              }}
+              className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm"
+            >
               {typeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
@@ -304,7 +369,53 @@ function MethodDrawer({ form, partners, onChange, onClose, onSave, isSaving, err
             <TextField label="Keyboard shortcut" value={form.keyboard_shortcut} onChange={(value) => set("keyboard_shortcut", value)} placeholder="Ctrl+5" />
           </div>
 
-          {form.type === "upi" ? (
+          {supportsPhonePe ? (
+            <section className="grid gap-3 rounded-md border border-border p-3">
+              <label className="block text-sm font-medium text-slate-700">
+                Integration
+                <select value={form.integration_provider} onChange={(event) => set("integration_provider", event.target.value as MethodFormState["integration_provider"])} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm">
+                  <option value="">None</option>
+                  <option value="phonepe">PhonePe</option>
+                </select>
+              </label>
+
+              {phonePeSelected ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm font-medium text-slate-700">
+                      Environment
+                      <select value={form.phonepe_environment} onChange={(event) => set("phonepe_environment", event.target.value as MethodFormState["phonepe_environment"])} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm">
+                        <option value="production">Production</option>
+                        <option value="uat">UAT / Sandbox</option>
+                      </select>
+                    </label>
+                    <TextField label="Merchant ID" value={form.phonepe_merchant_id} onChange={(value) => set("phonepe_merchant_id", value)} required />
+                    <TextField label="Store ID" value={form.phonepe_store_id} onChange={(value) => set("phonepe_store_id", value)} required />
+                    <TextField label="Terminal ID" value={form.phonepe_terminal_id} onChange={(value) => set("phonepe_terminal_id", value)} placeholder={form.type === "card" ? "Required for card terminal" : "Optional for QR"} required={form.type === "card"} />
+                    <TextField label="Provider ID" value={form.phonepe_provider_id} onChange={(value) => set("phonepe_provider_id", value)} placeholder="Optional" />
+                    <TextField label="Salt index" value={form.phonepe_salt_index} onChange={(value) => set("phonepe_salt_index", value)} type="number" required />
+                    <div className="sm:col-span-2">
+                      <TextField label="Salt key" value={form.phonepe_salt_key} onChange={(value) => set("phonepe_salt_key", value)} placeholder={form.phonepe_salt_key_configured ? "Saved. Enter only to replace it." : "Paste PhonePe salt key"} required={!form.phonepe_salt_key_configured} />
+                      {form.phonepe_salt_key_configured ? <div className="mt-1 text-xs text-slate-500">A PhonePe salt key is already saved for this method.</div> : null}
+                    </div>
+                    <TextField label="QR expiry (seconds)" value={form.phonepe_qr_expiry_seconds} onChange={(value) => set("phonepe_qr_expiry_seconds", value)} type="number" />
+                    <TextField label="Terminal handover timeout (seconds)" value={form.phonepe_handover_timeout_seconds} onChange={(value) => set("phonepe_handover_timeout_seconds", value)} type="number" />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input type="checkbox" checked={form.phonepe_auto_accept} onChange={(event) => set("phonepe_auto_accept", event.target.checked)} className="size-4 accent-emerald-600" />
+                    Auto-accept on PhonePe terminal
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input type="checkbox" checked={form.manual_override_allowed} onChange={(event) => set("manual_override_allowed", event.target.checked)} className="size-4 accent-emerald-600" />
+                    Allow manual override in billing
+                  </label>
+                  <div className="text-xs text-slate-500">PhonePe callbacks use BizBil&apos;s configured public HTTPS URL when available. Billing can still poll status if callbacks are not reachable.</div>
+                </>
+              ) : null}
+            </section>
+          ) : null}
+
+          {form.type === "upi" && !phonePeSelected ? (
             <div className="rounded-md border border-border bg-slate-50 p-3">
               <TextField label="UPI ID" value={form.upi_id} onChange={(value) => set("upi_id", value)} placeholder="sivsan@okicici" required />
               <div className="mt-2 text-xs text-slate-500">QR is generated server-side when this method is saved.</div>
@@ -313,10 +424,11 @@ function MethodDrawer({ form, partners, onChange, onClose, onSave, isSaving, err
 
           <section className="grid gap-3 rounded-md border border-border p-3">
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input type="checkbox" checked={form.requires_reference} onChange={(event) => set("requires_reference", event.target.checked)} className="size-4 accent-emerald-600" />
+              <input type="checkbox" checked={phonePeSelected || form.requires_reference} disabled={phonePeSelected} onChange={(event) => set("requires_reference", event.target.checked)} className="size-4 accent-emerald-600" />
               Requires reference
             </label>
-            {form.requires_reference ? <TextField label="Reference field label" value={form.reference_label} onChange={(value) => set("reference_label", value)} placeholder="Voucher code" /> : null}
+            {phonePeSelected ? <div className="text-xs text-slate-500">PhonePe references are saved automatically after terminal or QR verification.</div> : null}
+            {phonePeSelected || form.requires_reference ? <TextField label="Reference field label" value={form.reference_label} onChange={(value) => set("reference_label", value)} placeholder={phonePeSelected ? "PhonePe reference" : "Voucher code"} /> : null}
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
               <input type="checkbox" checked={form.allows_split} onChange={(event) => set("allows_split", event.target.checked)} className="size-4 accent-emerald-600" />
               Allow split payment
@@ -387,6 +499,7 @@ function TextField({ label, value, onChange, type = "text", placeholder, disable
 }
 
 function fromMethod(method: PaymentMethodRecord): MethodFormState {
+  const phonePeConfig = method.integration_provider === "phonepe" ? method.integration_config : null;
   return {
     id: method.id,
     name: method.name,
@@ -404,12 +517,26 @@ function fromMethod(method: PaymentMethodRecord): MethodFormState {
     settlement_frequency: method.settlement_frequency ?? "",
     opening_balance: String(method.opening_balance),
     allowed_roles: method.allowed_roles,
+    integration_provider: method.integration_provider ?? "",
+    manual_override_allowed: method.manual_override_allowed,
+    phonepe_environment: phonePeConfig?.environment ?? "production",
+    phonepe_merchant_id: phonePeConfig?.merchant_id ?? "",
+    phonepe_store_id: phonePeConfig?.store_id ?? "",
+    phonepe_terminal_id: phonePeConfig?.terminal_id ?? "",
+    phonepe_provider_id: phonePeConfig?.provider_id ?? "",
+    phonepe_salt_index: phonePeConfig?.salt_index ? String(phonePeConfig.salt_index) : "1",
+    phonepe_salt_key: "",
+    phonepe_salt_key_configured: phonePeConfig?.salt_key_configured ?? false,
+    phonepe_qr_expiry_seconds: phonePeConfig?.qr_expiry_seconds ? String(phonePeConfig.qr_expiry_seconds) : "180",
+    phonepe_handover_timeout_seconds: phonePeConfig?.handover_timeout_seconds ? String(phonePeConfig.handover_timeout_seconds) : "60",
+    phonepe_auto_accept: phonePeConfig?.auto_accept ?? false,
     is_default: method.is_default,
     transaction_count: method.transaction_count,
   };
 }
 
 function toPayload(form: MethodFormState) {
+  const phonePeSelected = form.integration_provider === "phonepe";
   return {
     name: form.name.trim(),
     short_code: form.short_code.trim().toUpperCase(),
@@ -418,14 +545,32 @@ function toPayload(form: MethodFormState) {
     icon: form.icon,
     keyboard_shortcut: form.keyboard_shortcut.trim() || null,
     display_order: form.display_order,
-    requires_reference: form.requires_reference,
-    reference_label: form.requires_reference ? form.reference_label.trim() || null : null,
+    requires_reference: phonePeSelected ? true : form.requires_reference,
+    reference_label: phonePeSelected
+      ? form.reference_label.trim() || "PhonePe reference"
+      : form.requires_reference
+        ? form.reference_label.trim() || null
+        : null,
     allows_split: form.allows_split,
-    upi_id: form.type === "upi" ? form.upi_id.trim() : null,
+    upi_id: form.type === "upi" && !phonePeSelected ? form.upi_id.trim() : null,
     partner_id: form.partner_id || null,
     opening_balance: Number(form.opening_balance) || 0,
     settlement_frequency: form.settlement_frequency || null,
     allowed_roles: form.allowed_roles,
+    integration_provider: phonePeSelected ? "phonepe" : null,
+    integration_config: phonePeSelected ? {
+      environment: form.phonepe_environment,
+      merchant_id: form.phonepe_merchant_id.trim(),
+      store_id: form.phonepe_store_id.trim(),
+      terminal_id: form.phonepe_terminal_id.trim() || null,
+      provider_id: form.phonepe_provider_id.trim() || null,
+      salt_index: Number(form.phonepe_salt_index) || 1,
+      salt_key: form.phonepe_salt_key.trim() || null,
+      qr_expiry_seconds: Number(form.phonepe_qr_expiry_seconds) || 180,
+      handover_timeout_seconds: Number(form.phonepe_handover_timeout_seconds) || 60,
+      auto_accept: form.phonepe_auto_accept,
+    } : null,
+    manual_override_allowed: form.manual_override_allowed,
   };
 }
 
