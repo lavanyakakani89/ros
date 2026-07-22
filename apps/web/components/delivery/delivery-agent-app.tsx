@@ -5,9 +5,9 @@ import { Bell, CheckCircle2, Clock3, IndianRupee, MapPin, Navigation, Phone, Ref
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { createAuthenticatedApiClient, logout } from "@/lib/api-client";
+import { createAuthenticatedApiClient, getCurrentVerticalConfig, logout } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession, storeTenant } from "@/lib/vertical-config";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 type ProofType = "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
@@ -108,6 +108,12 @@ export function DeliveryAgentApp() {
     enabled: hasSession,
     refetchInterval: 15_000,
   });
+  const currentConfigQuery = useQuery({
+    queryKey: ["delivery-agent", "current-config"],
+    queryFn: getCurrentVerticalConfig,
+    enabled: hasSession,
+    staleTime: 60_000,
+  });
   const updateStatus = useMutation({
     mutationFn: ({ id, status, notes }: { id: string; status: DeliveryStatus; notes?: string }) =>
       createAuthenticatedApiClient().put(`/delivery/${id}/status`, {
@@ -125,6 +131,9 @@ export function DeliveryAgentApp() {
   });
   const uploadProof = useMutation({
     mutationFn: async ({ delivery, file, proofType }: { delivery: DeliveryItem; file: File; proofType: ProofType }) => {
+      if (isLimitedProofType(proofType) && proofCount(delivery, proofType) > 0) {
+        throw new Error(proofType === "DELIVERY_PHOTO" ? "Delivery proof photo is already uploaded." : "Payment screenshot is already uploaded.");
+      }
       const location = await currentLocation().catch(() => null);
       const proofFile = await compressProofImage(file);
       const form = new FormData();
@@ -172,6 +181,12 @@ export function DeliveryAgentApp() {
   useEffect(() => {
     setNotificationPermission(getBrowserNotificationPermission());
   }, []);
+
+  useEffect(() => {
+    if (currentConfigQuery.data?.tenant) {
+      storeTenant(currentConfigQuery.data.tenant);
+    }
+  }, [currentConfigQuery.data?.tenant]);
 
   useEffect(() => {
     if (notificationPermission !== "granted") return;
@@ -232,7 +247,7 @@ export function DeliveryAgentApp() {
       <header className="sticky top-0 z-10 border-b border-emerald-800 bg-emerald-700 px-4 py-3 text-white shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{tenant?.name ?? "BizBil"}</div>
+            <div className="truncate text-sm font-semibold">{currentConfigQuery.data?.tenant.name ?? tenant?.name ?? "Shop delivery"}</div>
             <div className="truncate text-xs text-emerald-100">{session?.user?.name ?? "Delivery app"}</div>
           </div>
           <button className="rounded-md border border-emerald-500 px-3 py-1.5 text-xs font-semibold" onClick={() => void handleLogout()}>Logout</button>
@@ -410,6 +425,8 @@ function DeliveryCard({
 }>) {
   const deliveryPhotoCount = delivery.proofs?.filter((proof) => proof.proofType === "DELIVERY_PHOTO").length ?? 0;
   const paymentProofCount = delivery.proofs?.filter((proof) => proof.proofType === "PAYMENT_SCREENSHOT").length ?? 0;
+  const hasDeliveryPhoto = deliveryPhotoCount > 0;
+  const hasPaymentProof = paymentProofCount > 0;
   const coordinates = deliveryCoordinates(delivery);
   const mapQuery = coordinates ? `${coordinates.latitude.toString()},${coordinates.longitude.toString()}` : delivery.deliveryAddress;
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
@@ -445,15 +462,15 @@ function DeliveryCard({
       <div className="space-y-3 p-3">
         <div className="grid grid-cols-2 gap-2">
           <ProofInput
-            label={`Delivery photo (${String(deliveryPhotoCount)})`}
+            label={hasDeliveryPhoto ? "Delivery photo uploaded" : "Delivery photo"}
             proofType="DELIVERY_PHOTO"
-            disabled={uploading}
+            disabled={uploading || hasDeliveryPhoto}
             onProof={onProof}
           />
           <ProofInput
-            label={`Payment screenshot (${String(paymentProofCount)})`}
+            label={hasPaymentProof ? "Payment screenshot uploaded" : "Payment screenshot"}
             proofType="PAYMENT_SCREENSHOT"
-            disabled={uploading}
+            disabled={uploading || hasPaymentProof}
             onProof={onProof}
           />
         </div>
@@ -509,6 +526,14 @@ function ProofInput({ label, proofType, disabled, onProof }: Readonly<{ label: s
       />
     </label>
   );
+}
+
+function isLimitedProofType(proofType: ProofType): boolean {
+  return proofType === "DELIVERY_PHOTO" || proofType === "PAYMENT_SCREENSHOT";
+}
+
+function proofCount(delivery: DeliveryItem, proofType: ProofType): number {
+  return delivery.proofs?.filter((proof) => proof.proofType === proofType).length ?? 0;
 }
 
 async function compressProofImage(file: File): Promise<File> {

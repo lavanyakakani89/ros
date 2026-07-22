@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookMarked, ClipboardPaste, Download, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, Trash2, Truck, UserPlus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { BookMarked, ClipboardPaste, CreditCard, Download, ListChecks, MessageCircle, Pause, Printer, Receipt, RefreshCcw, Search, ShoppingCart, Trash2, Truck, UserPlus, WalletCards, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient, downloadApiFile, getCurrentVerticalConfig, listAllProducts, listProducts, lookupProductByCode, refreshAuthSession } from "@/lib/api-client";
 import type { ProductRecord } from "@/lib/api-client";
@@ -29,6 +29,7 @@ type ProductSearchMode = (typeof PRODUCT_SEARCH_MODES)[number]["value"];
 type PrinterConnectionType = "NONE" | "NETWORK" | "USB_PRINTNODE" | "BLUETOOTH" | "LOCAL_AGENT";
 type InvoiceLineRecord = NonNullable<InvoiceRecord["items"]>[number];
 type StatusTone = "green" | "amber" | "red";
+type MobileBillingTab = "items" | "customer" | "payment" | "review";
 
 interface SplitEntry {
   mode: PaymentMode;
@@ -227,6 +228,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [knownProducts, setKnownProducts] = useState<ProductRecord[]>(() => readCachedBillingProducts());
+  const [mobileTab, setMobileTab] = useState<MobileBillingTab>("items");
 
   function focusBarcodeSoon() {
     window.setTimeout(() => barcodeRef.current?.focus(), 0);
@@ -607,7 +609,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   function printUpiQr(method: PaymentMethodRecord) {
     if (!method.upi_qr_data) return;
     const tenant = getStoredTenant();
-    const storeName = tenant?.name ?? "BizBil";
+    const storeName = tenant?.name ?? "Shop";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
     printWindow.document.title = `${method.name} QR`;
@@ -1310,7 +1312,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         invoiceNumber: lastBill.invoiceNumber,
         grandTotal: lastBill.grandTotal,
         paymentMode: lastBill.paymentMode,
-        tenantName: getStoredTenant()?.name ?? "BizBil",
+        tenantName: getStoredTenant()?.name ?? "your shop",
         customerName: lastBill.customer.name,
         items: lastBill.lines,
         templateBody: getWhatsappTemplateBody(whatsappTemplatesQuery.data, "invoiceReady"),
@@ -1521,8 +1523,472 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
   }
 
   return (
-    <section className="grid gap-4 xl:grid-cols-[1fr_390px]">
-      <div className="rounded-md border border-border bg-white">
+    <section className="space-y-4 xl:grid xl:grid-cols-[1fr_390px] xl:gap-4 xl:space-y-0">
+      <div className="space-y-3 pb-28 xl:hidden">
+        <div className="sticky top-0 z-20 border-b border-border bg-white/95 px-3 py-2 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-slate-950">
+                {editingInvoice ? `Editing ${editingInvoice.invoiceNumber}` : "Mobile billing"}
+              </div>
+              <div className="text-xs text-slate-500">
+                {totals.totalItems} item{totals.totalItems === 1 ? "" : "s"} | Qty {formatQuantityInput(totals.totalQuantity)}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs font-medium text-slate-500">Grand total</div>
+              <div className="text-lg font-bold text-slate-950">₹{totals.grandTotal.toFixed(2)}</div>
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1 rounded-md border border-border bg-slate-50 p-1">
+            <MobileBillingTabButton icon={<ShoppingCart className="size-4" aria-hidden="true" />} label="Items" active={mobileTab === "items"} onClick={() => setMobileTab("items")} />
+            <MobileBillingTabButton icon={<UserPlus className="size-4" aria-hidden="true" />} label="Customer" active={mobileTab === "customer"} onClick={() => setMobileTab("customer")} />
+            <MobileBillingTabButton icon={<WalletCards className="size-4" aria-hidden="true" />} label="Payment" active={mobileTab === "payment"} onClick={() => setMobileTab("payment")} />
+            <MobileBillingTabButton icon={<ListChecks className="size-4" aria-hidden="true" />} label="Review" active={mobileTab === "review"} onClick={() => setMobileTab("review")} />
+          </div>
+        </div>
+
+        <div className="grid gap-2 px-3">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-white px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2 text-xs text-slate-600">
+              <span className={`size-2.5 rounded-full ${online ? "bg-emerald-500" : "bg-red-500"}`} />
+              <span className="truncate">{online ? "Online" : "Offline"} | Pending {queueCounts.pending}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="inline-flex size-9 items-center justify-center rounded-md border border-border text-slate-700" onClick={() => void syncNow()} title="Sync">
+                <RefreshCcw className="size-4" aria-hidden="true" />
+              </button>
+              <button className="inline-flex size-9 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-800" onClick={() => setShowPasteOrder(true)} title="Paste WhatsApp order">
+                <ClipboardPaste className="size-4" aria-hidden="true" />
+              </button>
+              <button
+                className={`inline-flex size-9 items-center justify-center rounded-md border ${autoPrint ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-border text-slate-600"}`}
+                type="button"
+                onClick={() => setAutoPrint(!autoPrint)}
+                aria-pressed={autoPrint}
+                title={autoPrint ? "Auto print on" : "Auto print off"}
+              >
+                <Printer className="size-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          {showHeld && heldBills.length > 0 ? (
+            <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-2">
+              {heldBills.map((bill) => (
+                <div key={bill.id} className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-white px-2 py-1.5">
+                  <span className="min-w-0 truncate text-xs text-slate-700">{bill.label} ({bill.lines.length} items)</span>
+                  <div className="flex shrink-0 gap-2">
+                    <button className="text-xs font-semibold text-emerald-700" onClick={() => restoreHeldBill(bill.id)}>Restore</button>
+                    <button className="text-xs font-semibold text-red-600" onClick={() => deleteHeld(bill.id)}>Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {mobileTab === "items" ? (
+          <div className="grid gap-3 px-3">
+            <div className="rounded-md border border-border bg-white p-3">
+              <label className="text-xs font-medium text-slate-500">Product search</label>
+              <div className="mt-1 flex items-center gap-2">
+                <input
+                  value={barcodeInput}
+                  onChange={(event) => setBarcodeInput(event.target.value)}
+                  onKeyDown={handleBarcodeKey}
+                  placeholder={productSearchPlaceholder(productSearchMode)}
+                  className="h-11 min-w-0 flex-1 rounded-md border border-border px-3 text-sm"
+                />
+                <select
+                  value={productSearchMode}
+                  onChange={(event) => setProductSearchMode(event.target.value as ProductSearchMode)}
+                  className="h-11 w-24 shrink-0 rounded-md border border-border bg-white px-2 text-xs font-medium text-slate-700"
+                  aria-label="Product search mode"
+                >
+                  {PRODUCT_SEARCH_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+                </select>
+              </div>
+              {barcodeInput.trim() ? (
+                <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto">
+                  {productResults.length > 0 ? productResults.map((product, index) => (
+                    <button
+                      key={product.id}
+                      className={`rounded-md border px-2 py-2 text-left text-xs ${index === productHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700"}`}
+                      onClick={() => {
+                        insertProduct(product);
+                        setBarcodeInput("");
+                      }}
+                    >
+                      <span className="block truncate font-semibold">{product.name}</span>
+                      <span className="mt-0.5 block truncate text-slate-500">{productSearchPrice(product)} | {productSearchIdentifier(product)}</span>
+                    </button>
+                  )) : <div className="rounded-md border border-red-100 bg-red-50 px-2 py-2 text-xs text-red-700">No matching product</div>}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2">
+              {lines.length === 0 ? (
+                <div className="rounded-md border border-dashed border-slate-300 bg-white px-3 py-8 text-center text-sm text-slate-500">Scan or search a product to start billing.</div>
+              ) : null}
+              {lines.map((line) => {
+                const product = products.find((item) => item.id === line.productId);
+                const stock = product ? decimalToNumber(product.currentStock) : null;
+                const total = lineTotal(line, gstEnabled);
+                return (
+                  <div key={line.id} className="rounded-md border border-border bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-slate-950">{line.productName}</div>
+                        <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+                          <span>Rate ₹{line.sellingPrice.toFixed(2)}</span>
+                          {gstEnabled ? <span>GST {line.gstRate}%</span> : null}
+                          {stock !== null ? <span>Stock {stock.toFixed(3)}</span> : null}
+                        </div>
+                      </div>
+                      <button className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100" onClick={() => removeBillingLine(line.id)} title="Remove item">
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <label className="text-xs font-medium text-slate-600">
+                        Qty
+                        <div className="mt-1 grid grid-cols-[36px_1fr_36px] overflow-hidden rounded-md border border-border">
+                          <button className="inline-flex h-10 items-center justify-center border-r border-border text-slate-700" onClick={() => setLine(line.id, { quantity: Math.max(0.5, roundQuantity(line.quantity - 0.5)) })} title="Decrease quantity">-</button>
+                          <input
+                            className="h-10 min-w-0 px-2 text-center"
+                            type="number"
+                            inputMode="decimal"
+                            min="0.5"
+                            step="0.5"
+                            value={quantityDrafts[line.id] ?? formatQuantityInput(line.quantity)}
+                            onChange={(event) => handleQuantityChange(line.id, event.target.value)}
+                            onBlur={() => handleQuantityBlur(line.id, line.quantity)}
+                          />
+                          <button className="inline-flex h-10 items-center justify-center border-l border-border text-slate-700" onClick={() => setLine(line.id, { quantity: roundQuantity(line.quantity + 0.5) })} title="Increase quantity">+</button>
+                        </div>
+                      </label>
+                      <label className="text-xs font-medium text-slate-600">
+                        Rate
+                        <input className="mt-1 h-10 w-full rounded-md border border-border px-2" type="number" min="0" value={line.sellingPrice} onChange={(event) => setLine(line.id, { sellingPrice: Number(event.target.value) })} />
+                      </label>
+                      <label className="text-xs font-medium text-slate-600">
+                        Discount %
+                        <input className="mt-1 h-10 w-full rounded-md border border-border px-3" type="number" min="0" max="100" value={line.discount} onChange={(event) => setLine(line.id, { discount: Math.min(Math.max(Number(event.target.value), 0), 100) })} />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-border pt-2 text-sm">
+                      <span className="text-slate-500">Line total</span>
+                      <span className="font-bold text-slate-950">₹{total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {mobileTab === "customer" ? (
+          <div className="grid gap-3 px-3">
+            <div className="rounded-md border border-border bg-white p-3">
+              <label className="text-xs font-medium text-slate-500">Customer search</label>
+              <div className="mt-1 flex h-11 items-center gap-2 rounded-md border border-border px-3">
+                <Search className="size-4 text-slate-400" aria-hidden="true" />
+                <input
+                  value={customerSearch}
+                  onChange={(event) => {
+                    setCustomerSearch(event.target.value);
+                    setSelectedCustomer(null);
+                    setShowNewCustomerForm(false);
+                  }}
+                  onKeyDown={handleCustomerSearchKey}
+                  placeholder="Name or phone"
+                  className="min-w-0 flex-1 text-sm outline-none"
+                />
+              </div>
+              {selectedCustomer ? (
+                <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-900">
+                  <div className="font-semibold">{selectedCustomer.name}</div>
+                  <div>{selectedCustomer.phone}</div>
+                  {selectedCustomer.address ? <div className="mt-1 text-emerald-800">{selectedCustomer.address}</div> : null}
+                  <button className="mt-2 font-semibold text-emerald-800" onClick={() => setSelectedCustomer(null)}>Clear customer</button>
+                </div>
+              ) : null}
+              {customerSearch && !selectedCustomer ? (
+                <div className="mt-2 grid max-h-60 gap-1 overflow-y-auto">
+                  {visibleCustomerResults.map((customer, index) => (
+                    <button
+                      key={customer.id}
+                      className={`rounded-md border px-2 py-2 text-left text-xs ${index === customerHighlightIndex ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 text-slate-700"}`}
+                      onClick={() => selectCustomer(customer)}
+                    >
+                      <span className="block truncate font-semibold">{customer.name}</span>
+                      <span className="block truncate text-slate-500">{customer.phone}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {customerSearch && !selectedCustomer && !showNewCustomerForm ? (
+                <button className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-800" onClick={() => {
+                  setShowNewCustomerForm(true);
+                  setNewCustomerName(customerSearch.replace(/\d/g, "").trim());
+                  setNewCustomerPhone(customerSearch.replace(/\D/g, "").slice(0, 15));
+                }}>
+                  <UserPlus className="size-4" aria-hidden="true" />
+                  New customer
+                </button>
+              ) : null}
+              {showNewCustomerForm ? (
+                <div className="mt-3 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
+                  <input value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} placeholder="Customer name" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <input value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} placeholder="Phone number" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <input value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} placeholder="Address" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <button className="h-10 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-800" onClick={() => void createCustomerInline()}>Save customer</button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-md border border-border bg-white p-3">
+              <input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Invoice notes (optional)" className="h-10 w-full rounded-md border border-border px-3 text-sm" />
+              {selectedCustomer ? (
+                <label className="mt-3 flex h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-slate-700">
+                  <input type="checkbox" checked={deliveryRequired} onChange={(event) => setDeliveryRequired(event.target.checked)} className="size-4 accent-emerald-600" />
+                  Delivery required
+                </label>
+              ) : null}
+              {selectedCustomer && deliveryRequired ? (
+                <div className="mt-3 grid gap-2">
+                  <input value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} placeholder="Delivery address" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <input value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} placeholder="Delivery notes" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <input type="number" min="0" value={deliveryCharge} onChange={(event) => setDeliveryCharge(Number(event.target.value) || 0)} placeholder="Delivery charge" className="h-10 rounded-md border border-border px-3 text-sm" />
+                  <input type="datetime-local" value={scheduledDeliveryTime} onChange={(event) => setScheduledDeliveryTime(event.target.value)} className="h-10 rounded-md border border-border px-3 text-sm" />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {mobileTab === "payment" ? (
+          <div className="grid gap-3 px-3">
+            <div className="rounded-md border border-border bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-slate-950">Payment methods</div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <input type="checkbox" checked={useSplit} onChange={(event) => setUseSplit(event.target.checked)} className="size-4 accent-emerald-600" />
+                  Split
+                </label>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {paymentMethods.map((method) => (
+                  <button
+                    key={method.id}
+                    className="min-h-16 rounded-md border px-3 py-2 text-left text-sm font-semibold disabled:opacity-50"
+                    style={{
+                      borderColor: selectedPaymentMethodId === method.id ? method.color : `${method.color}55`,
+                      backgroundColor: selectedPaymentMethodId === method.id ? `${method.color}22` : "#ffffff",
+                      color: method.color,
+                    }}
+                    onClick={() => {
+                      selectPaymentMethod(method);
+                      if (isPhonePeIntegratedMethod(method)) {
+                        void startPhonePePayment(method);
+                      } else {
+                        void confirmInvoice({ paymentMode: paymentMethodToMode(method), paymentMethodId: method.id });
+                      }
+                    }}
+                    disabled={isSubmitting || lines.length === 0 || paymentMethodsQuery.isLoading}
+                  >
+                    <span className="block truncate">{useSplit ? "Confirm split" : isEditMode ? `Save ${method.name}` : method.name}</span>
+                    <span className="mt-1 block truncate text-xs font-medium text-slate-500">{isPhonePeIntegratedMethod(method) ? "PhonePe verified" : method.short_code}</span>
+                  </button>
+                ))}
+              </div>
+              {paymentMethods.length === 0 ? (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">No active payment methods found.</div>
+              ) : null}
+            </div>
+
+            {!useSplit ? (
+              <div className="rounded-md border border-border bg-white p-3">
+                <div className="text-xs font-semibold text-slate-600">Selected payment: {selectedPaymentMethod?.name ?? selectedPaymentMode}</div>
+                {selectedPaymentMethod?.requires_reference && !isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
+                  <input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder={selectedPaymentMethod.reference_label || "Reference number" } className="mt-2 h-10 w-full rounded-md border border-border px-3 text-sm" />
+                ) : null}
+                {selectedPaymentMethod?.type === "cash" ? (
+                  <input type="number" min="0" value={amountReceived} onChange={(event) => {
+                    selectPaymentMethod(selectedPaymentMethod);
+                    setAmountReceived(Number(event.target.value));
+                  }} placeholder="Cash received" className="mt-2 h-10 w-full rounded-md border border-border px-3 text-sm" />
+                ) : null}
+                {isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
+                  <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                    Use Confirm to start PhonePe verification before saving this invoice.
+                  </div>
+                ) : null}
+                {selectedPaymentMethod?.type === "upi" && selectedPaymentMethod.upi_qr_data && !isPhonePeIntegratedMethod(selectedPaymentMethod) ? (
+                  <div className="mt-2 flex items-center gap-3 rounded-md border border-border bg-slate-50 p-2">
+                    <img src={selectedPaymentMethod.upi_qr_data} width={80} height={80} alt="UPI QR" className="size-20 rounded-sm border border-slate-200" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-slate-800">{selectedPaymentMethod.upi_id}</div>
+                      <button className="mt-2 h-8 rounded-md border border-border bg-white px-3 text-xs font-semibold text-slate-700" onClick={() => printUpiQr(selectedPaymentMethod)}>Print QR</button>
+                    </div>
+                  </div>
+                ) : null}
+                {amountReceived > 0 ? (
+                  <div className={`mt-2 text-xs font-semibold ${changeDue >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                    {changeDue >= 0 ? "Change" : "Short"} ₹{Math.abs(changeDue).toFixed(2)}
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid gap-2 rounded-md border border-border bg-white p-3">
+                {splitEntries.map((entry, index) => (
+                  <div key={`${entry.paymentMethodId ?? entry.mode}-${String(index)}`} className="grid gap-2 rounded-md border border-border p-2">
+                    <div className="grid grid-cols-[1fr_104px] gap-2">
+                      <select
+                        value={entry.paymentMethodId ?? selectedPaymentMethodId ?? ""}
+                        onChange={(event) => {
+                          const method = splitEligiblePaymentMethods.find((item) => item.id === event.target.value) ?? paymentMethods.find((item) => item.id === event.target.value);
+                          setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                            ...item,
+                            paymentMethodId: method?.id,
+                            mode: method ? paymentMethodToMode(method) : item.mode,
+                            referenceNumber: "",
+                          } : item));
+                        }}
+                        className="h-10 min-w-0 rounded-md border border-border px-2 text-sm"
+                      >
+                        {splitEligiblePaymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+                      </select>
+                      <input type="number" min="0" value={entry.amount} onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} className="h-10 rounded-md border border-border px-2 text-sm" />
+                    </div>
+                    {paymentMethods.find((method) => method.id === entry.paymentMethodId)?.requires_reference ? (
+                      <input
+                        value={entry.referenceNumber ?? ""}
+                        onChange={(event) => setSplitEntries((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, referenceNumber: event.target.value } : item))}
+                        placeholder={paymentMethods.find((method) => method.id === entry.paymentMethodId)?.reference_label ?? "Reference number"}
+                        className="h-10 rounded-md border border-border px-2 text-sm"
+                      />
+                    ) : null}
+                    {index > 0 ? <button className="text-left text-xs font-semibold text-red-600" onClick={() => setSplitEntries((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove row</button> : null}
+                  </div>
+                ))}
+                <button
+                  className="h-10 rounded-md border border-emerald-200 bg-emerald-50 text-sm font-semibold text-emerald-800 disabled:opacity-50"
+                  disabled={splitEligiblePaymentMethods.length === 0}
+                  onClick={() => {
+                    const method = splitEligiblePaymentMethods[0] ?? paymentMethods[0];
+                    setSplitEntries((current) => [...current, { mode: method ? paymentMethodToMode(method) : "CASH", paymentMethodId: method?.id, amount: 0 }]);
+                  }}
+                >
+                  Add payment method
+                </button>
+                <div className={`text-xs font-semibold ${Math.abs(splitTotal() - totals.grandTotal) > 0.01 ? "text-amber-700" : "text-emerald-700"}`}>
+                  Split total ₹{splitTotal().toFixed(2)} | Remaining ₹{(totals.grandTotal - splitTotal()).toFixed(2)}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {mobileTab === "review" ? (
+          <div className="grid gap-3 px-3">
+            <div className="rounded-md border border-border bg-white p-3">
+              <div className="text-sm font-semibold text-slate-950">Bill summary</div>
+              <div className="mt-3 grid gap-2 text-sm">
+                <SummaryTextRow label="Total items" value={String(totals.totalItems)} />
+                <SummaryTextRow label="Total quantity" value={formatQuantityInput(totals.totalQuantity)} />
+                <SummaryRow label="Subtotal" value={totals.subtotal} />
+                <SummaryRow label="Line discount" value={-totals.lineDiscount} />
+                <SummaryRow label="Bill discount" value={-totals.billLevelDiscount} />
+                {totals.deliveryCharge > 0 ? <SummaryRow label="Delivery charge" value={totals.deliveryCharge} /> : null}
+                {gstEnabled ? <SummaryRow label="CGST" value={totals.cgst} /> : null}
+                {gstEnabled ? <SummaryRow label="SGST" value={totals.sgst} /> : null}
+                <div className="flex justify-between border-t border-border pt-3 text-base font-bold"><span>Grand total</span><span>₹{totals.grandTotal.toFixed(2)}</span></div>
+              </div>
+              <label className="mt-3 block text-sm font-medium text-slate-700">
+                Total bill discount
+                <input type="number" min="0" value={billDiscount} onChange={(event) => setBillDiscount(Number(event.target.value))} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" />
+              </label>
+              <div className="mt-3 flex gap-2">
+                <input value={couponInput} onChange={(event) => setCouponInput(event.target.value)} placeholder="Coupon code" className="h-10 min-w-0 flex-1 rounded-md border border-border px-3 text-sm" />
+                <button className="h-10 rounded-md border border-border px-3 text-sm font-semibold" onClick={() => void applyCoupon()}>Apply</button>
+              </div>
+              {appliedCoupon ? <div className="mt-1 text-xs text-emerald-700">{appliedCoupon} applied (-₹{couponDiscount.toFixed(2)})</div> : null}
+              {loyaltyBalance !== null ? (
+                <div className="mt-3 rounded-md border border-border bg-slate-50 p-2">
+                  <div className="mb-1 text-xs text-slate-500">Loyalty points: {loyaltyBalance}</div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" min="0" max={Math.min(loyaltyBalance, totals.grandTotal)} value={loyaltyRedeem} onChange={(event) => setLoyaltyRedeem(Math.min(Number(event.target.value), loyaltyBalance, totals.grandTotal))} className="h-9 w-28 rounded-md border border-border px-2 text-sm" />
+                    <span className="text-xs text-slate-500">points to redeem</span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {heldBills.length > 0 ? (
+                <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-white text-sm font-semibold text-slate-700" onClick={() => setShowHeld((value) => !value)}>
+                  <BookMarked className="size-4" aria-hidden="true" />
+                  Held ({heldBills.length})
+                </button>
+              ) : null}
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 disabled:opacity-50"
+                onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")}
+                disabled={lines.length === 0 || isEditMode}
+              >
+                <Pause className="size-4" aria-hidden="true" />
+                Hold
+              </button>
+              {isEditMode ? (
+                <button className="h-10 rounded-md border border-slate-200 bg-white text-sm font-semibold text-slate-700" onClick={() => clearBill()}>Cancel edit</button>
+              ) : null}
+            </div>
+
+            {lastBill ? (
+              <section className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                <div className="text-sm font-semibold text-emerald-950">Bill ready</div>
+                <div className="mt-1 text-xs text-emerald-800">{lastBill.invoiceNumber} | {lastBill.paymentMode} | ₹{lastBill.grandTotal.toFixed(2)}</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button className="h-10 rounded-md border border-emerald-300 bg-white text-sm font-semibold text-emerald-900" onClick={() => openInvoicePdfPreview(lastBill)}>Print preview</button>
+                  {lastBill.customer ? <button className="h-10 rounded-md border border-emerald-300 bg-white text-sm font-semibold text-emerald-900" onClick={shareWhatsApp}>WhatsApp</button> : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
+
+        {status ? (
+          <div className={`mx-3 rounded-md border px-3 py-2 text-sm ${statusTone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : statusTone === "amber" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-800"}`}>{status}</div>
+        ) : null}
+
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/95 p-3 shadow-[0_-8px_20px_rgba(15,23,42,0.08)] backdrop-blur xl:hidden">
+          <div className="mx-auto grid max-w-xl grid-cols-[1fr_auto] items-center gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium text-slate-500">{useSplit ? "Split payment" : selectedPaymentMethod?.name ?? selectedPaymentMode}</div>
+              <div className="text-lg font-bold text-slate-950">₹{totals.grandTotal.toFixed(2)}</div>
+            </div>
+            <button
+              className="inline-flex h-12 min-w-36 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 text-sm font-bold text-white disabled:opacity-60"
+              onClick={() => {
+                if (selectedPaymentMethod && isPhonePeIntegratedMethod(selectedPaymentMethod)) {
+                  void startPhonePePayment(selectedPaymentMethod);
+                } else {
+                  void confirmInvoice();
+                }
+              }}
+              disabled={isSubmitting || lines.length === 0}
+            >
+              <CreditCard className="size-4" aria-hidden="true" />
+              {isSubmitting ? "Saving..." : isEditMode ? "Save Bill" : "Confirm"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="hidden rounded-md border border-border bg-white xl:block">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
             <Receipt className="size-4 text-emerald-700" aria-hidden="true" />
@@ -1820,7 +2286,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         ) : null}
       </div>
 
-      <aside className="rounded-md border border-border bg-white p-4">
+      <aside className="hidden rounded-md border border-border bg-white p-4 xl:block">
         <div className="text-sm font-semibold text-slate-950">Bill summary</div>
         <div className="mt-4 grid gap-2 text-sm">
           <SummaryTextRow label="Total items" value={String(totals.totalItems)} />
@@ -2194,6 +2660,22 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         </div>
       ) : null}
     </section>
+  );
+}
+
+function MobileBillingTabButton({ icon, label, active, onClick }: Readonly<{ icon: ReactNode; label: string; active: boolean; onClick: () => void }>) {
+  return (
+    <button
+      type="button"
+      className={`flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-md text-[11px] font-semibold ${
+        active ? "bg-white text-emerald-800 shadow-sm" : "text-slate-600"
+      }`}
+      onClick={onClick}
+      aria-pressed={active}
+    >
+      {icon}
+      <span className="max-w-full truncate">{label}</span>
+    </button>
   );
 }
 

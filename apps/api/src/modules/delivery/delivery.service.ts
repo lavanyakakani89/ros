@@ -1,4 +1,4 @@
-import { DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
+import { DeliveryProofType, DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { DeliveryRepository, type CreateDeliveryProofInput } from "./delivery.repository.js";
@@ -154,12 +154,29 @@ export class DeliveryService {
     if (!delivery) {
       throw new DeliveryError("Delivery not found", 404);
     }
+    await this.ensureProofSlotAvailable(tenant.id, input.deliveryId, input.proofType);
 
     return this.repository.createProof(tenant.id, {
       ...input,
       proofType: input.proofType,
       uploadedBy: actor.userId,
     });
+  }
+
+  async ensureProofSlotAvailable(tenantId: string, deliveryId: string, proofType: DeliveryProofType) {
+    if (proofType !== DeliveryProofType.DELIVERY_PHOTO && proofType !== DeliveryProofType.PAYMENT_SCREENSHOT) {
+      return;
+    }
+
+    const existingCount = await this.repository.countProofsByType(tenantId, deliveryId, proofType);
+    if (existingCount > 0) {
+      throw new DeliveryError(
+        proofType === DeliveryProofType.DELIVERY_PHOTO
+          ? "Only one delivery proof photo is allowed for each delivery."
+          : "Only one payment screenshot is allowed for each delivery.",
+        409,
+      );
+    }
   }
 
   async getProof(tenant: Tenant, deliveryId: string, proofId: string, actor?: DeliveryActor) {

@@ -131,7 +131,7 @@ export function DeliveryBoard() {
     openWhatsappMessage(
       delivery.customer?.phone,
       formatDeliveryWhatsappMessage({
-        tenantName: getStoredTenant()?.name ?? "BizBil",
+        tenantName: getStoredTenant()?.name ?? "your shop",
         customerName: delivery.customer?.name,
         invoiceNumber: delivery.invoice?.invoiceNumber,
         grandTotal: delivery.invoice?.grandTotal,
@@ -189,6 +189,8 @@ export function DeliveryBoard() {
             <div className="space-y-2 p-3">
               {items.map((delivery) => {
                 const coordinates = deliveryCoordinates(delivery);
+                const deliveryProof = firstProofByType(delivery, "DELIVERY_PHOTO");
+                const paymentProof = firstProofByType(delivery, "PAYMENT_SCREENSHOT");
                 return (
                 <article key={delivery.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-start gap-2">
@@ -208,29 +210,12 @@ export function DeliveryBoard() {
                         </a>
                       ) : null}
                       <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {(delivery.proofs ?? []).slice(0, 3).map((proof) => (
-                          <a
-                            key={proof.id}
-                            href={proofViewUrl(delivery.id, proof.id)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="group overflow-hidden rounded-md border border-sky-100 bg-sky-50 text-sky-800"
-                          >
-                            <img
-                              src={proofViewUrl(delivery.id, proof.id)}
-                              alt={proofLabel(proof.proofType)}
-                              className="h-16 w-full object-cover"
-                              loading="lazy"
-                            />
-                            <span className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold">
-                              <Camera className="size-3" aria-hidden="true" />
-                              {proofLabel(proof.proofType)}
-                            </span>
-                            {proof.notes ? <span className="block truncate px-2 pb-1 text-[10px] text-sky-700">{proof.notes}</span> : null}
-                          </a>
-                        ))}
-                      </div>
+                      {deliveryProof || paymentProof ? (
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {deliveryProof ? <ProofThumb deliveryId={delivery.id} proof={deliveryProof} label="Delivery proof" /> : null}
+                          {paymentProof ? <ProofThumb deliveryId={delivery.id} proof={paymentProof} label="Payment screenshot" /> : null}
+                        </div>
+                      ) : null}
                       <div className="mt-3 flex flex-wrap gap-2">
                         {delivery.customer?.phone ? (
                           <button
@@ -296,12 +281,35 @@ function googleMapsUrl(coordinates: { latitude: number; longitude: number }): st
   return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
 }
 
-function proofViewUrl(deliveryId: string, proofId: string): string {
-  return `/api/delivery/${deliveryId}/proofs/${proofId}/view`;
+function ProofThumb({ deliveryId, proof, label }: Readonly<{ deliveryId: string; proof: NonNullable<DeliveryItem["proofs"]>[number]; label: string }>) {
+  return (
+    <a
+      href={proofViewUrl(deliveryId, proof.id)}
+      target="_blank"
+      rel="noreferrer"
+      className="group overflow-hidden rounded-md border border-sky-100 bg-sky-50 text-sky-800"
+    >
+      <img
+        src={proofViewUrl(deliveryId, proof.id)}
+        alt={label}
+        className="h-16 w-full object-cover"
+        loading="lazy"
+      />
+      <span className="flex items-center gap-1 px-2 py-1 text-[11px] font-semibold">
+        <Camera className="size-3" aria-hidden="true" />
+        {label}
+      </span>
+      {proof.notes ? <span className="block truncate px-2 pb-1 text-[10px] text-sky-700">{proof.notes}</span> : null}
+    </a>
+  );
 }
 
-function proofLabel(proofType: NonNullable<DeliveryItem["proofs"]>[number]["proofType"]): string {
-  return proofType.replaceAll("_", " ");
+function firstProofByType(delivery: DeliveryItem, proofType: NonNullable<DeliveryItem["proofs"]>[number]["proofType"]) {
+  return delivery.proofs?.find((proof) => proof.proofType === proofType) ?? null;
+}
+
+function proofViewUrl(deliveryId: string, proofId: string): string {
+  return `/api/delivery/${deliveryId}/proofs/${proofId}/view`;
 }
 
 function nextStatuses(status: DeliveryStatus): DeliveryStatus[] {

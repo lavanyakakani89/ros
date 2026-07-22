@@ -170,7 +170,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     );
   }
 
-  const tenantName = tenant?.name ?? "BizBil";
+  const tenantName = tenant?.name ?? "Shop";
   const userName = impersonation?.superAdminName ?? session?.user?.name ?? "BizBil User";
   const userEmail = impersonation?.superAdminEmail ?? session?.user?.email ?? null;
   const role = session?.user?.role ?? "USER";

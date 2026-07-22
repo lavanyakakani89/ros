@@ -83,6 +83,8 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
         throw new DeliveryError("Only image proof files are allowed", 400);
       }
 
+      await service.ensureProofSlotAvailable(request.tenant.id, params.id, fields.proofType);
+
       const buffer = await file.toBuffer();
       if (buffer.length > DELIVERY_PROOF_MAX_BYTES) {
         throw new DeliveryError("Proof image is too large. Upload a compressed image under 300 KB.", 413);

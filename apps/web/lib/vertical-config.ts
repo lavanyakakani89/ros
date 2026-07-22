@@ -83,20 +83,48 @@ export function clearStoredSession() {
 
 export function storeTenant(tenant: StoredTenant) {
   tenantMemory = tenant;
-  getStorage()?.removeItem(tenantStorageKey);
+  getStorage()?.setItem(tenantStorageKey, JSON.stringify(tenant));
 }
 
 export function getStoredTenant(): StoredTenant | null {
-  return tenantMemory;
+  if (tenantMemory) {
+    return tenantMemory;
+  }
+
+  const raw = getStorage()?.getItem(tenantStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    tenantMemory = toSafeTenant(JSON.parse(raw) as StoredTenant);
+    return tenantMemory;
+  } catch {
+    return null;
+  }
 }
 
 export function storeVerticalConfig(config: VerticalConfig) {
   verticalConfigMemory = config;
-  getStorage()?.removeItem(verticalConfigStorageKey);
+  getStorage()?.setItem(verticalConfigStorageKey, JSON.stringify(config));
 }
 
 export function getStoredVerticalConfig(): VerticalConfig | null {
-  return verticalConfigMemory;
+  if (verticalConfigMemory) {
+    return verticalConfigMemory;
+  }
+
+  const raw = getStorage()?.getItem(verticalConfigStorageKey);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    verticalConfigMemory = JSON.parse(raw) as VerticalConfig;
+    return verticalConfigMemory;
+  } catch {
+    return null;
+  }
 }
 
 function toSafeAuthSession(input: StoredAuthSession): StoredAuthSession {
@@ -115,5 +143,15 @@ function toSafeAuthSession(input: StoredAuthSession): StoredAuthSession {
 
   return {
     user,
+  };
+}
+
+function toSafeTenant(input: StoredTenant): StoredTenant {
+  return {
+    name: input.name,
+    slug: input.slug,
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.gstEnabled !== undefined ? { gstEnabled: input.gstEnabled } : {}),
+    ...(input.gstNumber !== undefined ? { gstNumber: input.gstNumber } : {}),
   };
 }

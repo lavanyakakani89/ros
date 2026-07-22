@@ -344,6 +344,16 @@ export class DeliveryRepository {
     });
   }
 
+  async countProofsByType(tenantId: string, deliveryId: string, proofType: DeliveryProofType) {
+    return this.prisma.deliveryProof.count({
+      where: {
+        tenantId,
+        deliveryId,
+        proofType,
+      },
+    });
+  }
+
   async getProof(tenantId: string, deliveryId: string, proofId: string) {
     return this.prisma.deliveryProof.findFirst({
       where: {

@@ -166,7 +166,7 @@ export function PaymentMethodsSettings() {
 
   function printQr(method: PaymentMethodRecord) {
     if (!method.upi_qr_data) return;
-    const storeName = getStoredTenant()?.name ?? "BizBil";
+    const storeName = getStoredTenant()?.name ?? "Shop";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
     const html = `<!doctype html><html><head><title>${escapeHtml(method.name)} QR</title><style>@page{size:100mm 120mm;margin:5mm}body{font-family:sans-serif;text-align:center}.store-name{font-size:16pt;font-weight:bold;margin-bottom:8px}.qr{width:80mm;height:80mm}.upi-id{font-size:11pt;margin-top:8px;color:#333}.tagline{font-size:9pt;color:#666;margin-top:4px}</style></head><body onload="window.print()"><div class="store-name">${escapeHtml(storeName)}</div><img class="qr" src="${method.upi_qr_data}" alt="UPI QR" /><div class="upi-id">${escapeHtml(method.upi_id ?? "")}</div><div class="tagline">Scan to pay via any UPI app</div></body></html>`;
