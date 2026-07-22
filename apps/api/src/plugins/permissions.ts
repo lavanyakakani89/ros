@@ -1,4 +1,4 @@
-import type { UserRole } from "../types";
+import type { UserRole } from "@prisma/client";
 
 export const Permission = {
   AUDIT_VIEW: "audit:view",

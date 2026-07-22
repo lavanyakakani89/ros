@@ -25,6 +25,7 @@ export interface InvoiceRecord {
   paymentMode: string;
   notes?: string | null;
   verticalData?: Record<string, unknown> | null;
+  deliveryCharge?: string | number | null;
   customer?: {
     id: string;
     name: string;
@@ -37,6 +38,7 @@ export interface InvoiceRecord {
     id?: string;
     status: string;
     deliveryAddress?: string | null;
+    scheduledAt?: string | null;
     notes?: string | null;
   } | null;
   items?: Array<{

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { FastifyPluginCallback } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { DEFAULT_LABEL_TEMPLATES } from "./labels.defaults.js";
 import { LabelsRepository } from "./labels.repository.js";
@@ -13,7 +13,7 @@ import {
   labelTemplateParamsSchema,
 } from "./labels.schema.js";
 import { detectPrinterStatus, printLabelBitmaps, renderLabelPdfBuffer, renderLabelSheetBitmaps, resolveLabelJob } from "./labels.renderer.js";
-import type { LabelTemplateRecord } from "./labels.types.js";
+import type { LabelCanvasDefinition, LabelTemplateRecord } from "./labels.types.js";
 
 const labelTemplateUpdateSchema = labelTemplateCreateSchema.partial();
 
@@ -61,7 +61,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     };
   });
 
-  fastify.get("/api/labels/templates/default", async () => {
+  fastify.get("/api/labels/templates/default", () => {
     return {
       templates: DEFAULT_LABEL_TEMPLATES.map((template) => serializeDefaultTemplate(template)),
     };
@@ -69,7 +69,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
 
   fastify.post("/api/labels/templates", async (request, reply) => {
     const input = labelTemplateCreateSchema.parse(request.body);
-    const template = await repository.createTemplate(request.tenant.id, request.user.id, input);
+    const template = await repository.createTemplate(request.tenant.id, request.user.userId, input);
 
     return reply.status(201).send({
       template: serializeDbTemplate(template),
@@ -133,7 +133,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
 
     const stat = await fastify.minio.statObject(fastify.minioBucket, query.objectName);
     const stream = await fastify.minio.getObject(fastify.minioBucket, query.objectName);
-    reply.header("Content-Type", stat.metaData?.["content-type"] ?? "application/octet-stream");
+    reply.header("Content-Type", stat.metaData["content-type"] ?? "application/octet-stream");
     reply.header("Cache-Control", "private, max-age=31536000, immutable");
     return reply.send(stream);
   });
@@ -151,7 +151,7 @@ export const labelsRoutes: FastifyPluginCallback = (fastify, _options, done) => 
     const job = await repository.createPrintJob({
       tenantId: request.tenant.id,
       templateId: preview.templateId,
-      printedById: request.user.id,
+      printedById: request.user.userId,
       items: input.items,
       totalLabels: preview.totalLabels,
       outputType: input.output_type,
@@ -207,7 +207,7 @@ async function resolveLabelRequest(
     tenant: { id: tenantId } as Parameters<typeof resolveLabelJob>[0]["tenant"],
     templateId: selectedTemplate.id,
     templateName: selectedTemplate.name,
-    canvasJson: selectedTemplate.canvasJson,
+    canvasJson: selectedTemplate.canvasJson as unknown as LabelCanvasDefinition,
     widthMm: selectedTemplate.widthMm,
     heightMm: selectedTemplate.heightMm,
     layoutMode: selectedTemplate.layoutMode,
@@ -219,7 +219,7 @@ async function resolveTemplate(
   fastify: Parameters<typeof resolveLabelJob>[0]["fastify"],
   tenantId: string,
   templateId: string | undefined,
-  fallbackCanvas: z.infer<typeof labelPreviewSchema>["canvas_json"],
+  fallbackCanvas: z.infer<typeof labelPreviewSchema>["canvas_json"] | null,
   fallbackWidthMm: number | null,
   fallbackHeightMm: number | null,
   fallbackLayoutMode: "1up" | "2up" | null,

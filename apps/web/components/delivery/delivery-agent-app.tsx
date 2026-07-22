@@ -49,6 +49,22 @@ interface AppNotification {
   createdAt: string;
 }
 
+interface DriverRoute {
+  id: string;
+  status: string;
+  routePlan?: {
+    id: string;
+    name: string;
+    status: string;
+  };
+  stops: Array<{
+    id: string;
+    sequence: number;
+    status: string;
+    delivery?: DeliveryItem;
+  }>;
+}
+
 export function DeliveryAgentApp() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
@@ -71,6 +87,12 @@ export function DeliveryAgentApp() {
     queryFn: () => createAuthenticatedApiClient().get<AppNotification[]>("/delivery/me/notifications"),
     enabled: hasSession,
     refetchInterval: 10_000,
+  });
+  const routeQuery = useQuery({
+    queryKey: ["delivery-agent", "route"],
+    queryFn: () => createAuthenticatedApiClient().get<DriverRoute | null>("/delivery/me/route"),
+    enabled: hasSession,
+    refetchInterval: 15_000,
   });
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
@@ -108,12 +130,21 @@ export function DeliveryAgentApp() {
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/delivery/notifications/${id}/read`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["delivery-agent", "notifications"] }),
   });
+  const startRoute = useMutation({
+    mutationFn: () => createAuthenticatedApiClient().post("/delivery/me/route/start", {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "route"] });
+      notify("Route started.");
+    },
+    onError: (error) => notify(error instanceof Error ? error.message : "Unable to start route.", "red"),
+  });
 
   const deliveries = deliveriesQuery.data ?? [];
   const notifications = notificationsQuery.data ?? [];
   const unread = notifications.filter((notification) => !notification.isRead);
   const activeDeliveries = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status));
   const completedDeliveries = deliveries.filter((delivery) => ["DELIVERED", "FAILED", "CANCELLED"].includes(delivery.status));
+  const driverRoute = routeQuery.data;
   const totalCash = useMemo(
     () => activeDeliveries.reduce((sum, delivery) => sum + Number(delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0), 0),
     [activeDeliveries],
@@ -232,6 +263,58 @@ export function DeliveryAgentApp() {
               </div>
             </button>
           ))}
+        </section>
+      ) : null}
+
+      {driverRoute ? (
+        <section className="mt-4 space-y-2 px-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Published route</div>
+              <div className="mt-0.5 text-sm font-semibold">{driverRoute.routePlan?.name ?? "Route"}</div>
+            </div>
+            <button
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+              disabled={startRoute.isPending || driverRoute.status === "IN_PROGRESS"}
+              onClick={() => startRoute.mutate()}
+            >
+              <Navigation className="size-4" aria-hidden="true" />
+              Start
+            </button>
+          </div>
+          <div className="space-y-2">
+            {driverRoute.stops.map((stop) => {
+              const delivery = stop.delivery;
+              const address = delivery?.deliveryAddress ?? "";
+              const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+              const appleUrl = `https://maps.apple.com/?q=${encodeURIComponent(address)}`;
+              return (
+                <article key={stop.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-sm font-bold text-emerald-700">{stop.sequence}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate font-mono text-xs text-slate-500">{delivery?.invoice?.invoiceNumber ?? stop.id}</div>
+                        <span className="rounded bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{stop.status.replaceAll("_", " ")}</span>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold">{delivery?.customer?.name ?? "Customer"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{address}</div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 text-xs font-semibold text-slate-700" href={googleUrl} target="_blank" rel="noreferrer">
+                          <MapPin className="size-4" aria-hidden="true" />
+                          Google Maps
+                        </a>
+                        <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 text-xs font-semibold text-slate-700" href={appleUrl} target="_blank" rel="noreferrer">
+                          <Navigation className="size-4" aria-hidden="true" />
+                          Apple Maps
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </section>
       ) : null}
 

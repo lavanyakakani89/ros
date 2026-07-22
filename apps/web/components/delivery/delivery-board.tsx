@@ -10,6 +10,7 @@ import { appendDateRange, todayDate } from "@/lib/date-range";
 import { formString } from "@/lib/form-values";
 import { getStoredTenant } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatDeliveryWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
+import { DeliveryRoutePlanner } from "./delivery-route-planner";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 
@@ -17,6 +18,8 @@ interface DeliveryItem {
   id: string;
   status: DeliveryStatus;
   deliveryAddress: string;
+  deliveryLatitude?: string | number | null;
+  deliveryLongitude?: string | number | null;
   assignedTo?: string | null;
   createdAt?: string;
   deliveredAt?: string | null;
@@ -28,6 +31,12 @@ interface DeliveryItem {
     name: string;
     phone: string;
   };
+  customerLocation?: {
+    latitude?: string | number | null;
+    longitude?: string | number | null;
+    manuallyVerifiedAt?: string | null;
+    geocodingConfidence?: string | number | null;
+  } | null;
   proofs?: Array<{
     id: string;
     proofType: "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
@@ -136,6 +145,7 @@ export function DeliveryBoard() {
           {(boardError instanceof Error ? boardError.message : "Unable to load deliveries right now.")} Try again in a moment.
         </div>
       ) : null}
+      <DeliveryRoutePlanner deliveries={activeDeliveriesQuery.data ?? fallbackDeliveries} users={deliveryUsers} />
       <div className="grid gap-4 lg:grid-cols-4">
       {statuses.map((status) => {
         const items = deliveries.filter((delivery) => delivery.status === status);

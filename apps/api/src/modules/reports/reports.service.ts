@@ -155,6 +155,10 @@ type InvoiceWithItems = Awaited<ReturnType<PrismaClient["invoice"]["findMany"]>>
   }>;
 };
 
+function roundNumber(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 type InvoiceItemForReport = InvoiceWithItems["items"][number];
 
 function toRange(query: ReportDateRange): { gte: Date; lte: Date } {

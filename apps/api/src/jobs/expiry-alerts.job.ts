@@ -62,7 +62,7 @@ export function createExpiryAlertsWorker() {
 
         await whatsappNotifyQueue.add("send-expiry-alert", {
           phone: tenant.phone,
-          message: `RetailOS expiry alert for ${tenant.name}\n${lines.join("\n")}`,
+          message: `BizBil expiry alert for ${tenant.name}\n${lines.join("\n")}`,
         });
       }
     },

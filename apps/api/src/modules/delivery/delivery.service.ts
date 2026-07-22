@@ -67,6 +67,8 @@ export class DeliveryService {
       throw new DeliveryError("Delivery not found", 404);
     }
 
+    await this.repository.updateActiveRouteStopForDeliveryStatus(tenant.id, deliveryId, input);
+
     const delivery = await this.repository.getDelivery(tenant.id, deliveryId);
     await this.notifyWhatsappDeliveryStatus(tenant, delivery, input.status).catch((error: unknown) => {
       this.fastify.log.error({ error, tenantId: tenant.id, deliveryId }, "Failed to queue WhatsApp delivery update");

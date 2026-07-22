@@ -13,6 +13,7 @@ export const LABEL_FIELD_TYPES = [
 
 export type LabelLayoutMode = (typeof LABEL_LAYOUT_MODES)[number];
 export type LabelFieldType = (typeof LABEL_FIELD_TYPES)[number];
+export type LabelCodeType = "qr" | "barcode";
 
 export interface LabelCanvasField {
   id: string;
@@ -26,7 +27,7 @@ export interface LabelCanvasField {
   fontWeight?: "normal" | "bold";
   textContent?: string;
   imageUrl?: string;
-  codeType?: "qr" | "barcode";
+  codeType?: LabelCodeType;
   resolved_content?: string;
 }
 

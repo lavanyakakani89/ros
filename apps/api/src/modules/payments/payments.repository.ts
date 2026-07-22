@@ -1,4 +1,4 @@
-import { InvoiceStatus, PaymentMethodType, PaymentMode, Prisma, type PrismaClient } from "@prisma/client";
+import { InvoiceStatus, PaymentMethodType, PaymentMode, type Prisma, type PrismaClient } from "@prisma/client";
 
 import type { PaymentListQuery, RecordPaymentInput } from "./payments.types.js";
 

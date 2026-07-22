@@ -46,7 +46,7 @@ export const whatsappRoutes: FastifyPluginCallback = (fastify, _options, done) =
       });
 
       if (!integration) {
-        throw new WhatsappIntegrationError("No RetailOS shop is connected to this WhatsApp phone number", 404);
+        throw new WhatsappIntegrationError("No BizBil shop is connected to this WhatsApp phone number", 404);
       }
 
       const tenant = await fastify.prisma.tenant.findUnique({

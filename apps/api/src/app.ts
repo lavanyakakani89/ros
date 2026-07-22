@@ -12,6 +12,7 @@ import { tenantPlugin } from "./plugins/tenant.js";
 import { createExpiryAlertsWorker, scheduleExpiryAlerts } from "./jobs/expiry-alerts.job.js";
 import { createPdfGenerateWorker } from "./jobs/pdf-generate.job.js";
 import { createWhatsappNotifyWorker } from "./jobs/whatsapp-notify.job.js";
+import { validateMapboxConfiguration } from "./integrations/mapbox/mapbox.client.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { auditRoutes } from "./modules/audit/audit.routes.js";
 import { billingRoutes } from "./modules/billing/billing.routes.js";
@@ -20,6 +21,8 @@ import { couponsRoutes } from "./modules/coupons/coupons.routes.js";
 import { creditNotesRoutes } from "./modules/credit-notes/credit-notes.routes.js";
 import { customersRoutes } from "./modules/customers/customers.routes.js";
 import { deliveryRoutes } from "./modules/delivery/delivery.routes.js";
+import { deliveryRouteRoutes } from "./modules/delivery-routing/delivery-route.routes.js";
+import { createDeliveryRouteWorker } from "./modules/delivery-routing/delivery-route.worker.js";
 import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { labelsRoutes } from "./modules/labels/labels.routes.js";
@@ -43,6 +46,8 @@ import { verticalConfigRoutes } from "./modules/vertical-config/vertical-config.
 import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
+  validateMapboxConfiguration();
+
   const fastify = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
@@ -143,6 +148,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(paymentsRoutes);
   await fastify.register(paymentMethodsRoutes);
   await fastify.register(deliveryRoutes);
+  await fastify.register(deliveryRouteRoutes);
   await fastify.register(reportsRoutes);
   await fastify.register(settingsRoutes);
   await fastify.register(expensesRoutes);
@@ -155,7 +161,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(whatsappRoutes);
 
   if (process.env.ENABLE_WORKERS !== "false") {
-    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker()];
+    const workers = [createExpiryAlertsWorker(), createPdfGenerateWorker(), createWhatsappNotifyWorker(), createDeliveryRouteWorker()];
 
     for (const worker of workers) {
       worker.on("failed", (job, error) => {

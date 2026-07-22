@@ -87,6 +87,7 @@ export interface ProductRecord extends Omit<ProductPayload, "mrp" | "sellingPric
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  imageUrl?: string | null;
 }
 
 export interface PaginatedResponse<T> {

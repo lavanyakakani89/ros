@@ -1,4 +1,4 @@
-import { DeliveryStatus, Prisma, type DeliveryProofType, type PrismaClient } from "@prisma/client";
+import { DeliveryRoutePlanStatus, DeliveryRouteStopStatus, DeliveryStatus, Prisma, type DeliveryProofType, type PrismaClient } from "@prisma/client";
 
 import type { CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
 
@@ -44,6 +44,17 @@ export class DeliveryRepository {
         invoiceId: input.invoiceId,
         customerId: input.customerId,
         deliveryAddress: input.deliveryAddress,
+        deliveryAddressSnapshot: {
+          address: input.deliveryAddress,
+          customerName: customer.name,
+          customerPhone: customer.phone,
+          city: customer.city,
+          state: customer.state,
+          postalCode: customer.postalCode,
+          invoiceNumber: invoice.invoiceNumber,
+          grandTotal: invoice.grandTotal.toString(),
+          amountDue: invoice.amountDue.toString(),
+        },
         ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
         ...(input.notes ? { notes: input.notes } : {}),
       },
@@ -134,6 +145,33 @@ export class DeliveryRepository {
         status: input.status,
         ...(input.notes ? { notes: input.notes } : {}),
         ...(input.status === DeliveryStatus.DELIVERED ? { deliveredAt: new Date() } : {}),
+      },
+    });
+  }
+
+  async updateActiveRouteStopForDeliveryStatus(tenantId: string, deliveryId: string, input: UpdateDeliveryStatusInput) {
+    const routeStopStatus = mapDeliveryStatusToRouteStopStatus(input.status);
+    if (!routeStopStatus) {
+      return { count: 0 };
+    }
+
+    const now = new Date();
+    return this.prisma.deliveryRouteStop.updateMany({
+      where: {
+        tenantId,
+        deliveryId,
+        route: {
+          routePlan: {
+            status: {
+              in: [DeliveryRoutePlanStatus.PUBLISHED, DeliveryRoutePlanStatus.IN_PROGRESS],
+            },
+          },
+        },
+      },
+      data: {
+        status: routeStopStatus,
+        ...(routeStopStatus === DeliveryRouteStopStatus.DELIVERED ? { completedAt: now } : {}),
+        ...(routeStopStatus === DeliveryRouteStopStatus.FAILED ? { failedAt: now } : {}),
       },
     });
   }
@@ -242,9 +280,25 @@ export class DeliveryRepository {
 const deliveryInclude = {
   invoice: true,
   customer: true,
+  customerLocation: true,
   proofs: {
     orderBy: {
       createdAt: Prisma.SortOrder.desc,
     },
   },
 } satisfies Prisma.DeliveryInclude;
+
+function mapDeliveryStatusToRouteStopStatus(status: DeliveryStatus) {
+  switch (status) {
+    case DeliveryStatus.OUT_FOR_DELIVERY:
+      return DeliveryRouteStopStatus.EN_ROUTE;
+    case DeliveryStatus.DELIVERED:
+      return DeliveryRouteStopStatus.DELIVERED;
+    case DeliveryStatus.FAILED:
+      return DeliveryRouteStopStatus.FAILED;
+    case DeliveryStatus.CANCELLED:
+      return DeliveryRouteStopStatus.CANCELLED;
+    default:
+      return null;
+  }
+}

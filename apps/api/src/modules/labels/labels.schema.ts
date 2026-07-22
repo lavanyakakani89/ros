@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { LABEL_FIELD_TYPES, LABEL_LAYOUT_MODES, type LabelCanvasDefinition, type LabelCanvasField } from "./labels.types.js";
+import { LABEL_FIELD_TYPES, LABEL_LAYOUT_MODES } from "./labels.types.js";
 
 const nonNegativeNumber = z.coerce.number().finite().min(0);
 
-export const labelCanvasFieldSchema: z.ZodType<LabelCanvasField> = z.object({
+export const labelCanvasFieldSchema = z.object({
   id: z.string().trim().min(1),
   type: z.enum(LABEL_FIELD_TYPES),
   x: nonNegativeNumber,
@@ -19,7 +19,7 @@ export const labelCanvasFieldSchema: z.ZodType<LabelCanvasField> = z.object({
   codeType: z.enum(["qr", "barcode"]).optional(),
 }).strict();
 
-export const labelCanvasSchema: z.ZodType<LabelCanvasDefinition> = z.object({
+export const labelCanvasSchema = z.object({
   fields: z.array(labelCanvasFieldSchema),
 }).strict();
 
@@ -98,9 +98,9 @@ export const labelPreviewSchema = inlinePreviewSchema.extend({
   }
 });
 
-export const labelPrintSchema = labelPreviewSchema.extend({
+export const labelPrintSchema = z.intersection(labelPreviewSchema, z.object({
   output_type: z.enum(["print", "pdf"]),
-});
+}));
 
 export const labelImageQuerySchema = z.object({
   objectName: z.string().trim().min(1),

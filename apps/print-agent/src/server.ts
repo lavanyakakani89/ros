@@ -44,7 +44,7 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`RetailOS Print Agent listening on http://${host}:${String(port)}`);
+  console.log(`BizBil Print Agent listening on http://${host}:${String(port)}`);
 });
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -61,7 +61,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (request.method === "GET" && path === "/health") {
       sendJson(response, 200, {
         status: "ok",
-        app: "RetailOS Local Print Agent",
+        app: "BizBil Local Print Agent",
         version: "0.1.0",
         platform: process.platform,
       });
@@ -99,7 +99,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 function setCorsHeaders(response: ServerResponse): void {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-RetailOS-Agent-Key");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-BizBil-Agent-Key");
   response.setHeader("Access-Control-Max-Age", "86400");
 }
 
@@ -167,7 +167,7 @@ function validatePrintRequest(input: PrintRequest): ValidatedPrintRequest {
   const result: ValidatedPrintRequest = {
     connectionType,
     payloadBase64: input.payloadBase64,
-    jobName: sanitizeJobName(input.jobName ?? "RetailOS invoice"),
+    jobName: sanitizeJobName(input.jobName ?? "BizBil invoice"),
     port: input.port ?? defaultTcpPort,
   };
 
@@ -349,7 +349,7 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
 }
 
 function sanitizeJobName(value: string): string {
-  return value.replace(/[^\w .-]/g, "").trim().slice(0, 80) || "RetailOS invoice";
+  return value.replace(/[^\w .-]/g, "").trim().slice(0, 80) || "BizBil invoice";
 }
 
 class HttpError extends Error {

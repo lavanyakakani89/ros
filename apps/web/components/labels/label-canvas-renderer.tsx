@@ -32,7 +32,7 @@ export function LabelCanvasRenderer({
     <div
       className={cn("relative overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm", className)}
       style={{ width: widthPx, height: heightPx }}
-      aria-label={`Label canvas ${template.width_mm} by ${template.height_mm} millimetres`}
+      aria-label={`Label canvas ${String(template.width_mm)} by ${String(template.height_mm)} millimetres`}
     >
       {fields.map((field) => {
         const left = field.x * MM_TO_PX * scale;
@@ -52,7 +52,7 @@ export function LabelCanvasRenderer({
           top,
           width,
           height,
-          transform: `rotate(${field.rotation}deg)`,
+          transform: `rotate(${String(field.rotation)}deg)`,
           transformOrigin: "top left",
         } as const;
 

@@ -90,8 +90,8 @@ const verticalColumnMap: Record<Tenant["vertical"], readonly ExcelColumn[]> = {
 
 export function sendProductTemplate(tenant: Tenant, reply: Parameters<typeof sendExcelHtml>[0]): unknown {
   const config = getVerticalConfig(tenant.vertical);
-  return sendExcelHtml(reply, `retailos-${tenant.vertical.toLowerCase()}-product-template.xls`, buildExcelHtml({
-    title: `RetailOS ${config.displayName} Product Import Template`,
+  return sendExcelHtml(reply, `bizbil-${tenant.vertical.toLowerCase()}-product-template.xls`, buildExcelHtml({
+    title: `BizBil ${config.displayName} Product Import Template`,
     columns: productColumns(tenant),
   }));
 }
@@ -111,8 +111,8 @@ export async function sendProductExport(fastify: FastifyInstance, tenant: Tenant
     orderBy: { name: "asc" },
   });
 
-  return sendExcelHtml(reply, `retailos-${tenant.vertical.toLowerCase()}-products-export.xls`, buildExcelHtml({
-    title: "RetailOS Products Export",
+  return sendExcelHtml(reply, `bizbil-${tenant.vertical.toLowerCase()}-products-export.xls`, buildExcelHtml({
+    title: "BizBil Products Export",
     columns: productColumns(tenant),
     rows: products.map(productToRow),
   }));

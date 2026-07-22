@@ -91,7 +91,7 @@ export async function resolveLabelJob(input: {
         quantity: item.quantity,
         sheet_index: sheetIndex,
         slot_index: slotIndex,
-        fields: await resolveFields(input.fastify, input.canvasJson, product as ResolvedLabelProduct, item.quantity),
+        fields: await resolveFields(input.fastify, input.canvasJson, product as unknown as ResolvedLabelProduct, item.quantity),
       });
     }
   }
@@ -117,7 +117,7 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
         .map((label) => {
           const leftMm = label.slot_index === 1 ? input.width_mm : 0;
           return `
-            <section class="label" style="left:${leftMm}mm; top:0mm; width:${input.width_mm}mm; height:${input.height_mm}mm;">
+            <section class="label" style="left:${String(leftMm)}mm; top:0mm; width:${String(input.width_mm)}mm; height:${String(input.height_mm)}mm;">
               ${renderLabelFieldMarkup(label.fields)}
             </section>
           `;
@@ -134,22 +134,22 @@ export function renderLabelSheetsHtml(input: ResolvedLabelJob): string {
     <meta charset="utf-8" />
     <style>
       @page {
-        size: ${sheetWidthMm}mm ${input.height_mm}mm;
+        size: ${String(sheetWidthMm)}mm ${String(input.height_mm)}mm;
         margin: 0;
       }
       html, body {
         margin: 0;
         padding: 0;
         background: #ffffff;
-        width: ${sheetWidthMm}mm;
+        width: ${String(sheetWidthMm)}mm;
         color: #111827;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
       .sheet {
         position: relative;
-        width: ${sheetWidthMm}mm;
-        height: ${input.height_mm}mm;
+        width: ${String(sheetWidthMm)}mm;
+        height: ${String(input.height_mm)}mm;
         overflow: hidden;
         page-break-after: always;
       }
@@ -289,8 +289,8 @@ async function resolveFields(
   product: ResolvedLabelProduct,
   requestedQuantity: number,
 ): Promise<LabelPreviewField[]> {
-  const packedDate = resolveDateLabel(product.verticalData, ["packedDate", "packed_date", "packDate"]) ?? formatDate(product.batches[0]?.receivedAt ?? null);
-  const bestBefore = resolveDateLabel(product.verticalData, ["bestBefore", "best_before", "expiryDate"]) ?? formatDate(product.batches[0]?.expiryDate ?? null);
+  const packedDate = resolveDateLabel(product.verticalData, ["packedDate", "packed_date", "packDate"]) || formatDate(product.batches[0]?.receivedAt);
+  const bestBefore = resolveDateLabel(product.verticalData, ["bestBefore", "best_before", "expiryDate"]) || formatDate(product.batches[0]?.expiryDate);
   const codePayload = product.sku?.trim() || product.barcode?.trim() || product.id;
 
   return Promise.all(
@@ -313,7 +313,7 @@ async function resolveFields(
         resolvedContent = await generateQrDataUrl(codePayload);
       } else if (field.type === "barcode") {
         resolvedContent = await generateBarcodeDataUrl(codePayload, field);
-      } else if (field.type === "image") {
+      } else {
         resolvedContent = field.imageUrl ? await resolveImageDataUrl(fastify, field.imageUrl) : "";
       }
 
@@ -411,12 +411,12 @@ function renderLabelFieldMarkup(fields: LabelPreviewField[]): string {
   return fields
     .map((field) => {
       const style = [
-        `left:${field.x}mm`,
-        `top:${field.y}mm`,
-        `width:${field.width}mm`,
-        `height:${field.height}mm`,
-        `transform: rotate(${field.rotation}deg)`,
-        `font-size:${field.fontSize ?? 10}pt`,
+        `left:${String(field.x)}mm`,
+        `top:${String(field.y)}mm`,
+        `width:${String(field.width)}mm`,
+        `height:${String(field.height)}mm`,
+        `transform: rotate(${String(field.rotation)}deg)`,
+        `font-size:${String(field.fontSize ?? 10)}pt`,
         `font-weight:${field.fontWeight ?? "normal"}`,
       ].join(";");
 

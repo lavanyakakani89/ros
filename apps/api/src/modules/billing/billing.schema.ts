@@ -18,6 +18,7 @@ export const invoiceListQuerySchema = z.object({
   status: z.string().trim().min(1).optional(),
   unpaid: queryBooleanSchema,
   customerId: z.string().trim().min(1).optional(),
+  storeId: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
@@ -35,6 +36,7 @@ const invoiceItemSchema = z.object({
 
 export const createInvoiceSchema = z.object({
   customerId: z.string().min(1).optional(),
+  storeId: z.string().min(1).optional(),
   dueDate: z.coerce.date().optional(),
   paymentMode: z.nativeEnum(PaymentMode).default(PaymentMode.CASH),
   billDiscount: decimalSchema.nonnegative().default(0),

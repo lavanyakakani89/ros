@@ -22,15 +22,21 @@ model Tenant {
   createdAt          DateTime            @default(now()) @map("created_at")
   updatedAt          DateTime            @updatedAt @map("updated_at")
   users              User[]
+  stores             Store[]
+  storeUserAssignments StoreUserAssignment[]
   products           Product[]
   productBatches     ProductBatch[]
   productVariants    ProductVariant[]
   stockAdjustments   StockAdjustment[]
   customers          Customer[]
+  customerLocations  CustomerLocation[]
   invoices           Invoice[]
   invoiceCounters    InvoiceCounter[]
   invoiceItems       InvoiceItem[]
   deliveries         Delivery[]
+  deliveryRoutePlans DeliveryRoutePlan[]
+  deliveryRoutes     DeliveryRoute[]
+  deliveryRouteStops DeliveryRouteStop[]
   payments           Payment[]
   paymentMethods     PaymentMethod[]
   partners           Partner[]
@@ -64,6 +70,7 @@ model Tenant {
   printerConfig      PrinterConfig?
   impersonationSessions ImpersonationSession[]
   appNotifications   AppNotification[]
+  pushTokens         ExpoPushToken[]
   deliveryProofs     DeliveryProof[]
   whatsappIntegration WhatsappIntegration?
   whatsappMessageTemplates WhatsappMessageTemplate[]
@@ -99,6 +106,8 @@ model User {
   passwordHash  String         @map("password_hash")
   role          UserRole       @default(STAFF)
   isActive      Boolean        @default(true) @map("is_active")
+  primaryStoreId String?       @map("primary_store_id")
+  primaryStore  Store?         @relation("UserPrimaryStore", fields: [primaryStoreId], references: [id], onDelete: SetNull)
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
@@ -109,6 +118,9 @@ model User {
   storeAssignments StoreUserAssignment[]
   labelTemplatesCreated LabelTemplate[] @relation("LabelTemplateCreatedBy")
   labelPrintJobsPrinted LabelPrintJob[] @relation("LabelPrintJobPrintedBy")
+  verifiedCustomerLocations CustomerLocation[] @relation("CustomerLocationVerifiedBy")
+  createdDeliveryRoutePlans DeliveryRoutePlan[] @relation("DeliveryRoutePlanCreatedBy")
+  assignedDeliveryRoutes DeliveryRoute[] @relation("DeliveryRouteAssignedTo")
 
   @@unique([tenantId, email])
   @@unique([tenantId, username])
@@ -138,9 +150,6 @@ model Store {
   invoices         Invoice[]
   paymentMethods   PaymentMethod[]
   partners         Partner[]
-  purchaseOrders   PurchaseOrder[]
-  expenses         Expense[]
-  stockAdjustments StockAdjustment[]
 
   @@unique([tenantId, name])
   @@index([tenantId, isActive])
@@ -174,6 +183,20 @@ model RefreshToken {
   @@index([tenantId, userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model ExpoPushToken {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, userId])
+  @@map("expo_push_tokens")
 }
 
 model Category {
@@ -338,6 +361,7 @@ model Customer {
   createdAt       DateTime         @default(now()) @map("created_at")
   invoices        Invoice[]
   deliveries      Delivery[]
+  locations       CustomerLocation[]
   creditNotes     CreditNote[]
   quotations      Quotation[]
   loyaltyAccount  LoyaltyAccount?
@@ -347,6 +371,43 @@ model Customer {
   @@unique([tenantId, customerCode])
   @@index([tenantId])
   @@map("customers")
+}
+
+model CustomerLocation {
+  id                   String    @id @default(cuid())
+  tenantId             String    @map("tenant_id")
+  tenant               Tenant    @relation(fields: [tenantId], references: [id])
+  customerId           String    @map("customer_id")
+  customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label                String?
+  addressLine1         String    @map("address_line_1")
+  addressLine2         String?   @map("address_line_2")
+  landmark             String?
+  locality             String?
+  city                 String?
+  state                String?
+  postalCode           String?   @map("postal_code")
+  latitude             Decimal?  @db.Decimal(10, 7)
+  longitude            Decimal?  @db.Decimal(10, 7)
+  geocodedAddress      String?   @map("geocoded_address")
+  geocodingProvider    String?   @map("geocoding_provider")
+  geocodingQuery       String?   @map("geocoding_query")
+  geocodingResultId    String?   @map("geocoding_result_id")
+  geocodingAccuracy    String?   @map("geocoding_accuracy")
+  geocodingConfidence  Decimal?  @map("geocoding_confidence") @db.Decimal(5, 4)
+  geocodingRawResponse Json?     @map("geocoding_raw_response")
+  geocodedAt           DateTime? @map("geocoded_at")
+  manuallyVerifiedAt   DateTime? @map("manually_verified_at")
+  manuallyVerifiedById String?   @map("manually_verified_by_id")
+  manuallyVerifiedBy   User?     @relation("CustomerLocationVerifiedBy", fields: [manuallyVerifiedById], references: [id])
+  isDefault            Boolean   @default(false) @map("is_default")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  deliveries           Delivery[]
+
+  @@index([tenantId, customerId])
+  @@index([tenantId, latitude, longitude])
+  @@map("customer_locations")
 }
 
 model Invoice {
@@ -359,6 +420,8 @@ model Invoice {
   invoiceDate            DateTime      @default(now()) @map("invoice_date")
   dueDate                DateTime?     @map("due_date")
   status                 InvoiceStatus @default(DRAFT)
+  storeId                String?       @map("store_id")
+  store                  Store?        @relation(fields: [storeId], references: [id], onDelete: SetNull)
   paymentMode            PaymentMode   @default(CASH) @map("payment_mode")
   paymentMethodId        String?       @map("payment_method_id")
   paymentMethod          PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
@@ -716,6 +779,7 @@ model LabelTemplate {
   isDefault   Boolean   @default(false) @map("is_default")
   createdById String?   @map("created_by")
   createdBy   User?     @relation("LabelTemplateCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  printJobs   LabelPrintJob[]
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
@@ -802,7 +866,12 @@ model Delivery {
   invoice         Invoice        @relation(fields: [invoiceId], references: [id])
   customerId      String         @map("customer_id")
   customer        Customer       @relation(fields: [customerId], references: [id])
+  customerLocationId String?     @map("customer_location_id")
+  customerLocation CustomerLocation? @relation(fields: [customerLocationId], references: [id])
   deliveryAddress String         @map("delivery_address")
+  deliveryAddressSnapshot Json?  @map("delivery_address_snapshot")
+  deliveryLatitude Decimal?      @map("delivery_latitude") @db.Decimal(10, 7)
+  deliveryLongitude Decimal?     @map("delivery_longitude") @db.Decimal(10, 7)
   status          DeliveryStatus @default(PENDING)
   assignedTo      String?        @map("assigned_to")
   scheduledAt     DateTime?      @map("scheduled_at")
@@ -810,8 +879,10 @@ model Delivery {
   notes           String?
   createdAt       DateTime       @default(now()) @map("created_at")
   proofs          DeliveryProof[]
+  routeStops      DeliveryRouteStop[]
 
   @@index([tenantId, status])
+  @@index([tenantId, customerLocationId])
   @@map("deliveries")
 }
 
@@ -851,6 +922,126 @@ model DeliveryProof {
   @@index([tenantId, deliveryId])
   @@index([tenantId, uploadedBy, createdAt])
   @@map("delivery_proofs")
+}
+
+enum DeliveryRoutePlanStatus {
+  DRAFT
+  GEOCODING
+  LOCATION_REVIEW_REQUIRED
+  QUEUED
+  OPTIMIZING
+  OPTIMIZATION_FAILED
+  READY_FOR_REVIEW
+  APPLIED
+  PUBLISHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum DeliveryRouteStopStatus {
+  PLANNED
+  LOCKED
+  EN_ROUTE
+  ARRIVED
+  DELIVERED
+  FAILED
+  RESCHEDULED
+  SKIPPED
+  CANCELLED
+}
+
+enum DeliveryRouteStatus {
+  PLANNED
+  PUBLISHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model DeliveryRoutePlan {
+  id                   String                  @id @default(cuid())
+  tenantId             String                  @map("tenant_id")
+  tenant               Tenant                  @relation(fields: [tenantId], references: [id])
+  name                 String
+  status               DeliveryRoutePlanStatus @default(DRAFT)
+  provider             String?
+  providerJobId        String?                 @map("provider_job_id")
+  routingProfile       String                  @default("mapbox/driving") @map("routing_profile")
+  optimizationObjective String?                @map("optimization_objective")
+  depotName            String?                 @map("depot_name")
+  depotAddress         String?                 @map("depot_address")
+  depotLatitude        Decimal?                @map("depot_latitude") @db.Decimal(10, 7)
+  depotLongitude       Decimal?                @map("depot_longitude") @db.Decimal(10, 7)
+  totalDistanceMeters  Int?                    @map("total_distance_meters")
+  totalDurationSeconds Int?                    @map("total_duration_seconds")
+  rawRequest           Json?                   @map("raw_request")
+  rawResult            Json?                   @map("raw_result")
+  providerError        String?                 @map("provider_error")
+  createdById          String?                 @map("created_by_id")
+  createdBy            User?                   @relation("DeliveryRoutePlanCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+  routes               DeliveryRoute[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@map("delivery_route_plans")
+}
+
+model DeliveryRoute {
+  id                   String            @id @default(cuid())
+  tenantId             String            @map("tenant_id")
+  tenant               Tenant            @relation(fields: [tenantId], references: [id])
+  routePlanId          String            @map("route_plan_id")
+  routePlan            DeliveryRoutePlan @relation(fields: [routePlanId], references: [id], onDelete: Cascade)
+  routeIndex           Int               @default(0) @map("route_index")
+  assignedTo           String?           @map("assigned_to")
+  driver               User?             @relation("DeliveryRouteAssignedTo", fields: [assignedTo], references: [id])
+  status               DeliveryRouteStatus @default(PLANNED)
+  geometry             Json?
+  distanceMeters       Int?              @map("distance_meters")
+  durationSeconds      Int?              @map("duration_seconds")
+  startedAt            DateTime?         @map("started_at")
+  completedAt          DateTime?         @map("completed_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  stops                DeliveryRouteStop[]
+
+  @@index([tenantId, routePlanId])
+  @@index([tenantId, assignedTo])
+  @@map("delivery_routes")
+}
+
+model DeliveryRouteStop {
+  id                          String                  @id @default(cuid())
+  tenantId                    String                  @map("tenant_id")
+  tenant                      Tenant                  @relation(fields: [tenantId], references: [id])
+  routeId                     String                  @map("route_id")
+  route                       DeliveryRoute           @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  deliveryId                  String?                 @map("delivery_id")
+  delivery                    Delivery?               @relation(fields: [deliveryId], references: [id])
+  sequence                    Int
+  status                      DeliveryRouteStopStatus @default(PLANNED)
+  stopType                    String                  @default("DELIVERY") @map("stop_type")
+  addressSnapshot             Json                    @map("address_snapshot")
+  latitude                    Decimal?                @db.Decimal(10, 7)
+  longitude                   Decimal?                @db.Decimal(10, 7)
+  eta                         DateTime?
+  distanceFromPreviousMeters  Int?                    @map("distance_from_previous_meters")
+  durationFromPreviousSeconds Int?                    @map("duration_from_previous_seconds")
+  serviceSeconds              Int?                    @map("service_seconds")
+  isLocked                    Boolean                 @default(false) @map("is_locked")
+  lockedAt                    DateTime?               @map("locked_at")
+  completedAt                 DateTime?               @map("completed_at")
+  failedAt                    DateTime?               @map("failed_at")
+  notes                       String?
+  createdAt                   DateTime                @default(now()) @map("created_at")
+  updatedAt                   DateTime                @updatedAt @map("updated_at")
+
+  @@index([tenantId, routeId, sequence])
+  @@index([tenantId, deliveryId])
+  @@map("delivery_route_stops")
 }
 
 enum AppNotificationType {

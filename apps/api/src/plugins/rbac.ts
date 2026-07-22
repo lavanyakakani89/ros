@@ -73,7 +73,7 @@ export function requiredPermission(method: string, url: string): Permission | un
   }
   if (path.startsWith("/api/customers")) return "customers:basic";
 
-  if (path === "/api/delivery/me" || path === "/api/delivery/mobile/sync" || path === "/api/delivery/me/notifications") {
+  if (path === "/api/delivery/me" || path === "/api/delivery/mobile/sync" || path === "/api/delivery/me/notifications" || path.startsWith("/api/delivery/me/route")) {
     return "delivery:mobile";
   }
   if (path.startsWith("/api/delivery/notifications/") && path.endsWith("/read")) return "delivery:mobile";
@@ -87,6 +87,9 @@ export function requiredPermission(method: string, url: string): Permission | un
   }
   if (verb === "GET" && isDeliveryDetailRoute(path)) return "delivery:mobile";
   if (path.startsWith("/api/delivery")) return "delivery:manage";
+  if (path.startsWith("/api/delivery-route-plans")) return "delivery:manage";
+  if (path.startsWith("/api/deliveries/") && (path.endsWith("/geocode") || path.endsWith("/location"))) return "delivery:manage";
+  if (path === "/api/deliveries/geocode-batch") return "delivery:manage";
 
   if (path.startsWith("/api/expenses")) {
     return verb === "DELETE" ? "expenses:delete" : "expenses:add";

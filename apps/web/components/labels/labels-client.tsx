@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import type {
   LabelCanvasDefinition,
   LabelCanvasField,
+  LabelCodeType,
   LabelFieldType,
   LabelLayoutMode,
   LabelPreviewJob,
@@ -20,6 +21,13 @@ import { LabelCanvasRenderer } from "./label-canvas-renderer";
 
 type StepId = 1 | 2 | 3;
 type OutputType = "pdf" | "print";
+type LabelFieldPatch = Omit<Partial<LabelCanvasField>, "fontSize" | "fontWeight" | "textContent" | "imageUrl" | "codeType"> & {
+  fontSize?: number | undefined;
+  fontWeight?: "normal" | "bold" | undefined;
+  textContent?: string | undefined;
+  imageUrl?: string | undefined;
+  codeType?: LabelCodeType | undefined;
+};
 
 const DEFAULT_FIELD_SIZES: Record<LabelFieldType, Partial<Pick<LabelCanvasField, "width" | "height" | "fontSize" | "fontWeight">>> = {
   product_name: { width: 44, height: 9, fontSize: 12, fontWeight: "bold" },
@@ -106,8 +114,9 @@ export function LabelsClient() {
       setTemplates(templateResponse.templates);
       setPrinterStatus(printerResponse);
       setAllProducts(productsResponse.data);
-      if (templateResponse.templates.length > 0) {
-        selectTemplate(templateResponse.templates[0].id, templateResponse.templates);
+      const firstTemplate = templateResponse.templates[0];
+      if (firstTemplate) {
+        selectTemplate(firstTemplate.id, templateResponse.templates);
       }
     } catch (error) {
       notify(error instanceof Error ? error.message : "Unable to load labels.", "red");
@@ -132,8 +141,8 @@ export function LabelsClient() {
     setDraft({
       id: template.id,
       name: template.name,
-      width_mm: Number(template.width_mm),
-      height_mm: Number(template.height_mm),
+      width_mm: template.width_mm,
+      height_mm: template.height_mm,
       layout_mode: template.layout_mode,
       canvas_json: cloneCanvas(template.canvas_json),
       is_default: template.is_default,
@@ -161,7 +170,7 @@ export function LabelsClient() {
     setDraft((current) => (current ? { ...current, ...patch, canvas_json: patch.canvas_json ?? current.canvas_json } : current));
   }
 
-  function updateField(fieldId: string, patch: Partial<LabelCanvasField>) {
+  function updateField(fieldId: string, patch: LabelFieldPatch) {
     setDraft((current) => {
       if (!current) {
         return current;
@@ -170,7 +179,7 @@ export function LabelsClient() {
       return {
         ...current,
         canvas_json: {
-          fields: current.canvas_json.fields.map((field) => (field.id === fieldId ? { ...field, ...patch } : field)),
+          fields: current.canvas_json.fields.map((field) => (field.id === fieldId ? compactField({ ...field, ...patch }) : field)),
         },
       };
     });
@@ -196,7 +205,7 @@ export function LabelsClient() {
 
   function addField(type: LabelFieldType) {
     const defaults = DEFAULT_FIELD_SIZES[type];
-    const id = `${type}-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+    const id = `${type}-${globalThis.crypto.randomUUID()}`;
     const field: LabelCanvasField = {
       id,
       type,
@@ -205,12 +214,12 @@ export function LabelsClient() {
       width: defaults.width ?? 24,
       height: defaults.height ?? 8,
       rotation: 0,
-      fontSize: defaults.fontSize,
-      fontWeight: defaults.fontWeight,
-      textContent: type === "static_text" ? "Static text" : undefined,
-      imageUrl: undefined,
-      codeType: type === "barcode" ? "barcode" : type === "qr_code" ? "qr" : undefined,
     };
+    if (defaults.fontSize !== undefined) field.fontSize = defaults.fontSize;
+    if (defaults.fontWeight !== undefined) field.fontWeight = defaults.fontWeight;
+    if (type === "static_text") field.textContent = "Static text";
+    if (type === "barcode") field.codeType = "barcode";
+    if (type === "qr_code") field.codeType = "qr";
 
     setDraft((current) => {
       if (!current) {
@@ -378,7 +387,7 @@ export function LabelsClient() {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `bizbil-labels-${Date.now()}.pdf`;
+        anchor.download = `bizbil-labels-${String(Date.now())}.pdf`;
         anchor.click();
         URL.revokeObjectURL(url);
         notify("PDF downloaded.");
@@ -564,7 +573,7 @@ export function LabelsClient() {
         </section>
       ) : null}
 
-      {step === 2 && draft ? (
+      {step === 2 ? (
         <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -798,12 +807,12 @@ export function LabelsClient() {
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-slate-900">{product.name}</span>
                       <span className="block truncate text-xs text-slate-500">
-                        {product.sku ?? "No SKU"} • {product.barcode ?? "No barcode"} • Stock {Number(product.currentStock ?? 0)}
+                        {product.sku} • {product.barcode} • Stock {product.currentStock}
                       </span>
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
                       <PackagePlus className="size-3.5" aria-hidden="true" />
-                      {selected ? `Qty ${selected.quantity}` : "Add"}
+                      {selected ? `Qty ${String(selected.quantity)}` : "Add"}
                     </span>
                   </button>
                 );
@@ -898,9 +907,9 @@ export function LabelsClient() {
                       {sheet.labels.map((label) => {
                         const labelWidthMm = sheet.layout_mode === "2up" ? sheet.width_mm / 2 : sheet.width_mm;
                         return (
-                          <div key={`${label.product_id}-${sheet.index}-${label.slot_index}`} className="overflow-hidden rounded-lg border border-slate-200 p-2">
-                            <div className="relative" style={{ width: `${Math.max(1, sheet.width_mm * 4)}px`, height: `${Math.max(1, sheet.height_mm * 4)}px` }}>
-                              <div className="absolute top-0" style={{ left: `${label.slot_index * labelWidthMm * 4}px` }}>
+                          <div key={`${label.product_id}-${String(sheet.index)}-${String(label.slot_index)}`} className="overflow-hidden rounded-lg border border-slate-200 p-2">
+                            <div className="relative" style={{ width: `${String(Math.max(1, sheet.width_mm * 4))}px`, height: `${String(Math.max(1, sheet.height_mm * 4))}px` }}>
+                              <div className="absolute top-0" style={{ left: `${String(label.slot_index * labelWidthMm * 4)}px` }}>
                                 <LabelCanvasRenderer
                                   template={{ width_mm: labelWidthMm, height_mm: sheet.height_mm }}
                                   fields={label.fields}
@@ -931,6 +940,39 @@ function cloneCanvas(canvas: LabelCanvasDefinition): LabelCanvasDefinition {
   return {
     fields: canvas.fields.map((field) => ({ ...field })),
   };
+}
+
+function compactField(field: {
+  id: string;
+  type: LabelFieldType;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  resolved_content?: string | undefined;
+  fontSize?: number | undefined;
+  fontWeight?: "normal" | "bold" | undefined;
+  textContent?: string | undefined;
+  imageUrl?: string | undefined;
+  codeType?: LabelCodeType | undefined;
+}): LabelCanvasField {
+  const next: LabelCanvasField = {
+    id: field.id,
+    type: field.type,
+    x: field.x,
+    y: field.y,
+    width: field.width,
+    height: field.height,
+    rotation: field.rotation,
+  };
+  if (field.fontSize !== undefined) next.fontSize = field.fontSize;
+  if (field.fontWeight !== undefined) next.fontWeight = field.fontWeight;
+  if (field.textContent !== undefined) next.textContent = field.textContent;
+  if (field.imageUrl !== undefined) next.imageUrl = field.imageUrl;
+  if (field.codeType !== undefined) next.codeType = field.codeType;
+  if (field.resolved_content !== undefined) next.resolved_content = field.resolved_content;
+  return next;
 }
 
 function StepperButton({

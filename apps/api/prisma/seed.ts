@@ -17,7 +17,7 @@ async function main() {
     },
   });
 
-  const passwordHash = await hash("RetailOS@123", {
+  const passwordHash = await hash("BizBil@123", {
     memoryCost: 19_456,
     timeCost: 2,
     parallelism: 1,

@@ -3,8 +3,8 @@ import type { FastifyPluginCallback } from "fastify";
 import QRCode from "qrcode";
 import { z } from "zod";
 
-const paymentMethodTypeSchema = z.preprocess((value) => String(value ?? "CUSTOM").toUpperCase(), z.nativeEnum(PaymentMethodType));
-const settlementStatusSchema = z.preprocess((value) => String(value ?? "").toUpperCase(), z.nativeEnum(SettlementStatus));
+const paymentMethodTypeSchema = z.preprocess((value) => upperString(value, "CUSTOM"), z.nativeEnum(PaymentMethodType));
+const settlementStatusSchema = z.preprocess((value) => upperString(value, ""), z.nativeEnum(SettlementStatus));
 const roleListSchema = z.array(z.string().trim().transform((role) => role.toUpperCase())).default([]);
 
 const queryBooleanSchema = z.preprocess((value) => {
@@ -33,7 +33,7 @@ const methodPayloadSchema = z.object({
   upi_id: z.string().trim().max(128).nullable().optional(),
   partner_id: z.string().trim().min(1).nullable().optional(),
   opening_balance: z.coerce.number().finite().optional(),
-  settlement_frequency: z.preprocess((value) => value === null || value === "" || value === undefined ? null : String(value).toUpperCase(), z.enum(["DAILY", "WEEKLY", "MONTHLY"]).nullable()).optional(),
+  settlement_frequency: z.preprocess((value) => value === null || value === "" || value === undefined ? null : upperString(value, ""), z.enum(["DAILY", "WEEKLY", "MONTHLY"]).nullable()).optional(),
   allowed_roles: roleListSchema.optional(),
   storeId: z.string().min(1).optional(),
 });
@@ -168,7 +168,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         where: { id: item.id },
         data: {
           displayOrder: item.display_order,
-          keyboardShortcut: index < 9 ? `Ctrl+${index + 1}` : null,
+          keyboardShortcut: index < 9 ? `Ctrl+${String(index + 1)}` : null,
         },
       });
     }));
@@ -261,6 +261,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     const methodById = new Map(methods.map((method) => [method.id, method]));
     const total = roundMoney(input.payments.reduce((sum, payment) => sum + payment.amount, 0));
     if (Math.abs(total - invoice.grandTotal.toNumber()) > 0.01) throw statusError("Payment total must match invoice total", 400);
+    const firstPayment = input.payments[0];
+    if (!firstPayment) throw statusError("At least one payment is required", 400);
     for (const leg of input.payments) {
       const method = methodById.get(leg.payment_method_id);
       if (!method) throw statusError("Payment method not found or inactive", 400);
@@ -294,8 +296,8 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
           amountPaid: total,
           amountDue: 0,
           status: InvoiceStatus.PAID,
-          paymentMethodId: input.payments[0]!.payment_method_id,
-          paymentMode: legacyMode(methodById.get(input.payments[0]?.payment_method_id ?? "")?.type) ?? PaymentMode.CASH,
+          paymentMethodId: firstPayment.payment_method_id,
+          paymentMode: legacyMode(methodById.get(firstPayment.payment_method_id)?.type) ?? PaymentMode.CASH,
         },
         include: { payments: { include: { paymentMethod: true } } },
       });
@@ -583,6 +585,14 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
     return method;
   }
 };
+
+function upperString(value: unknown, fallback: string): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value).toUpperCase();
+  }
+
+  return fallback;
+}
 
 function ensureManager(role: UserRole) {
   if (role !== UserRole.OWNER && role !== UserRole.MANAGER) {

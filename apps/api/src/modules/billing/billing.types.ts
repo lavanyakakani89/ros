@@ -12,6 +12,7 @@ export interface InvoiceItemInput {
 
 export interface CreateInvoiceInput {
   customerId?: string | undefined;
+  storeId?: string | undefined;
   dueDate?: Date | undefined;
   paymentMode: PaymentMode;
   billDiscount: number;
@@ -37,6 +38,7 @@ export interface InvoiceListQuery {
   status?: string | undefined;
   unpaid: boolean;
   customerId?: string | undefined;
+  storeId?: string | undefined;
   search?: string | undefined;
   from?: Date | undefined;
   to?: Date | undefined;

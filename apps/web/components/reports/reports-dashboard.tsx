@@ -7,10 +7,10 @@ import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { StatStrip } from "@/components/shared/stat-strip";
-import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { createAuthenticatedApiClient, downloadApiFile } from "@/lib/api-client";
 import { getStoredTenant } from "@/lib/vertical-config";
 
-type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend";
+type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend" | "customers" | "suppliers" | "aging" | "stock" | "tally";
 
 interface ReportSummary {
   grossSales: number;
@@ -143,6 +143,22 @@ export function ReportsDashboard() {
     downloadCsv(rows.map((r) => r.join(",")).join("\n"), `GSTR3B_${from}_${to}.csv`);
   }
 
+  async function downloadReportExport(report: string, filename: string, format: "csv" | "xlsx") {
+    await downloadApiFile(`/reports/export/${report}?from=${from}&to=${to}&format=${format}`, `${filename}.${format}`);
+  }
+
+  async function downloadAdvancedReportExport(report: string, filename: string, format: "csv" | "xlsx") {
+    await downloadApiFile(`/reports/export/${report}?from=${from}&to=${to}&format=${format}`, `${filename}.${format}`);
+  }
+
+  async function downloadStockMovementExport(format: "csv" | "xlsx") {
+    await downloadApiFile(`/reports/export/stock-movement?from=${from}&to=${to}&format=${format}`, `stock-movement-${from}-${to}.${format}`);
+  }
+
+  async function downloadTallyExport() {
+    await downloadApiFile(`/reports/export/tally?from=${from}&to=${to}&format=xml`, `tally-${from}-${to}.xml`);
+  }
+
   return (
     <div className="space-y-4">
       {/* Tab bar */}
@@ -190,7 +206,7 @@ export function ReportsDashboard() {
             <ExportButton label="Inventory Excel" onClick={() => void downloadReportExport("inventory", "inventory", "xlsx")} />
           </>
         ) : null}
-        {tab === "pnl" && canViewPnl ? (
+        {tab === "pnl" ? (
           <>
             <ExportButton label="P&L CSV" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "csv")} />
             <ExportButton label="P&L Excel" onClick={() => void downloadReportExport("pnl", `pnl-${from}-${to}`, "xlsx")} />
@@ -460,6 +476,18 @@ function ReportList({ title, items }: Readonly<{ title: string; items: string[] 
           : <div className="text-sm text-slate-400">No data yet</div>}
       </div>
     </div>
+  );
+}
+
+function ExportButton({ label, onClick }: Readonly<{ label: string; onClick: () => void }>) {
+  return (
+    <button
+      type="button"
+      className="h-9 rounded-md border border-border px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+      onClick={onClick}
+    >
+      {label}
+    </button>
   );
 }
 

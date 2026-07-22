@@ -55,14 +55,14 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     label: "Delivery person assignment",
     description: "Used when a delivery person is assigned an order.",
     placeholders: ["invoiceNumber", "customerName", "grandTotal", "deliveryAddress"],
-    defaultBody: "RetailOS: delivery assigned for {{invoiceNumber}}. Customer: {{customerName}}. Amount: ₹{{grandTotal}}. Address: {{deliveryAddress}}",
+    defaultBody: "BizBil: delivery assigned for {{invoiceNumber}}. Customer: {{customerName}}. Amount: ₹{{grandTotal}}. Address: {{deliveryAddress}}",
   },
   {
     key: "whatsappTest",
     label: "WhatsApp test",
     description: "Used by the Test message button in WhatsApp settings.",
     placeholders: ["tenantName"],
-    defaultBody: "RetailOS WhatsApp test from {{tenantName}}. If you received this, WhatsApp Business is connected.",
+    defaultBody: "BizBil WhatsApp test from {{tenantName}}. If you received this, WhatsApp Business is connected.",
   },
 ] as const;
 

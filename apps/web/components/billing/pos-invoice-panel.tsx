@@ -510,7 +510,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     const storeName = tenant?.name ?? "BizBil";
     const printWindow = window.open("", "_blank", "width=420,height=520");
     if (!printWindow) return;
-    printWindow.document.write(`<!doctype html>
+    const html = `<!doctype html>
       <html>
         <head>
           <title>${escapeHtml(method.name)} QR</title>
@@ -529,8 +529,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
           <div class="upi-id">${escapeHtml(method.upi_id ?? "")}</div>
           <div class="tagline">Scan to pay via any UPI app</div>
         </body>
-      </html>`);
-    printWindow.document.close();
+      </html>`;
+    const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    printWindow.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   function notify(message: string, tone: StatusTone = "green") {
@@ -1634,7 +1636,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               <label className="block text-sm font-medium text-slate-700">
                 Cash received
                 <input type="number" min="0" value={amountReceived} onChange={(event) => {
-                  if (selectedPaymentMethod) selectPaymentMethod(selectedPaymentMethod);
+                  selectPaymentMethod(selectedPaymentMethod);
                   setAmountReceived(Number(event.target.value));
                 }} className="mt-1 h-9 w-full rounded-md border border-border px-3 text-sm" />
               </label>
