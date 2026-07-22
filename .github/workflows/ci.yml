@@ -21,7 +21,7 @@ jobs:
       REDIS_URL: redis://:password@localhost:6379
       JWT_SECRET: ci-only-jwt-secret
       NEXT_PUBLIC_API_URL: http://localhost:3001/api
-      NEXT_PUBLIC_APP_NAME: RetailOS
+      NEXT_PUBLIC_APP_NAME: BizBil
 
     services:
       postgres:
