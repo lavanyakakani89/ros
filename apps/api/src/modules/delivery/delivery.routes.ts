@@ -9,9 +9,11 @@ import {
   createDeliverySchema,
   deliveryAgentParamsSchema,
   deliveryIdParamsSchema,
+  deliveryInvoiceParamsSchema,
   deliveryListQuerySchema,
   deliveryProofParamsSchema,
   notificationIdParamsSchema,
+  syncInvoiceDeliverySchema,
   updateDeliveryStatusSchema,
 } from "./delivery.schema.js";
 import { DeliveryError, DeliveryService, type DeliveryActor } from "./delivery.service.js";
@@ -35,6 +37,12 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
   fastify.get("/api/delivery/me/notifications", async (request, reply) => {
     return handleDelivery(reply, () => Promise.resolve(service.listMyNotifications(request.tenant, getActor(request))));
+  });
+
+  fastify.put("/api/delivery/invoice/:invoiceId", async (request, reply) => {
+    const params = deliveryInvoiceParamsSchema.parse(request.params);
+    const input = syncInvoiceDeliverySchema.parse(request.body);
+    return handleDelivery(reply, () => service.syncInvoiceDelivery(request.tenant, { invoiceId: params.invoiceId, ...input }));
   });
 
   fastify.post("/api/delivery/notifications/:id/read", async (request, reply) => {

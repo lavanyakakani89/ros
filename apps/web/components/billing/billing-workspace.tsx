@@ -1,15 +1,38 @@
 "use client";
 
 import { History, X } from "lucide-react";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { InvoiceHistory, type InvoiceRecord } from "@/components/billing/invoice-history";
 import { PosInvoicePanel } from "@/components/billing/pos-invoice-panel";
 import { PageHeader } from "@/components/shared/page-header";
+import { createAuthenticatedApiClient } from "@/lib/api-client";
 
 export function BillingWorkspace() {
+  const searchParams = useSearchParams();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceRecord | null>(null);
+
+  useEffect(() => {
+    // Next widens this to nullable during production builds when pages/ exists.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const invoiceId = searchParams?.get("invoiceId");
+    if (!invoiceId) {
+      return;
+    }
+
+    let active = true;
+    createAuthenticatedApiClient().get<InvoiceRecord>(`/billing/invoices/${invoiceId}`).then((invoice) => {
+      if (active) {
+        setEditingInvoice(invoice);
+      }
+    }).catch(() => null);
+
+    return () => {
+      active = false;
+    };
+  }, [searchParams]);
 
   function startEditingInvoice(invoice: InvoiceRecord) {
     setEditingInvoice(invoice);

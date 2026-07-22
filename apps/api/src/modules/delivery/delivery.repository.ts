@@ -62,6 +62,109 @@ export class DeliveryRepository {
     });
   }
 
+  async getDeliveryByInvoice(tenantId: string, invoiceId: string) {
+    return this.prisma.delivery.findFirst({
+      where: {
+        tenantId,
+        invoiceId,
+      },
+      include: deliveryInclude,
+    });
+  }
+
+  async upsertDeliveryForInvoice(
+    tenantId: string,
+    input: {
+      invoiceId: string;
+      customerId: string;
+      deliveryAddress: string;
+      scheduledAt?: Date | undefined;
+      notes?: string | undefined;
+    },
+  ) {
+    const [invoice, customer, existing] = await Promise.all([
+      this.prisma.invoice.findFirst({
+        where: {
+          id: input.invoiceId,
+          tenantId,
+        },
+      }),
+      this.prisma.customer.findFirst({
+        where: {
+          id: input.customerId,
+          tenantId,
+        },
+      }),
+      this.getDeliveryByInvoice(tenantId, input.invoiceId),
+    ]);
+
+    if (!invoice || !customer) {
+      return null;
+    }
+
+    const deliveryAddressSnapshot = {
+      address: input.deliveryAddress,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      city: customer.city,
+      state: customer.state,
+      postalCode: customer.postalCode,
+      invoiceNumber: invoice.invoiceNumber,
+      grandTotal: invoice.grandTotal.toString(),
+      amountDue: invoice.amountDue.toString(),
+    };
+
+    if (existing) {
+      return this.prisma.delivery.update({
+        where: {
+          id: existing.id,
+        },
+        data: {
+          customer: {
+            connect: {
+              id: input.customerId,
+            },
+          },
+          deliveryAddress: input.deliveryAddress,
+          deliveryAddressSnapshot,
+          scheduledAt: input.scheduledAt ?? null,
+          notes: input.notes ?? null,
+          ...(existing.status === DeliveryStatus.CANCELLED ? { status: DeliveryStatus.PENDING, assignedTo: null, deliveredAt: null } : {}),
+        },
+        include: deliveryInclude,
+      });
+    }
+
+    return this.prisma.delivery.create({
+      data: {
+        tenantId,
+        invoiceId: input.invoiceId,
+        customerId: input.customerId,
+        deliveryAddress: input.deliveryAddress,
+        deliveryAddressSnapshot,
+        ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+        ...(input.notes ? { notes: input.notes } : {}),
+      },
+      include: deliveryInclude,
+    });
+  }
+
+  async cancelEditableDeliveryForInvoice(tenantId: string, invoiceId: string) {
+    return this.prisma.delivery.updateMany({
+      where: {
+        tenantId,
+        invoiceId,
+        status: {
+          in: [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.CANCELLED],
+        },
+      },
+      data: {
+        status: DeliveryStatus.CANCELLED,
+        assignedTo: null,
+      },
+    });
+  }
+
   async listDeliveries(tenantId: string, query: DeliveryListQuery) {
     const statusFilter = query.status
       ? { equals: query.status }

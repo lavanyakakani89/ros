@@ -2,7 +2,7 @@ import { DeliveryStatus, UserRole, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { DeliveryRepository, type CreateDeliveryProofInput } from "./delivery.repository.js";
-import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
+import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, SyncInvoiceDeliveryInput, UpdateDeliveryStatusInput } from "./delivery.types.js";
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
@@ -35,6 +35,56 @@ export class DeliveryService {
     }
 
     const delivery = await this.repository.createDelivery(tenant.id, input);
+    if (!delivery) {
+      throw new DeliveryError("Invoice or customer not found", 404);
+    }
+
+    return delivery;
+  }
+
+  async syncInvoiceDelivery(tenant: Tenant, input: SyncInvoiceDeliveryInput) {
+    if (!this.verticalConfigRepository.getByVertical(tenant.vertical).modules.delivery) {
+      throw new DeliveryError("Delivery module is not enabled for this tenant", 403);
+    }
+
+    const existing = await this.repository.getDeliveryByInvoice(tenant.id, input.invoiceId);
+
+    if (!input.deliveryRequired) {
+      if (!existing) {
+        return { status: "not_required" };
+      }
+
+      if (existing.status === DeliveryStatus.OUT_FOR_DELIVERY) {
+        throw new DeliveryError("Delivery is already out for delivery. Cancel it from the delivery board.", 409);
+      }
+
+      if (existing.status === DeliveryStatus.DELIVERED || existing.status === DeliveryStatus.FAILED) {
+        return existing;
+      }
+
+      await this.repository.cancelEditableDeliveryForInvoice(tenant.id, input.invoiceId);
+      return this.repository.getDeliveryByInvoice(tenant.id, input.invoiceId);
+    }
+
+    if (!input.customerId || !input.deliveryAddress) {
+      throw new DeliveryError("Customer and delivery address are required", 400);
+    }
+
+    if (existing?.status === DeliveryStatus.OUT_FOR_DELIVERY) {
+      throw new DeliveryError("Delivery is already out for delivery. Edit it from the delivery board.", 409);
+    }
+
+    if (existing?.status === DeliveryStatus.DELIVERED || existing?.status === DeliveryStatus.FAILED) {
+      throw new DeliveryError("Completed or failed deliveries cannot be changed from invoice edit.", 409);
+    }
+
+    const delivery = await this.repository.upsertDeliveryForInvoice(tenant.id, {
+      invoiceId: input.invoiceId,
+      customerId: input.customerId,
+      deliveryAddress: input.deliveryAddress,
+      ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
+      ...(input.notes ? { notes: input.notes } : {}),
+    });
     if (!delivery) {
       throw new DeliveryError("Invoice or customer not found", 404);
     }

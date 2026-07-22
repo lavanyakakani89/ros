@@ -1,12 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, MessageCircle, Pencil, Printer, Search, XCircle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, ShoppingBag, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { getStoredTenant } from "@/lib/vertical-config";
+import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatInvoiceRecordWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
 export interface InvoiceRecord {
@@ -17,6 +17,7 @@ export interface InvoiceRecord {
   totalDiscount?: string | number;
   totalCgst?: string | number;
   totalSgst?: string | number;
+  deliveryCharge?: string | number;
   grandTotal: string | number;
   amountPaid?: string | number;
   amountDue: string | number;
@@ -24,8 +25,9 @@ export interface InvoiceRecord {
   dueDate?: string | null;
   paymentMode: string;
   notes?: string | null;
+  pdfUrl?: string | null;
+  paymentLinkId?: string | null;
   verticalData?: Record<string, unknown> | null;
-  deliveryCharge?: string | number | null;
   customer?: {
     id: string;
     name: string;
@@ -51,6 +53,28 @@ export interface InvoiceRecord {
     gstRate: string | number;
     total: string | number;
   }>;
+  payments?: Array<{
+    id: string;
+    amount: string | number;
+    mode?: string | null;
+    referenceNumber?: string | null;
+    voidedAt?: string | null;
+    paymentMethod?: {
+      id: string;
+      name: string;
+      shortCode?: string | null;
+      short_code?: string | null;
+      color?: string | null;
+      type?: string | null;
+    } | null;
+  }>;
+  creditNotes?: Array<{
+    id: string;
+    creditNoteNumber: string;
+    status: string;
+    grandTotal: string | number;
+    createdAt: string;
+  }>;
 }
 
 interface InvoiceListResponse {
@@ -58,6 +82,11 @@ interface InvoiceListResponse {
   page: number;
   limit: number;
   total: number;
+}
+
+interface RazorpayStatusResponse {
+  configured: boolean;
+  source: "tenant" | "platform" | null;
 }
 
 export function InvoiceHistory({
@@ -75,8 +104,16 @@ export function InvoiceHistory({
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
+  const [returnInvoice, setReturnInvoice] = useState<InvoiceRecord | null>(null);
+  const [returnReason, setReturnReason] = useState("");
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
+  const [returnCustomerName, setReturnCustomerName] = useState("");
+  const [returnCustomerPhone, setReturnCustomerPhone] = useState("");
+  const [returnError, setReturnError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const isDrawer = surface === "drawer";
+  const canCancelInvoices = getStoredAuthSession()?.user?.role !== "STAFF";
   const query = useMemo(() => {
     const params = new URLSearchParams({
       page: String(page),
@@ -98,14 +135,49 @@ export function InvoiceHistory({
     queryFn: fetchWhatsappMessageTemplates,
     staleTime: 60_000,
   });
+  const razorpayStatusQuery = useQuery({
+    queryKey: ["payments", "razorpay-status"],
+    queryFn: () => createAuthenticatedApiClient().get<RazorpayStatusResponse>("/payments/razorpay/status"),
+    staleTime: 60_000,
+  });
   const cancelInvoice = useMutation({
     mutationFn: (id: string) => createAuthenticatedApiClient().post(`/billing/invoices/${id}/cancel`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+  });
+  const createReturn = useMutation({
+    mutationFn: ({ invoiceId, payload }: { invoiceId: string; payload: object }) => createAuthenticatedApiClient().post(`/billing/invoices/${invoiceId}/return`, payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["invoices"] }),
+        queryClient.invalidateQueries({ queryKey: ["credit-notes"] }),
+      ]);
+      setReturnInvoice(null);
+      setReturnReason("");
+      setReturnQuantities({});
+      setReturnCustomerName("");
+      setReturnCustomerPhone("");
+      setReturnError(null);
+      setActionNotice("Return processed and credit note created.");
+    },
+    onError: (error) => {
+      setReturnError(error instanceof Error ? error.message : "Unable to process return.");
+    },
   });
   const invoices = invoicesQuery.data?.data ?? [];
   const total = invoicesQuery.data?.total ?? 0;
   const totalPages = Math.max(Math.ceil(total / 10), 1);
   const error = invoicesQuery.error ?? cancelInvoice.error;
+
+  useEffect(() => {
+    if (!selectedInvoice) {
+      return;
+    }
+
+    const refreshedInvoice = invoices.find((invoice) => invoice.id === selectedInvoice.id);
+    if (refreshedInvoice && refreshedInvoice !== selectedInvoice) {
+      setSelectedInvoice(refreshedInvoice);
+    }
+  }, [invoices, selectedInvoice]);
 
   function resetPage(action: () => void) {
     action();
@@ -114,6 +186,7 @@ export function InvoiceHistory({
 
   async function printInvoice(invoice: InvoiceRecord) {
     setActionError(null);
+    setActionNotice(null);
     try {
       await createAuthenticatedApiClient().post(`/billing/invoices/${invoice.id}/pdf`, {});
       window.open(apiUrl(`/billing/invoices/${invoice.id}/pdf/view`), "_blank", "noopener,noreferrer");
@@ -124,6 +197,7 @@ export function InvoiceHistory({
 
   function shareInvoiceWhatsApp(invoice: InvoiceRecord) {
     setActionError(null);
+    setActionNotice(null);
     if (!invoice.customer?.phone) {
       setActionError("Invoice does not have a customer phone number.");
       return;
@@ -138,7 +212,86 @@ export function InvoiceHistory({
     }
   }
 
+  async function sendPaymentLink(invoice: InvoiceRecord) {
+    setActionError(null);
+    setActionNotice(null);
+    if (!invoice.customer?.phone) {
+      setActionError("Invoice customer phone number is required for payment link sharing.");
+      return;
+    }
+
+    const amountDue = Number(invoice.amountDue);
+    if (!Number.isFinite(amountDue) || amountDue <= 0) {
+      setActionError("This invoice has no pending amount.");
+      return;
+    }
+
+    try {
+      const link = await createAuthenticatedApiClient().post<{ paymentLinkId: string; shortUrl: string }>("/payments/razorpay/payment-link", {
+        invoiceId: invoice.id,
+        amount: amountDue,
+        description: `Payment for invoice ${invoice.invoiceNumber}`,
+        customerId: invoice.customer.id,
+      });
+      await createAuthenticatedApiClient().post(`/payments/razorpay/payment-link/${encodeURIComponent(link.paymentLinkId)}/share`, {});
+      setActionNotice(`Payment link sent on WhatsApp. ${link.shortUrl}`);
+      await queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Unable to create or share payment link.");
+    }
+  }
+
+  function openReturnDialog(invoice: InvoiceRecord) {
+    setActionError(null);
+    setActionNotice(null);
+    setReturnError(null);
+    setReturnInvoice(invoice);
+    setReturnReason("");
+    setReturnCustomerName(invoice.customer?.name ?? "");
+    setReturnCustomerPhone(invoice.customer?.phone ?? "");
+    setReturnQuantities(Object.fromEntries((invoice.items ?? []).map((item) => [item.productId, String(Number(item.quantity))])));
+  }
+
+  function submitReturn() {
+    if (!returnInvoice) {
+      return;
+    }
+
+    const items = Object.entries(returnQuantities).flatMap(([productId, value]) => {
+      const quantity = Number(value);
+      return Number.isFinite(quantity) && quantity > 0 ? [{ productId, quantity }] : [];
+    });
+    if (!returnReason.trim()) {
+      setReturnError("Return reason is required.");
+      return;
+    }
+    if (items.length === 0) {
+      setReturnError("Select at least one return quantity.");
+      return;
+    }
+    if (!returnInvoice.customer?.name.trim() && !returnCustomerName.trim()) {
+      setReturnError("Customer name is required for returns.");
+      return;
+    }
+    if (!returnInvoice.customer?.phone?.trim() && !returnCustomerPhone.trim()) {
+      setReturnError("Customer mobile number is required for returns.");
+      return;
+    }
+
+    setReturnError(null);
+    createReturn.mutate({
+      invoiceId: returnInvoice.id,
+      payload: {
+        reason: returnReason.trim(),
+        items,
+        ...(returnCustomerName.trim() ? { customerName: returnCustomerName.trim() } : {}),
+        ...(returnCustomerPhone.trim() ? { customerPhone: returnCustomerPhone.trim() } : {}),
+      },
+    });
+  }
+
   return (
+    <>
     <section className={cn("flex min-h-0 flex-col bg-white", isDrawer ? "flex-1" : "max-h-[72vh] rounded-md border border-border")}>
       <div className="border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -157,6 +310,7 @@ export function InvoiceHistory({
           </div>
         </div>
         {error || actionError ? <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{actionError ?? error?.message}</div> : null}
+        {actionNotice ? <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{actionNotice}</div> : null}
       </div>
 
       <div className={cn("min-h-0 flex-1", isDrawer ? "grid lg:grid-cols-[minmax(0,1fr)_360px]" : "flex flex-col")}>
@@ -188,18 +342,13 @@ export function InvoiceHistory({
                   >
                     <td className="break-words px-3 py-3 font-mono text-xs leading-5">
                       <div>{invoice.invoiceNumber}</div>
-                      {isWhatsappInvoice(invoice) ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                          <MessageCircle className="size-3" aria-hidden="true" />
-                          WhatsApp
-                        </div>
-                      ) : null}
+                      <InvoiceSourceBadge invoice={invoice} />
                     </td>
                     <td className="px-3 py-3">
                       <div className="truncate">{invoice.customer?.name ?? "Walk-in"}</div>
                       <div className="truncate text-xs text-slate-400">{new Date(invoice.invoiceDate).toLocaleDateString("en-IN")}</div>
                     </td>
-                    <td className="px-3 py-3"><StatusBadge status={invoice.status} /></td>
+                    <td className="px-3 py-3"><StatusBadge status={invoiceDisplayStatus(invoice)} /></td>
                     <td className="whitespace-nowrap px-3 py-3 text-right font-semibold">₹{Number(invoice.grandTotal).toFixed(2)}</td>
                     <td className="px-3 py-3 text-center" onClick={(event) => event.stopPropagation()}>
                         {onEdit ? (
@@ -228,10 +377,136 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onEdit={onEdit} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} canSendPaymentLinks={razorpayStatusQuery.data?.configured === true} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
+    {returnInvoice ? (
+      <InvoiceReturnDialog
+        invoice={returnInvoice}
+        quantities={returnQuantities}
+        reason={returnReason}
+        customerName={returnCustomerName}
+        customerPhone={returnCustomerPhone}
+        error={returnError}
+        isPending={createReturn.isPending}
+        onQuantityChange={(productId, value) => setReturnQuantities((current) => ({ ...current, [productId]: value }))}
+        onReasonChange={setReturnReason}
+        onCustomerNameChange={setReturnCustomerName}
+        onCustomerPhoneChange={setReturnCustomerPhone}
+        onClose={() => {
+          setReturnInvoice(null);
+          setReturnError(null);
+        }}
+        onSubmit={submitReturn}
+      />
+    ) : null}
+    </>
+  );
+}
+
+function InvoiceReturnDialog({
+  invoice,
+  quantities,
+  reason,
+  customerName,
+  customerPhone,
+  error,
+  isPending,
+  onQuantityChange,
+  onReasonChange,
+  onCustomerNameChange,
+  onCustomerPhoneChange,
+  onClose,
+  onSubmit,
+}: Readonly<{
+  invoice: InvoiceRecord;
+  quantities: Record<string, string>;
+  reason: string;
+  customerName: string;
+  customerPhone: string;
+  error: string | null;
+  isPending: boolean;
+  onQuantityChange: (productId: string, value: string) => void;
+  onReasonChange: (value: string) => void;
+  onCustomerNameChange: (value: string) => void;
+  onCustomerPhoneChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}>) {
+  const needsCustomerName = !invoice.customer?.name.trim();
+  const needsCustomerPhone = !invoice.customer?.phone?.trim();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+      <div className="w-full max-w-2xl rounded-md border border-border bg-white shadow-xl">
+        <div className="border-b border-border px-4 py-3">
+          <div className="text-sm font-semibold text-slate-950">Process return</div>
+          <div className="text-xs text-slate-500">{invoice.invoiceNumber}</div>
+        </div>
+        <div className="max-h-[70vh] space-y-3 overflow-auto p-4">
+          {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+          {needsCustomerName || needsCustomerPhone ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {needsCustomerName ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Customer name
+                  <input value={customerName} onChange={(event) => onCustomerNameChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Customer name" />
+                </label>
+              ) : null}
+              {needsCustomerPhone ? (
+                <label className="block text-sm font-medium text-slate-700">
+                  Mobile number
+                  <input type="tel" value={customerPhone} onChange={(event) => onCustomerPhoneChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Mobile number" />
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+          <label className="block text-sm font-medium text-slate-700">
+            Reason
+            <input value={reason} onChange={(event) => onReasonChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm" placeholder="Return reason" />
+          </label>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="bg-slate-50 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Product</th>
+                  <th className="px-3 py-2 text-right font-medium">Sold</th>
+                  <th className="px-3 py-2 text-right font-medium">Return qty</th>
+                  <th className="px-3 py-2 text-right font-medium">Line total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(invoice.items ?? []).map((item) => (
+                  <tr key={item.id ?? item.productId}>
+                    <td className="px-3 py-2 font-medium text-slate-900">{item.productName}</td>
+                    <td className="px-3 py-2 text-right text-slate-500">{Number(item.quantity).toLocaleString("en-IN")}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min="0"
+                        max={Number(item.quantity)}
+                        step="1"
+                        value={quantities[item.productId] ?? "0"}
+                        onChange={(event) => onQuantityChange(item.productId, event.target.value)}
+                        className="h-9 w-24 rounded-md border border-border px-2 text-right text-sm"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold">₹{Number(item.total).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+          <button type="button" onClick={onClose} className="h-10 rounded-md border border-border px-4 text-sm font-medium text-slate-700">Cancel</button>
+          <button type="button" onClick={onSubmit} disabled={isPending} className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white disabled:opacity-50">
+            {isPending ? "Processing..." : "Process return"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -239,13 +514,21 @@ function InvoiceDetailPanel({
   invoice,
   onPrint,
   onShareWhatsapp,
+  onSendPaymentLink,
   onEdit,
+  onReturn,
+  canCancel,
+  canSendPaymentLinks,
   onCancel,
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
   onShareWhatsapp: (invoice: InvoiceRecord) => void;
+  onSendPaymentLink: (invoice: InvoiceRecord) => void | Promise<void>;
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
+  onReturn: (invoice: InvoiceRecord) => void;
+  canCancel: boolean;
+  canSendPaymentLinks: boolean;
   onCancel: (invoice: InvoiceRecord) => void;
 }>) {
   if (!invoice) {
@@ -260,6 +543,10 @@ function InvoiceDetailPanel({
     );
   }
 
+  const showPdfAction = process.env.NEXT_PUBLIC_ENABLE_INVOICE_HISTORY_PDF === "true" || Boolean(invoice.pdfUrl);
+  const displayStatus = invoiceDisplayStatus(invoice);
+  const returnTotal = returnedTotal(invoice);
+
   return (
     <aside className="min-h-0 border-l border-border bg-slate-50">
       <div className="flex h-full min-h-0 flex-col">
@@ -269,15 +556,16 @@ function InvoiceDetailPanel({
               <div className="font-mono text-xs text-slate-500">{invoice.invoiceNumber}</div>
               <div className="mt-1 text-lg font-bold text-slate-950">₹{Number(invoice.grandTotal).toFixed(2)}</div>
             </div>
-            <StatusBadge status={invoice.status} />
+            <StatusBadge status={displayStatus} />
           </div>
           <div className="mt-3 grid gap-1 text-xs text-slate-500">
             <div>{invoice.customer?.name ?? "Walk-in customer"}</div>
             {invoice.customer?.phone ? <div>{invoice.customer.phone}</div> : null}
             <div>{new Date(invoice.invoiceDate).toLocaleString("en-IN")}</div>
-            <div>Payment: {invoice.paymentMode}</div>
-            <div>Delivery: {invoice.delivery?.status ?? "Not required"}</div>
-            {isWhatsappInvoice(invoice) ? <div className="font-medium text-emerald-700">Source: WhatsApp order</div> : null}
+            <div>Payment: {formatPaymentSummary(invoice)}</div>
+            <div>Delivery: {formatDeliveryStatus(invoice)}</div>
+            {returnTotal > 0 ? <div className="font-medium text-amber-700">Return: ₹{returnTotal.toFixed(2)} {formatCreditNoteNumbers(invoice)}</div> : null}
+            {invoiceSourceLabel(invoice) !== "POS" ? <div className="font-medium text-emerald-700">Source: {invoiceSourceLabel(invoice)} order</div> : null}
           </div>
         </div>
 
@@ -305,20 +593,36 @@ function InvoiceDetailPanel({
               Edit invoice
             </button>
           ) : null}
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
-            <Printer className="size-4" aria-hidden="true" />
-            Print PDF
-          </button>
+          {showPdfAction ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-900 px-3 text-sm font-medium text-white" onClick={() => void onPrint(invoice)}>
+              <Printer className="size-4" aria-hidden="true" />
+              Print PDF
+            </button>
+          ) : null}
           {invoice.customer?.phone ? (
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => onShareWhatsapp(invoice)}>
               <MessageCircle className="size-4" aria-hidden="true" />
               Send WhatsApp
             </button>
           ) : null}
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:opacity-40" disabled={invoice.status === "CANCELLED"} onClick={() => onCancel(invoice)}>
-            <XCircle className="size-4" aria-hidden="true" />
-            Cancel invoice
-          </button>
+          {canSendPaymentLinks && invoice.customer?.phone && Number(invoice.amountDue) > 0 && ["CONFIRMED", "PARTIAL"].includes(invoice.status) ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-800" onClick={() => void onSendPaymentLink(invoice)}>
+              <MessageCircle className="size-4" aria-hidden="true" />
+              Send payment link
+            </button>
+          ) : null}
+          {canProcessReturn(invoice) ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 text-sm font-medium text-amber-800" onClick={() => onReturn(invoice)}>
+              <RotateCcw className="size-4" aria-hidden="true" />
+              Process return
+            </button>
+          ) : null}
+          {canCancel ? (
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 disabled:opacity-40" disabled={invoice.status === "CANCELLED"} onClick={() => onCancel(invoice)}>
+              <XCircle className="size-4" aria-hidden="true" />
+              Cancel invoice
+            </button>
+          ) : null}
         </div>
       </div>
     </aside>
@@ -332,11 +636,99 @@ function StatusBadge({ status }: Readonly<{ status: string }>) {
 
 function statusClass(status: string): string {
   if (status === "PAID") return "bg-emerald-50 text-emerald-700";
-  if (status === "PARTIAL" || status === "CONFIRMED") return "bg-amber-50 text-amber-800";
+  if (status === "RETURNED") return "bg-purple-50 text-purple-700";
+  if (status === "PARTIAL RETURN" || status === "PARTIAL" || status === "CONFIRMED") return "bg-amber-50 text-amber-800";
   if (status === "CANCELLED") return "bg-red-50 text-red-700";
   return "bg-slate-100 text-slate-600";
 }
 
+function invoiceDisplayStatus(invoice: InvoiceRecord): string {
+  const totalReturned = returnedTotal(invoice);
+  if (invoice.status === "PAID" && totalReturned > 0) {
+    return totalReturned >= Number(invoice.grandTotal) - 0.01 ? "RETURNED" : "PARTIAL RETURN";
+  }
+
+  return invoice.status;
+}
+
+function canProcessReturn(invoice: InvoiceRecord): boolean {
+  return invoice.status === "PAID" && returnedTotal(invoice) < Number(invoice.grandTotal) - 0.01;
+}
+
+function returnedTotal(invoice: InvoiceRecord): number {
+  return (invoice.creditNotes ?? [])
+    .filter((note) => note.status !== "CANCELLED")
+    .reduce((sum, note) => sum + Number(note.grandTotal), 0);
+}
+
+function formatCreditNoteNumbers(invoice: InvoiceRecord): string {
+  const numbers = (invoice.creditNotes ?? [])
+    .filter((note) => note.status !== "CANCELLED")
+    .map((note) => note.creditNoteNumber);
+  return numbers.length > 0 ? `(${numbers.join(", ")})` : "";
+}
+
+function formatPaymentSummary(invoice: InvoiceRecord): string {
+  const payments = (invoice.payments ?? []).filter((payment) => !payment.voidedAt);
+  if (payments.length === 0) {
+    return invoice.paymentMode;
+  }
+
+  return payments
+    .map((payment) => {
+      const label = payment.paymentMethod?.name ?? payment.mode ?? invoice.paymentMode;
+      const amount = Number(payment.amount);
+      return payments.length > 1 && Number.isFinite(amount)
+        ? `${label} ₹${amount.toFixed(2)}`
+        : label;
+    })
+    .join(" + ");
+}
+
+function formatDeliveryStatus(invoice: InvoiceRecord): string {
+  if (!invoice.delivery) {
+    return "Not required";
+  }
+
+  const label = invoice.delivery.status
+    .split("_")
+    .map((part) => part.slice(0, 1) + part.slice(1).toLowerCase())
+    .join(" ");
+  return `Required - ${label}`;
+}
+
 function isWhatsappInvoice(invoice: InvoiceRecord): boolean {
   return invoice.verticalData?.source === "WHATSAPP" || typeof invoice.verticalData?.whatsappOrderId === "string";
+}
+
+function isEcommerceInvoice(invoice: InvoiceRecord): boolean {
+  return invoice.verticalData?.source === "ECOMMERCE";
+}
+
+function invoiceSourceLabel(invoice: InvoiceRecord): "Ecommerce" | "POS" | "WhatsApp" {
+  if (isEcommerceInvoice(invoice)) return "Ecommerce";
+  if (isWhatsappInvoice(invoice)) return "WhatsApp";
+  return "POS";
+}
+
+function InvoiceSourceBadge({ invoice }: Readonly<{ invoice: InvoiceRecord }>) {
+  if (isEcommerceInvoice(invoice)) {
+    return (
+      <div className="mt-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-blue-700">
+        <ShoppingBag className="size-3" aria-hidden="true" />
+        Ecommerce
+      </div>
+    );
+  }
+
+  if (isWhatsappInvoice(invoice)) {
+    return (
+      <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+        <MessageCircle className="size-3" aria-hidden="true" />
+        WhatsApp
+      </div>
+    );
+  }
+
+  return null;
 }

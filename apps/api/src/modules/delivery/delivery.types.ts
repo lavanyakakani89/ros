@@ -8,6 +8,15 @@ export interface CreateDeliveryInput {
   notes?: string | undefined;
 }
 
+export interface SyncInvoiceDeliveryInput {
+  invoiceId: string;
+  deliveryRequired: boolean;
+  customerId?: string | undefined;
+  deliveryAddress?: string | undefined;
+  scheduledAt?: Date | undefined;
+  notes?: string | undefined;
+}
+
 export interface DeliveryListQuery {
   status?: DeliveryStatus | undefined;
   scope?: "active" | "archive" | undefined;
