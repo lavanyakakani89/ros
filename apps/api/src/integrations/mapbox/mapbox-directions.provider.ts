@@ -24,6 +24,9 @@ export class MapboxDirectionsProvider implements RouteGeometryProvider {
     if (input.coordinates.length < 2) {
       return null;
     }
+    if (!Number.isInteger(this.config.maxDirectionsCoordinates) || this.config.maxDirectionsCoordinates < 2 || this.config.maxDirectionsCoordinates > 25) {
+      throw new Error("Mapbox Directions supports between 2 and 25 coordinates per request.");
+    }
 
     const chunks = chunkCoordinates(input.coordinates, this.config.maxDirectionsCoordinates);
     const geometries: unknown[] = [];
@@ -65,6 +68,10 @@ export class MapboxDirectionsProvider implements RouteGeometryProvider {
 }
 
 function chunkCoordinates<T>(coordinates: T[], maxPerRequest: number): T[][] {
+  if (maxPerRequest < 2) {
+    throw new Error("Directions coordinate chunks require at least 2 coordinates.");
+  }
+
   if (coordinates.length <= maxPerRequest) {
     return [coordinates];
   }

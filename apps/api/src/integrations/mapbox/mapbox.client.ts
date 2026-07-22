@@ -6,17 +6,23 @@ export interface MapboxConfig {
   geocodingStorageMode: "permanent" | "temporary";
   storeRawGeocodingResponse: boolean;
   routingProfile: string;
+  trafficProfileEnabled: boolean;
   maxDirectionsCoordinates: number;
+  optimizationProvider: "v2" | "manual";
 }
 
 export function getMapboxConfig(): MapboxConfig {
+  const routingProfile = process.env.MAPBOX_ROUTING_PROFILE ?? "mapbox/driving";
+  const optimizationProvider = process.env.MAPBOX_OPTIMIZATION_PROVIDER === "manual" ? "manual" : "v2";
   return {
     enabled: process.env.MAPBOX_ROUTING_ENABLED === "true",
     serverAccessToken: process.env.MAPBOX_SERVER_ACCESS_TOKEN,
     geocodingStorageMode: process.env.MAPBOX_GEOCODING_STORAGE_MODE === "temporary" ? "temporary" : "permanent",
     storeRawGeocodingResponse: process.env.MAPBOX_STORE_RAW_GEOCODING_RESPONSE === "true",
-    routingProfile: process.env.MAPBOX_ROUTING_PROFILE ?? "mapbox/driving",
+    routingProfile,
+    trafficProfileEnabled: process.env.MAPBOX_TRAFFIC_PROFILE_ENABLED === "true",
     maxDirectionsCoordinates: Number(process.env.MAPBOX_MAX_DIRECTIONS_COORDINATES ?? 25),
+    optimizationProvider,
   };
 }
 
@@ -28,6 +34,18 @@ export function validateMapboxConfiguration(): void {
 
   if (!config.serverAccessToken) {
     throw new MapboxConfigurationError("MAPBOX_ROUTING_ENABLED=true requires MAPBOX_SERVER_ACCESS_TOKEN.");
+  }
+
+  if (!["mapbox/driving", "mapbox/driving-traffic", "mapbox/walking", "mapbox/cycling"].includes(config.routingProfile)) {
+    throw new MapboxConfigurationError("MAPBOX_ROUTING_PROFILE must be one of mapbox/driving, mapbox/driving-traffic, mapbox/walking, or mapbox/cycling.");
+  }
+
+  if (config.routingProfile === "mapbox/driving-traffic" && !config.trafficProfileEnabled) {
+    throw new MapboxConfigurationError("MAPBOX_ROUTING_PROFILE=mapbox/driving-traffic requires MAPBOX_TRAFFIC_PROFILE_ENABLED=true.");
+  }
+
+  if (!Number.isInteger(config.maxDirectionsCoordinates) || config.maxDirectionsCoordinates < 2 || config.maxDirectionsCoordinates > 25) {
+    throw new MapboxConfigurationError("MAPBOX_MAX_DIRECTIONS_COORDINATES must be an integer between 2 and 25.");
   }
 
   if (config.geocodingStorageMode !== "permanent") {

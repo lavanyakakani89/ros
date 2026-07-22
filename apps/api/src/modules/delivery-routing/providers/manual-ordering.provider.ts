@@ -118,8 +118,16 @@ function nearestNeighborOrder(
   locations: Map<string, RouteOptimizationInput["locations"][number]>,
 ): RouteOptimizationInput["services"] {
   const ordered: RouteOptimizationInput["services"] = [];
-  const remaining = [...services];
+  const locked = services
+    .filter((service) => service.lockedSequence !== undefined)
+    .sort((left, right) => (left.lockedSequence ?? 0) - (right.lockedSequence ?? 0));
+  const remaining = services.filter((service) => service.lockedSequence === undefined);
   let current = locations.get(startLocationId)?.coordinate;
+
+  for (const service of locked) {
+    ordered.push(service);
+    current = locations.get(service.locationId)?.coordinate ?? current;
+  }
 
   while (remaining.length > 0) {
     if (!current) {

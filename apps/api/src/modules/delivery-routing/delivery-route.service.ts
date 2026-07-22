@@ -427,7 +427,15 @@ export class DeliveryRouteService {
 
   private getOptimizationProvider(provider?: string): RouteOptimizationProvider {
     const client = new MapboxClient();
-    if ((provider === "mapbox-optimization-v2" || (!provider && getMapboxConfig().enabled)) && client.isConfigured()) {
+    const config = getMapboxConfig();
+    if (provider === "mapbox-optimization-v2") {
+      if (!client.isConfigured()) {
+        throw new DeliveryRouteError("Mapbox Optimization v2 is not configured for this route plan.", 409);
+      }
+      return new MapboxOptimizationV2Provider(client);
+    }
+
+    if (!provider && config.enabled && config.optimizationProvider === "v2" && client.isConfigured()) {
       return new MapboxOptimizationV2Provider(client);
     }
 
@@ -436,7 +444,14 @@ export class DeliveryRouteService {
 
   private getGeometryProvider(provider?: string): RouteGeometryProvider {
     const client = new MapboxClient();
-    if ((provider?.startsWith("mapbox") || (!provider && getMapboxConfig().enabled)) && client.isConfigured()) {
+    if (provider?.startsWith("mapbox")) {
+      if (!client.isConfigured()) {
+        throw new DeliveryRouteError("Mapbox Directions is not configured for this route plan.", 409);
+      }
+      return new MapboxDirectionsProvider(client);
+    }
+
+    if (!provider && getMapboxConfig().enabled && client.isConfigured()) {
       return new MapboxDirectionsProvider(client);
     }
 
@@ -459,6 +474,12 @@ export class DeliveryRouteService {
         data: { status: DeliveryRoutePlanStatus.LOCATION_REVIEW_REQUIRED },
       });
       throw new DeliveryRouteError("Some route stops need geocoding or manual pin review before optimization", 422);
+    }
+
+    const locationCount = 1 + plan.routes.reduce((count, route) => count + route.stops.length, 0);
+    const mapboxConfig = getMapboxConfig();
+    if (mapboxConfig.enabled && mapboxConfig.optimizationProvider === "v2" && locationCount > 1000) {
+      throw new DeliveryRouteError("Mapbox Optimization v2 supports up to 1,000 locations per route plan.", 422);
     }
   }
 }
