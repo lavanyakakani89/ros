@@ -151,12 +151,7 @@ export function DeliveryAgentApp() {
   );
 
   useEffect(() => {
-    if (typeof Notification === "undefined") {
-      setNotificationPermission("unsupported");
-      return;
-    }
-
-    setNotificationPermission(Notification.permission);
+    setNotificationPermission(getBrowserNotificationPermission());
   }, []);
 
   useEffect(() => {
@@ -165,7 +160,7 @@ export function DeliveryAgentApp() {
     for (const notification of unread) {
       if (notifiedIds.current.has(notification.id)) continue;
       notifiedIds.current.add(notification.id);
-      new Notification(notification.title, { body: notification.body, tag: notification.id });
+      showBrowserNotification(notification);
     }
   }, [notificationPermission, unread]);
 
@@ -175,13 +170,24 @@ export function DeliveryAgentApp() {
   }
 
   async function requestNotifications() {
-    if (typeof Notification === "undefined") {
+    const notificationApi = getNotificationApi();
+    if (!notificationApi) {
       setNotificationPermission("unsupported");
       return;
     }
 
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
+    try {
+      const permission = await notificationApi.requestPermission();
+      setNotificationPermission(permission);
+      if (permission === "granted") {
+        notify("Alerts enabled.");
+      } else if (permission === "denied") {
+        notify("Alerts are blocked in this browser.", "red");
+      }
+    } catch {
+      setNotificationPermission("unsupported");
+      notify("Alerts are not available in this browser.", "red");
+    }
   }
 
   async function handleLogout() {
@@ -495,6 +501,33 @@ function statusClass(status: DeliveryStatus): string {
 
 function proofNoteKey(deliveryId: string, proofType: ProofType): string {
   return `${deliveryId}:${proofType}`;
+}
+
+function getNotificationApi(): typeof Notification | null {
+  if (typeof window === "undefined" || !("Notification" in window)) return null;
+  return window.Notification;
+}
+
+function getBrowserNotificationPermission(): NotificationPermission | "unsupported" {
+  const notificationApi = getNotificationApi();
+  if (!notificationApi) return "unsupported";
+
+  try {
+    return notificationApi.permission;
+  } catch {
+    return "unsupported";
+  }
+}
+
+function showBrowserNotification(notification: AppNotification): void {
+  const notificationApi = getNotificationApi();
+  if (!notificationApi || notificationApi.permission !== "granted") return;
+
+  try {
+    new notificationApi(notification.title, { body: notification.body, tag: notification.id });
+  } catch {
+    // Some mobile/PWA contexts expose Notification but reject direct construction.
+  }
 }
 
 function currentLocation(): Promise<{ latitude: number; longitude: number }> {

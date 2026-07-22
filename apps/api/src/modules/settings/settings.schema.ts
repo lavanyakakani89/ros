@@ -21,6 +21,10 @@ export const updateTenantSchema = z.object({
   gstNumber: z.string().trim().min(15).max(15).nullable().optional(),
   gstEnabled: z.boolean().optional(),
   address: z.string().trim().min(3).nullable().optional(),
+  depotName: z.string().trim().min(1).nullable().optional(),
+  depotAddress: z.string().trim().min(3).nullable().optional(),
+  depotLatitude: z.coerce.number().min(-90).max(90).nullable().optional(),
+  depotLongitude: z.coerce.number().min(-180).max(180).nullable().optional(),
 });
 
 export const createUserSchema = z.object({

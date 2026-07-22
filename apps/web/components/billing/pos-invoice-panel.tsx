@@ -433,9 +433,21 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.altKey || event.metaKey) return;
       const key = event.key;
-      const shortcut = paymentMethods.find((method) => method.keyboard_shortcut?.toLowerCase() === `ctrl+${key}`.toLowerCase());
+
+      if (!event.ctrlKey && /^F(?:2|4|8|9)$/.test(key)) {
+        const shortcut = findPaymentMethodByShortcut(paymentMethods, key);
+        if (shortcut) {
+          event.preventDefault();
+          selectPaymentMethod(shortcut);
+          void confirmInvoice(paymentMethodToMode(shortcut), shortcut.id);
+        }
+        return;
+      }
+
+      if (!event.ctrlKey) return;
+      const shortcut = findPaymentMethodByShortcut(paymentMethods, `Ctrl+${key}`);
       if (shortcut) {
         event.preventDefault();
         selectPaymentMethod(shortcut);
@@ -2132,6 +2144,11 @@ function paymentMethodToMode(method: PaymentMethodRecord): PaymentMode {
   if (method.type === "card") return "CARD";
   if (method.type === "credit") return "CREDIT";
   return "CASH";
+}
+
+function findPaymentMethodByShortcut(paymentMethods: PaymentMethodRecord[], shortcut: string) {
+  const normalizedShortcut = shortcut.toLowerCase();
+  return paymentMethods.find((method) => method.keyboard_shortcut?.toLowerCase() === normalizedShortcut);
 }
 
 function escapeHtml(value: string): string {

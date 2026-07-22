@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, MessageCircle, Smartphone, Truck } from "lucide-react";
+import { Camera, ClipboardList, MessageCircle, Route, Smartphone, Truck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -46,6 +46,12 @@ interface DeliveryItem {
 }
 
 interface SettingsResponse {
+  store: {
+    depotName?: string | null;
+    depotAddress?: string | null;
+    depotLatitude?: string | number | null;
+    depotLongitude?: string | number | null;
+  } | null;
   users: Array<{
     id: string;
     name: string;
@@ -62,6 +68,7 @@ export function DeliveryBoard() {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState(() => todayDate());
   const [to, setTo] = useState(() => todayDate());
+  const [view, setView] = useState<"board" | "route-planning">("board");
   const activeDeliveriesQuery = useQuery({
     queryKey: ["deliveries", "board", "active"],
     queryFn: () => createAuthenticatedApiClient().get<DeliveryItem[]>("/delivery?scope=active"),
@@ -105,6 +112,12 @@ export function DeliveryBoard() {
 
   const deliveries = [...(activeDeliveriesQuery.data ?? fallbackDeliveries), ...(deliveredDeliveriesQuery.data ?? fallbackDeliveries)];
   const deliveryUsers = (usersQuery.data?.users ?? []).filter((user) => user.role === "DELIVERY" && user.isActive);
+  const depot = usersQuery.data?.store ? {
+    name: usersQuery.data.store.depotName ?? null,
+    address: usersQuery.data.store.depotAddress ?? null,
+    latitude: usersQuery.data.store.depotLatitude ?? null,
+    longitude: usersQuery.data.store.depotLongitude ?? null,
+  } : null;
   const isLoadingBoard = activeDeliveriesQuery.isLoading || deliveredDeliveriesQuery.isLoading;
   const boardError = activeDeliveriesQuery.error ?? deliveredDeliveriesQuery.error;
 
@@ -145,7 +158,19 @@ export function DeliveryBoard() {
           {(boardError instanceof Error ? boardError.message : "Unable to load deliveries right now.")} Try again in a moment.
         </div>
       ) : null}
-      <DeliveryRoutePlanner deliveries={activeDeliveriesQuery.data ?? fallbackDeliveries} users={deliveryUsers} />
+      <div className="flex flex-wrap gap-2 rounded-md border border-border bg-white p-2">
+        <button className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold ${view === "board" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`} onClick={() => setView("board")}>
+          <ClipboardList className="size-4" aria-hidden="true" />
+          Board
+        </button>
+        <button className={`inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-semibold ${view === "route-planning" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"}`} onClick={() => setView("route-planning")}>
+          <Route className="size-4" aria-hidden="true" />
+          Route planning
+        </button>
+      </div>
+      {view === "route-planning" ? (
+        <DeliveryRoutePlanner deliveries={activeDeliveriesQuery.data ?? fallbackDeliveries} users={deliveryUsers} depot={depot} />
+      ) : (
       <div className="grid gap-4 lg:grid-cols-4">
       {statuses.map((status) => {
         const items = deliveries.filter((delivery) => delivery.status === status);
@@ -225,6 +250,7 @@ export function DeliveryBoard() {
         );
       })}
       </div>
+      )}
     </div>
   );
 }

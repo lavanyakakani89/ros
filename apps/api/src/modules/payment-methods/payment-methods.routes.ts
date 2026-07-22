@@ -6,6 +6,10 @@ import { z } from "zod";
 const paymentMethodTypeSchema = z.preprocess((value) => upperString(value, "CUSTOM"), z.nativeEnum(PaymentMethodType));
 const settlementStatusSchema = z.preprocess((value) => upperString(value, ""), z.nativeEnum(SettlementStatus));
 const roleListSchema = z.array(z.string().trim().transform((role) => role.toUpperCase())).default([]);
+const keyboardShortcutSchema = z.preprocess(
+  (value) => typeof value === "string" ? normalizeKeyboardShortcut(value) : value,
+  z.string().regex(/^(?:Ctrl\+[1-9]|F2|F4|F8|F9)$/).nullable(),
+);
 
 const queryBooleanSchema = z.preprocess((value) => {
   if (value === undefined) return false;
@@ -24,7 +28,7 @@ const methodPayloadSchema = z.object({
   type: paymentMethodTypeSchema.optional(),
   color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   icon: z.string().trim().min(1).max(64).optional(),
-  keyboard_shortcut: z.string().trim().min(1).max(8).nullable().optional(),
+  keyboard_shortcut: keyboardShortcutSchema.optional(),
   display_order: z.coerce.number().int().min(1).optional(),
   is_active: z.boolean().optional(),
   requires_reference: z.boolean().optional(),
@@ -161,6 +165,11 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       orderBy: { displayOrder: "asc" },
     });
     const methodById = new Map(methods.map((method) => [method.id, method]));
+    const orderedMethods = input.map((item) => {
+      const method = methodById.get(item.id);
+      if (!method) throw new Error("Payment method not found");
+      return method;
+    });
     await fastify.prisma.$transaction(input.map((item, index) => {
       const method = methodById.get(item.id);
       if (!method) throw new Error("Payment method not found");
@@ -168,7 +177,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         where: { id: item.id },
         data: {
           displayOrder: item.display_order,
-          keyboardShortcut: index < 9 ? `Ctrl+${String(index + 1)}` : null,
+          keyboardShortcut: method.isDefault ? defaultKeyboardShortcut(method.type) : customShortcutForIndex(index, orderedMethods),
         },
       });
     }));
@@ -184,6 +193,11 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       throw statusError("Default methods cannot change type or short code", 403);
     }
     const nextType = input.type ?? existing.type;
+    const keyboardShortcutUpdate = existing.isDefault
+      ? { keyboardShortcut: defaultKeyboardShortcut(existing.type) }
+      : input.keyboard_shortcut !== undefined
+        ? { keyboardShortcut: input.keyboard_shortcut }
+        : {};
     const nextUpiId = input.upi_id !== undefined ? input.upi_id : existing.upiId;
     const upiQrData = nextType === PaymentMethodType.UPI && input.upi_id !== undefined
       ? await buildQrOrThrow(nextUpiId, request.tenant.name)
@@ -196,7 +210,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
         ...(input.type !== undefined ? { type: input.type } : {}),
         ...(input.color !== undefined ? { color: input.color } : {}),
         ...(input.icon !== undefined ? { icon: input.icon } : {}),
-        ...(input.keyboard_shortcut !== undefined ? { keyboardShortcut: input.keyboard_shortcut } : {}),
+        ...keyboardShortcutUpdate,
         ...(input.display_order !== undefined ? { displayOrder: input.display_order } : {}),
         ...(input.is_active !== undefined ? { isActive: input.is_active } : {}),
         ...(input.requires_reference !== undefined ? { requiresReference: input.requires_reference } : {}),
@@ -628,6 +642,30 @@ function defaultIcon(type: PaymentMethodType) {
   if (type === PaymentMethodType.CARD) return "ti-credit-card";
   if (type === PaymentMethodType.CREDIT) return "ti-user-dollar";
   return "ti-cash";
+}
+
+function defaultKeyboardShortcut(type: PaymentMethodType) {
+  if (type === PaymentMethodType.CASH) return "F2";
+  if (type === PaymentMethodType.UPI) return "F4";
+  if (type === PaymentMethodType.CARD) return "F8";
+  if (type === PaymentMethodType.CREDIT) return "F9";
+  return null;
+}
+
+function customShortcutForIndex(index: number, methods: Array<{ id: string; isDefault: boolean }>) {
+  const customIndex = methods.slice(0, index + 1).filter((method) => !method.isDefault).length;
+  return customIndex >= 1 && customIndex <= 9 ? `Ctrl+${String(customIndex)}` : null;
+}
+
+function normalizeKeyboardShortcut(value: string) {
+  const shortcut = value.trim();
+  const ctrlMatch = /^ctrl\+([1-9])$/i.exec(shortcut);
+  if (ctrlMatch) return `Ctrl+${String(ctrlMatch[1])}`;
+
+  const functionKeyMatch = /^(f[2489])$/i.exec(shortcut);
+  if (functionKeyMatch) return (functionKeyMatch[1] ?? shortcut).toUpperCase();
+
+  return shortcut;
 }
 
 function legacyMode(type: PaymentMethodType | undefined) {

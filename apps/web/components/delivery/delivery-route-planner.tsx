@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ExternalLink, LocateFixed, Lock, MapPin, Navigation, Play, Route, Send, Unlock, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { parseLocationCoordinates } from "@/lib/location-coordinate-parser";
@@ -40,6 +40,13 @@ export interface RoutePlannerUser {
   isActive: boolean;
 }
 
+export interface RoutePlannerDepot {
+  name?: string | null;
+  address?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+}
+
 interface RoutePlan {
   id: string;
   name: string;
@@ -73,7 +80,7 @@ interface RoutePlan {
   }>;
 }
 
-export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliveries: RoutePlannerDelivery[]; users: RoutePlannerUser[] }>) {
+export function DeliveryRoutePlanner({ deliveries, users, depot }: Readonly<{ deliveries: RoutePlannerDelivery[]; users: RoutePlannerUser[]; depot?: RoutePlannerDepot | null }>) {
   const queryClient = useQueryClient();
   const tenant = typeof window !== "undefined" ? getStoredTenant() : null;
   const activeDeliveries = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status));
@@ -90,6 +97,15 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
   const missingPins = selectedDeliveries.filter((delivery) => !hasLocation(delivery));
   const depotCoordinates = validCoordinates(depotLatitude, depotLongitude);
 
+  useEffect(() => {
+    if (!depot) return;
+    setDepotAddress(depot.address ?? "");
+    setDepotLatitude(depot.latitude === null || depot.latitude === undefined ? "" : String(depot.latitude));
+    setDepotLongitude(depot.longitude === null || depot.longitude === undefined ? "" : String(depot.longitude));
+    setDepotCoordinateInput(depot.latitude && depot.longitude ? `${String(depot.latitude)}, ${String(depot.longitude)}` : "");
+    setDepotCoordinateError("");
+  }, [depot]);
+
   const plansQuery = useQuery({
     queryKey: ["delivery-route-plans"],
     queryFn: () => createAuthenticatedApiClient().get<RoutePlan[]>("/delivery-route-plans"),
@@ -99,7 +115,7 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
     mutationFn: () => createAuthenticatedApiClient().post<RoutePlan>("/delivery-route-plans", {
       deliveryIds: selectedDeliveryIds,
       driverIds: selectedDriverIds,
-      depotName: tenant?.name ?? "Store",
+      depotName: depot?.name ?? tenant?.name ?? "Store",
       depotAddress,
       depotLatitude: depotCoordinates?.latitude,
       depotLongitude: depotCoordinates?.longitude,
@@ -252,7 +268,7 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
                   <div className="flex min-w-0 items-center gap-2">
                     <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
                     <span className="break-words">
-                      Depot location saved for this plan: {depotCoordinates.latitude.toFixed(7)}, {depotCoordinates.longitude.toFixed(7)}
+                      Depot location for this plan: {depotCoordinates.latitude.toFixed(7)}, {depotCoordinates.longitude.toFixed(7)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">

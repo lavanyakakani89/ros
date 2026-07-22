@@ -22,34 +22,70 @@ export class SettingsService {
   }
 
   async getCurrentTenant(tenant: Tenant) {
-    const users = await this.prisma.user.findMany({
-      where: {
-        tenantId: tenant.id,
-      },
-      select: userSelect,
-      orderBy: {
-        createdAt: "asc",
-      },
-    });
+    const [users, store] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          tenantId: tenant.id,
+        },
+        select: userSelect,
+        orderBy: {
+          createdAt: "asc",
+        },
+      }),
+      this.getDefaultStore(tenant.id),
+    ]);
 
     return {
       tenant,
+      store,
       users,
     };
   }
 
   async updateTenant(tenant: Tenant, input: UpdateTenantInput) {
-    return this.prisma.tenant.update({
-      where: {
-        id: tenant.id,
-      },
-      data: {
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.phone !== undefined ? { phone: input.phone } : {}),
-        ...(input.gstNumber !== undefined ? { gstNumber: input.gstNumber } : {}),
-        ...(input.gstEnabled !== undefined ? { gstEnabled: input.gstEnabled } : {}),
-        ...(input.address !== undefined ? { address: input.address } : {}),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const updatedTenant = await tx.tenant.update({
+        where: {
+          id: tenant.id,
+        },
+        data: {
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.phone !== undefined ? { phone: input.phone } : {}),
+          ...(input.gstNumber !== undefined ? { gstNumber: input.gstNumber } : {}),
+          ...(input.gstEnabled !== undefined ? { gstEnabled: input.gstEnabled } : {}),
+          ...(input.address !== undefined ? { address: input.address } : {}),
+        },
+      });
+
+      const storeChanged = input.name !== undefined || input.phone !== undefined || input.address !== undefined || input.depotName !== undefined || input.depotAddress !== undefined || input.depotLatitude !== undefined || input.depotLongitude !== undefined;
+      if (storeChanged) {
+        const store = await tx.store.findFirst({
+          where: {
+            tenantId: tenant.id,
+            isActive: true,
+          },
+          orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        });
+
+        if (!store) {
+          throw new SettingsError("Store not found", 404);
+        }
+
+        await tx.store.update({
+          where: { id: store.id },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.phone !== undefined ? { phone: input.phone } : {}),
+            ...(input.address !== undefined ? { address: input.address } : {}),
+            ...(input.depotName !== undefined ? { depotName: input.depotName } : {}),
+            ...(input.depotAddress !== undefined ? { depotAddress: input.depotAddress } : {}),
+            ...(input.depotLatitude !== undefined ? { depotLatitude: input.depotLatitude } : {}),
+            ...(input.depotLongitude !== undefined ? { depotLongitude: input.depotLongitude } : {}),
+          },
+        });
+      }
+
+      return updatedTenant;
     });
   }
 
@@ -199,6 +235,26 @@ export class SettingsService {
     if (conflict) {
       throw new SettingsError("Username or email already exists. Use a different login name.", 409);
     }
+  }
+
+  private getDefaultStore(tenantId: string) {
+    return this.prisma.store.findFirst({
+      where: {
+        tenantId,
+        isActive: true,
+      },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: {
+        id: true,
+        name: true,
+        address: true,
+        phone: true,
+        depotName: true,
+        depotAddress: true,
+        depotLatitude: true,
+        depotLongitude: true,
+      },
+    });
   }
 }
 

@@ -144,7 +144,7 @@ export function PaymentMethodsSettings() {
       color: "#1a6e4a",
       icon: "ti-cash",
       display_order: nextOrder,
-      keyboard_shortcut: nextOrder <= 9 ? `Ctrl+${String(nextOrder)}` : "",
+      keyboard_shortcut: nextCustomShortcut(methods),
       requires_reference: false,
       reference_label: "",
       allows_split: true,
@@ -301,7 +301,7 @@ function MethodDrawer({ form, partners, onChange, onClose, onSave, isSaving, err
 
           <div className="grid gap-3 sm:grid-cols-2">
             <TextField label="Display order" value={String(form.display_order)} onChange={(value) => set("display_order", Number(value) || 100)} type="number" />
-            <TextField label="Keyboard shortcut" value={form.keyboard_shortcut} onChange={(value) => set("keyboard_shortcut", value)} placeholder="Ctrl+5" />
+            <TextField label="Keyboard shortcut" value={form.keyboard_shortcut} onChange={(value) => set("keyboard_shortcut", value)} placeholder="Ctrl+5" disabled={isDefaultLocked} />
           </div>
 
           {form.type === "upi" ? (
@@ -427,6 +427,15 @@ function toPayload(form: MethodFormState) {
     settlement_frequency: form.settlement_frequency || null,
     allowed_roles: form.allowed_roles,
   };
+}
+
+function nextCustomShortcut(methods: PaymentMethodRecord[]): string {
+  const usedShortcuts = new Set(methods.map((method) => method.keyboard_shortcut?.toLowerCase()).filter(Boolean));
+  for (let index = 1; index <= 9; index += 1) {
+    const shortcut = `Ctrl+${String(index)}`;
+    if (!usedShortcuts.has(shortcut.toLowerCase())) return shortcut;
+  }
+  return "";
 }
 
 function escapeHtml(value: string): string {

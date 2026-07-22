@@ -137,6 +137,10 @@ model Store {
   tenant           Tenant                @relation(fields: [tenantId], references: [id])
   name             String
   address          String?
+  depotName        String?               @map("depot_name")
+  depotAddress     String?               @map("depot_address")
+  depotLatitude    Decimal?              @map("depot_latitude") @db.Decimal(10, 7)
+  depotLongitude   Decimal?              @map("depot_longitude") @db.Decimal(10, 7)
   phone            String?
   isDefault        Boolean               @default(false) @map("is_default")
   isActive         Boolean               @default(true) @map("is_active")

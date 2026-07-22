@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, MessageCircle, Printer, Save, UserPlus } from "lucide-react";
+import { ExternalLink, FileText, MapPin, MessageCircle, Printer, Save, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
+import { parseLocationCoordinates } from "@/lib/location-coordinate-parser";
 import { getStoredTenant, getStoredVerticalConfig, storeTenant, type StoredTenant } from "@/lib/vertical-config";
 
 interface SettingsResponse {
@@ -20,6 +21,16 @@ interface SettingsResponse {
     address?: string | null;
     vertical: string;
   };
+  store: {
+    id: string;
+    name: string;
+    address?: string | null;
+    phone?: string | null;
+    depotName?: string | null;
+    depotAddress?: string | null;
+    depotLatitude?: string | number | null;
+    depotLongitude?: string | number | null;
+  } | null;
   users: UserRecord[];
 }
 
@@ -37,6 +48,12 @@ export function SettingsPanel() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
   const [gstEnabled, setGstEnabled] = useState(true);
+  const [depotName, setDepotName] = useState("");
+  const [depotAddress, setDepotAddress] = useState("");
+  const [depotLatitude, setDepotLatitude] = useState("");
+  const [depotLongitude, setDepotLongitude] = useState("");
+  const [depotCoordinateInput, setDepotCoordinateInput] = useState("");
+  const [depotCoordinateError, setDepotCoordinateError] = useState("");
   const settingsQuery = useQuery({
     queryKey: ["settings-current"],
     queryFn: () => createAuthenticatedApiClient().get<SettingsResponse>("/settings/current"),
@@ -81,6 +98,21 @@ export function SettingsPanel() {
     }
   }, [settings?.tenant.gstEnabled]);
 
+  useEffect(() => {
+    if (!settings) return;
+    const store = settings.store;
+    const storeDepotLatitude = store?.depotLatitude;
+    const storeDepotLongitude = store?.depotLongitude;
+    setDepotName(store?.depotName ?? store?.name ?? settings.tenant.name);
+    setDepotAddress(store?.depotAddress ?? store?.address ?? settings.tenant.address ?? "");
+    setDepotLatitude(storeDepotLatitude === null || storeDepotLatitude === undefined ? "" : String(storeDepotLatitude));
+    setDepotLongitude(storeDepotLongitude === null || storeDepotLongitude === undefined ? "" : String(storeDepotLongitude));
+    setDepotCoordinateInput(storeDepotLatitude && storeDepotLongitude ? `${String(storeDepotLatitude)}, ${String(storeDepotLongitude)}` : "");
+    setDepotCoordinateError("");
+  }, [settings]);
+
+  const depotCoordinates = validCoordinates(depotLatitude, depotLongitude);
+
   function handleTenantSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -91,7 +123,36 @@ export function SettingsPanel() {
       gstEnabled,
       gstNumber: gstEnabled ? formString(form, "gstNumber") || null : null,
       address: formString(form, "address") || null,
+      depotName: depotName.trim() || null,
+      depotAddress: depotAddress.trim() || null,
+      depotLatitude: depotCoordinates?.latitude ?? null,
+      depotLongitude: depotCoordinates?.longitude ?? null,
     });
+  }
+
+  function handleDepotCoordinateInput(value: string) {
+    setDepotCoordinateInput(value);
+    if (!value.trim()) {
+      setDepotCoordinateError("");
+      return;
+    }
+
+    const parsed = parseLocationCoordinates(value);
+    if (!parsed) {
+      setDepotCoordinateError("No coordinates found. Paste a full Google Maps URL or latitude, longitude.");
+      return;
+    }
+
+    setDepotLatitude(String(parsed.latitude));
+    setDepotLongitude(String(parsed.longitude));
+    setDepotCoordinateError("");
+  }
+
+  function clearDepotCoordinates() {
+    setDepotCoordinateInput("");
+    setDepotLatitude("");
+    setDepotLongitude("");
+    setDepotCoordinateError("");
   }
 
   function handleUserSubmit(event: React.SyntheticEvent<HTMLFormElement>) {
@@ -168,6 +229,59 @@ export function SettingsPanel() {
           </label>
           {gstEnabled ? <TextInput name="gstNumber" label="GSTIN" defaultValue={settings?.tenant.gstNumber ?? ""} /> : null}
           <TextInput name="address" label="Address" defaultValue={settings?.tenant.address ?? ""} />
+          <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 md:col-span-2 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <div className="text-sm font-semibold text-slate-950">Depot location</div>
+              <div className="text-xs text-slate-500">Used as the default route start and return point.</div>
+            </div>
+            <label className="block text-sm font-medium text-slate-700">
+              Depot name
+              <input value={depotName} onChange={(event) => setDepotName(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Depot address
+              <input value={depotAddress} onChange={(event) => setDepotAddress(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600" />
+            </label>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-slate-700">
+                Depot map link or coordinates
+                <input
+                  value={depotCoordinateInput}
+                  onChange={(event) => handleDepotCoordinateInput(event.target.value)}
+                  placeholder="Paste Google Maps URL or 17.3936069, 78.3796996"
+                  className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600"
+                />
+              </label>
+              {depotCoordinates ? (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MapPin className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="break-words">
+                      Depot coordinates: {depotCoordinates.latitude.toFixed(7)}, {depotCoordinates.longitude.toFixed(7)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a href={googleMapsUrl(depotCoordinates)} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 text-xs font-medium text-emerald-800">
+                      <ExternalLink className="size-3.5" aria-hidden="true" />
+                      Open
+                    </a>
+                    <button type="button" onClick={clearDepotCoordinates} className="inline-flex size-8 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800" aria-label="Clear depot coordinates">
+                      <X className="size-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {depotCoordinateError ? <div className="mt-2 text-xs text-amber-700">{depotCoordinateError}</div> : null}
+            </div>
+            <label className="block text-sm font-medium text-slate-700">
+              Depot lat
+              <input value={depotLatitude} onChange={(event) => setDepotLatitude(event.target.value)} inputMode="decimal" className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Depot lng
+              <input value={depotLongitude} onChange={(event) => setDepotLongitude(event.target.value)} inputMode="decimal" className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600" />
+            </label>
+          </div>
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={updateTenant.isPending}>
             <Save className="size-4" aria-hidden="true" />
             Save shop details
@@ -276,4 +390,16 @@ function TextInput({ name, label, type = "text", defaultValue, required }: Reado
       <input name={name} type={type} defaultValue={defaultValue} required={required} className="mt-1 h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600" />
     </label>
   );
+}
+
+function validCoordinates(latitudeValue: string, longitudeValue: string): { latitude: number; longitude: number } | null {
+  const latitude = Number(latitudeValue);
+  const longitude = Number(longitudeValue);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
+function googleMapsUrl(coordinates: { latitude: number; longitude: number }): string {
+  return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
 }
