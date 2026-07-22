@@ -1,13 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Download, FileSpreadsheet, Save, Upload } from "lucide-react";
+import { ChevronDown, Download, ExternalLink, FileSpreadsheet, MapPin, Save, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PaginationControls } from "@/components/shared/pagination-controls";
 import { createAuthenticatedApiClient, downloadApiFile, type PaginatedResponse } from "@/lib/api-client";
 import { formString } from "@/lib/form-values";
+import { parseLocationCoordinates, type ParsedCoordinates } from "@/lib/location-coordinate-parser";
 
 interface CustomerRecord {
   id: string;
@@ -36,6 +37,16 @@ interface CustomerRecord {
   outstandingDue: string | number;
   totalSpent?: number;
   lastVisitAt?: string | null;
+  locations?: CustomerLocationRecord[];
+}
+
+interface CustomerLocationRecord {
+  id: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  geocodingProvider?: string | null;
+  geocodingQuery?: string | null;
+  isDefault?: boolean;
 }
 
 export function CustomersClient() {
@@ -92,6 +103,7 @@ export function CustomersClient() {
             <TextInput name="phone" label="Contact No." required />
             <TextInput name="address" label="Address" required />
           </div>
+          <CustomerCoordinateInput />
           <CustomerOptionalFields />
           <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white md:col-span-2" disabled={createCustomer.isPending}>
             <Save className="size-4" aria-hidden="true" />
@@ -153,6 +165,7 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
         <TextInput name="name" label="Customer name" defaultValue={customer.name} required />
         <TextInput name="phone" label="Contact No." defaultValue={customer.phone} required />
         <TextInput name="address" label="Address" defaultValue={customer.address ?? ""} required />
+        <CustomerCoordinateInput customer={customer} />
         <CustomerOptionalFields customer={customer} />
         <button className="h-10 rounded-md bg-slate-900 px-4 text-sm font-medium text-white md:col-span-2">Save changes</button>
       </form>
@@ -165,12 +178,94 @@ function CustomerRow({ customer, onSave }: Readonly<{ customer: CustomerRecord; 
         <div className="text-sm font-medium text-slate-950">{customer.name}</div>
         <div className="text-xs text-slate-500">{customer.phone}{customer.email ? ` | ${customer.email}` : ""}</div>
         <div className="mt-1 text-xs text-slate-500">{customer.address ?? ""}{customer.gstin ? ` | GSTIN ${customer.gstin}` : ""}</div>
+        <CustomerLocationSummary customer={customer} />
         <div className="mt-1 text-xs text-slate-500">Due {money(Number(customer.outstandingDue))} | Spent {money(customer.totalSpent ?? 0)}</div>
       </div>
       <div className="flex items-center gap-2">
         <Link href={`/customers/${customer.id}/ledger`} className="h-9 rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 flex items-center">Ledger</Link>
         <button className="h-9 rounded-md border border-border px-3 text-sm text-slate-700" onClick={() => setEditing(true)}>Edit</button>
       </div>
+    </div>
+  );
+}
+
+function CustomerCoordinateInput({ customer }: Readonly<{ customer?: CustomerRecord }>) {
+  const defaultLocation = customer?.locations?.find((location) => location.isDefault) ?? customer?.locations?.[0];
+  const initialCoordinates = coordinatesFromLocation(defaultLocation);
+  const [rawInput, setRawInput] = useState(defaultLocation?.geocodingQuery ?? "");
+  const [coordinates, setCoordinates] = useState<ParsedCoordinates | null>(initialCoordinates);
+  const [error, setError] = useState("");
+
+  function handleInput(value: string) {
+    setRawInput(value);
+    if (!value.trim()) {
+      setCoordinates(null);
+      setError("");
+      return;
+    }
+
+    const parsed = parseLocationCoordinates(value);
+    setCoordinates(parsed);
+    setError(parsed ? "" : "No coordinates found. Paste a full Google Maps URL or latitude, longitude.");
+  }
+
+  function clearCoordinates() {
+    setRawInput("");
+    setCoordinates(null);
+    setError("");
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-slate-50 p-3 md:col-span-2">
+      <label className="block text-sm font-medium text-slate-700">
+        Map link or coordinates
+        <input
+          value={rawInput}
+          onChange={(event) => handleInput(event.target.value)}
+          placeholder="Paste Google Maps URL or 17.3936069, 78.3796996"
+          className="mt-1 h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-emerald-600"
+        />
+      </label>
+      {coordinates ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <div className="flex min-w-0 items-center gap-2">
+            <MapPin className="size-4 shrink-0" aria-hidden="true" />
+            <span className="break-words">
+              Location found: {coordinates.latitude.toFixed(7)}, {coordinates.longitude.toFixed(7)}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href={googleMapsUrl(coordinates)} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 text-xs font-medium text-emerald-800">
+              <ExternalLink className="size-3.5" aria-hidden="true" />
+              Open
+            </a>
+            <button type="button" onClick={clearCoordinates} className="inline-flex size-8 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800" aria-label="Clear coordinates">
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {error ? <div className="mt-2 text-xs text-amber-700">{error}</div> : null}
+      <input type="hidden" name="locationLatitude" value={coordinates?.latitude ?? ""} />
+      <input type="hidden" name="locationLongitude" value={coordinates?.longitude ?? ""} />
+      <input type="hidden" name="locationSource" value={coordinates?.source ?? ""} />
+      <input type="hidden" name="locationQuery" value={rawInput} />
+    </div>
+  );
+}
+
+function CustomerLocationSummary({ customer }: Readonly<{ customer: CustomerRecord }>) {
+  const location = customer.locations?.find((item) => item.isDefault) ?? customer.locations?.[0];
+  const coordinates = coordinatesFromLocation(location);
+  if (!coordinates) return null;
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-emerald-700">
+      <span>Coordinates {coordinates.latitude.toFixed(7)}, {coordinates.longitude.toFixed(7)}</span>
+      <a href={googleMapsUrl(coordinates)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium">
+        <ExternalLink className="size-3" aria-hidden="true" />
+        Open
+      </a>
     </div>
   );
 }
@@ -225,6 +320,7 @@ function CheckInput({ name, label, defaultChecked }: Readonly<{ name: string; la
 }
 
 function buildCustomerPayload(form: FormData): Record<string, unknown> {
+  const location = locationPayload(form);
   return {
     customerCode: formString(form, "customerCode") || undefined,
     name: formString(form, "name"),
@@ -248,7 +344,38 @@ function buildCustomerPayload(form: FormData): Record<string, unknown> {
     creditDays: formString(form, "creditDays") ? Number(form.get("creditDays")) : undefined,
     itemDiscountPercent: Number(form.get("itemDiscountPercent") || 0),
     itemDiscountEnabled: form.get("itemDiscountEnabled") === "on",
+    ...(location ? { location } : {}),
   };
+}
+
+function locationPayload(form: FormData) {
+  const latitude = formString(form, "locationLatitude");
+  const longitude = formString(form, "locationLongitude");
+  if (!latitude || !longitude) return undefined;
+
+  return {
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+    source: formString(form, "locationSource") || "COORDINATES",
+    query: formString(form, "locationQuery") || undefined,
+  };
+}
+
+function coordinatesFromLocation(location: CustomerLocationRecord | undefined): ParsedCoordinates | null {
+  if (!location?.latitude || !location.longitude) return null;
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  return {
+    latitude,
+    longitude,
+    source: location.geocodingProvider === "google_maps_url" ? "GOOGLE_MAPS_URL" : "COORDINATES",
+  };
+}
+
+function googleMapsUrl(coordinates: Pick<ParsedCoordinates, "latitude" | "longitude">): string {
+  return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
 }
 
 interface ImportResult {

@@ -24,9 +24,9 @@ export class CustomersService {
     return this.repository.list(tenant.id, query);
   }
 
-  async createCustomer(tenant: Tenant, input: CreateCustomerInput) {
+  async createCustomer(tenant: Tenant, userId: string, input: CreateCustomerInput) {
     try {
-      return await this.repository.create(tenant.id, input);
+      return await this.repository.create(tenant.id, userId, input);
     } catch (error) {
       throw new CustomersError(error instanceof Error ? error.message : "Unable to create customer", 409);
     }
@@ -49,9 +49,9 @@ export class CustomersService {
     };
   }
 
-  async updateCustomer(tenant: Tenant, id: string, input: UpdateCustomerInput) {
+  async updateCustomer(tenant: Tenant, userId: string, id: string, input: UpdateCustomerInput) {
     try {
-      const result = await this.repository.update(tenant.id, id, input);
+      const result = await this.repository.update(tenant.id, userId, id, input);
       if (result.count === 0) {
         throw new CustomersError("Customer not found", 404);
       }

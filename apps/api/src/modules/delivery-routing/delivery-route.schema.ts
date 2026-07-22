@@ -7,8 +7,8 @@ export const createDeliveryRoutePlanSchema = z.object({
   driverIds: z.array(z.string().min(1)).min(1),
   depotName: z.string().trim().min(1).optional(),
   depotAddress: z.string().trim().min(1).optional(),
-  depotLatitude: z.coerce.number().finite().optional(),
-  depotLongitude: z.coerce.number().finite().optional(),
+  depotLatitude: z.coerce.number().min(-90).max(90).optional(),
+  depotLongitude: z.coerce.number().min(-180).max(180).optional(),
   serviceSeconds: z.coerce.number().int().positive().max(3600).default(Number(process.env.MAPBOX_DEFAULT_SERVICE_SECONDS ?? 300)),
   optimize: z.boolean().default(false),
 });

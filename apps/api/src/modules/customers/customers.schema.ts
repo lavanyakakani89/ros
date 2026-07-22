@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 const decimalSchema = z.coerce.number().finite();
+const customerLocationSchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  source: z.enum(["GOOGLE_MAPS_URL", "COORDINATES"]).default("COORDINATES"),
+  query: z.string().trim().min(1).max(2048).optional(),
+});
 
 export const customerListQuerySchema = z.object({
   search: z.string().trim().optional(),
@@ -38,6 +44,7 @@ export const createCustomerSchema = z.object({
   creditDays: z.coerce.number().int().nonnegative().optional(),
   itemDiscountPercent: decimalSchema.min(0).max(100).default(0),
   itemDiscountEnabled: z.coerce.boolean().default(false),
+  location: customerLocationSchema.optional(),
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial();

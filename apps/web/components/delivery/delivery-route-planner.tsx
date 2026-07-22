@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, LocateFixed, Lock, MapPin, Navigation, Play, Route, Send, Unlock } from "lucide-react";
+import { Check, ExternalLink, LocateFixed, Lock, MapPin, Navigation, Play, Route, Send, Unlock, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { parseLocationCoordinates } from "@/lib/location-coordinate-parser";
 import { getStoredTenant } from "@/lib/vertical-config";
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
@@ -82,9 +83,12 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
   const [depotAddress, setDepotAddress] = useState("");
   const [depotLatitude, setDepotLatitude] = useState("");
   const [depotLongitude, setDepotLongitude] = useState("");
+  const [depotCoordinateInput, setDepotCoordinateInput] = useState("");
+  const [depotCoordinateError, setDepotCoordinateError] = useState("");
   const [pinInputs, setPinInputs] = useState<Record<string, { latitude: string; longitude: string }>>({});
   const selectedDeliveries = activeDeliveries.filter((delivery) => selectedDeliveryIds.includes(delivery.id));
   const missingPins = selectedDeliveries.filter((delivery) => !hasLocation(delivery));
+  const depotCoordinates = validCoordinates(depotLatitude, depotLongitude);
 
   const plansQuery = useQuery({
     queryKey: ["delivery-route-plans"],
@@ -97,8 +101,8 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
       driverIds: selectedDriverIds,
       depotName: tenant?.name ?? "Store",
       depotAddress,
-      depotLatitude: Number(depotLatitude),
-      depotLongitude: Number(depotLongitude),
+      depotLatitude: depotCoordinates?.latitude,
+      depotLongitude: depotCoordinates?.longitude,
       optimize: true,
     }),
     onSuccess: async () => {
@@ -148,7 +152,7 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
   });
 
   const latestPlans = plansQuery.data ?? [];
-  const canCreate = selectedDeliveryIds.length > 0 && selectedDriverIds.length > 0 && depotLatitude.trim() && depotLongitude.trim();
+  const canCreate = selectedDeliveryIds.length > 0 && selectedDriverIds.length > 0 && Boolean(depotCoordinates);
   const selectedSummary = useMemo(() => ({
     deliveries: selectedDeliveryIds.length,
     drivers: selectedDriverIds.length,
@@ -161,6 +165,43 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
 
   function toggleDriver(id: string) {
     setSelectedDriverIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function handleDepotCoordinateInput(value: string) {
+    setDepotCoordinateInput(value);
+    if (!value.trim()) {
+      setDepotCoordinateError("");
+      return;
+    }
+
+    const parsed = parseLocationCoordinates(value);
+    if (!parsed) {
+      setDepotCoordinateError("No coordinates found. Paste a full Google Maps URL or latitude, longitude.");
+      return;
+    }
+
+    setDepotLatitude(String(parsed.latitude));
+    setDepotLongitude(String(parsed.longitude));
+    setDepotCoordinateError("");
+  }
+
+  function clearDepotCoordinates() {
+    setDepotCoordinateInput("");
+    setDepotLatitude("");
+    setDepotLongitude("");
+    setDepotCoordinateError("");
+  }
+
+  function useCurrentDepotPin() {
+    if (!("geolocation" in navigator)) return;
+    navigator.geolocation.getCurrentPosition((position) => {
+      const latitude = String(position.coords.latitude);
+      const longitude = String(position.coords.longitude);
+      setDepotLatitude(latitude);
+      setDepotLongitude(longitude);
+      setDepotCoordinateInput(`${latitude}, ${longitude}`);
+      setDepotCoordinateError("");
+    });
   }
 
   return (
@@ -199,17 +240,39 @@ export function DeliveryRoutePlanner({ deliveries, users }: Readonly<{ deliverie
         <div className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-3">
             <input value={depotAddress} onChange={(event) => setDepotAddress(event.target.value)} placeholder="Depot address" className="h-10 rounded-md border border-border px-3 text-sm sm:col-span-3" />
+            <div className="sm:col-span-3">
+              <input
+                value={depotCoordinateInput}
+                onChange={(event) => handleDepotCoordinateInput(event.target.value)}
+                placeholder="Depot Google Maps URL or 17.3936069, 78.3796996"
+                className="h-10 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-emerald-600"
+              />
+              {depotCoordinates ? (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="break-words">
+                      Depot location saved for this plan: {depotCoordinates.latitude.toFixed(7)}, {depotCoordinates.longitude.toFixed(7)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a href={googleMapsUrl(depotCoordinates)} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 text-xs font-medium text-emerald-800">
+                      <ExternalLink className="size-3" aria-hidden="true" />
+                      Open
+                    </a>
+                    <button type="button" onClick={clearDepotCoordinates} className="inline-flex size-7 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-800" aria-label="Clear depot coordinates">
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {depotCoordinateError ? <div className="mt-2 text-xs text-amber-700">{depotCoordinateError}</div> : null}
+            </div>
             <input value={depotLatitude} onChange={(event) => setDepotLatitude(event.target.value)} placeholder="Depot lat" inputMode="decimal" className="h-10 rounded-md border border-border px-3 text-sm" />
             <input value={depotLongitude} onChange={(event) => setDepotLongitude(event.target.value)} placeholder="Depot lng" inputMode="decimal" className="h-10 rounded-md border border-border px-3 text-sm" />
             <button
               className="h-10 rounded-md border border-border px-3 text-sm font-semibold text-slate-700"
-              onClick={() => {
-                if (!("geolocation" in navigator)) return;
-                navigator.geolocation.getCurrentPosition((position) => {
-                  setDepotLatitude(String(position.coords.latitude));
-                  setDepotLongitude(String(position.coords.longitude));
-                });
-              }}
+              onClick={useCurrentDepotPin}
             >
               Use current pin
             </button>
@@ -355,6 +418,14 @@ function hasLocation(delivery: RoutePlannerDelivery): boolean {
   return Boolean((delivery.deliveryLatitude ?? delivery.customerLocation?.latitude) && (delivery.deliveryLongitude ?? delivery.customerLocation?.longitude));
 }
 
+function validCoordinates(latitudeValue: string, longitudeValue: string): { latitude: number; longitude: number } | null {
+  const latitude = Number(latitudeValue);
+  const longitude = Number(longitudeValue);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude };
+}
+
 function formatDistance(value: number | null | undefined): string {
   if (!value) return "0 km";
   return `${(value / 1000).toFixed(1)} km`;
@@ -363,6 +434,10 @@ function formatDistance(value: number | null | undefined): string {
 function formatDuration(value: number | null | undefined): string {
   if (!value) return "0 min";
   return `${Math.round(value / 60).toString()} min`;
+}
+
+function googleMapsUrl(coordinates: { latitude: number; longitude: number }): string {
+  return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
 }
 
 function planStatusClass(status: RoutePlanStatus): string {

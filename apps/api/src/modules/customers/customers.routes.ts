@@ -125,7 +125,7 @@ export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) 
 
   fastify.post("/api/customers", async (request, reply) => {
     const input = createCustomerSchema.parse(request.body);
-    return handleCustomers(reply, () => service.createCustomer(request.tenant, input));
+    return handleCustomers(reply, () => service.createCustomer(request.tenant, request.user.userId, input));
   });
 
   fastify.post("/api/customers/:id/statement-pdf", async (request, reply) => {
@@ -182,7 +182,7 @@ export const customersRoutes: FastifyPluginCallback = (fastify, _options, done) 
   fastify.put("/api/customers/:id", async (request, reply) => {
     const params = customerIdParamsSchema.parse(request.params);
     const input = updateCustomerSchema.parse(request.body);
-    return handleCustomers(reply, () => service.updateCustomer(request.tenant, params.id, input));
+    return handleCustomers(reply, () => service.updateCustomer(request.tenant, request.user.userId, params.id, input));
   });
 
   done();
