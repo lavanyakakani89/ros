@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const paymentMethodTypeSchema = z.preprocess((value) => upperString(value, "CUSTOM"), z.nativeEnum(PaymentMethodType));
 const settlementStatusSchema = z.preprocess((value) => upperString(value, ""), z.nativeEnum(SettlementStatus));
-const roleListSchema = z.array(z.string().trim().transform((role) => role.toUpperCase())).default([]);
+const roleListSchema = z.array(z.string().trim().transform(normalizeAllowedRole)).default([]);
 const keyboardShortcutSchema = z.preprocess(
   (value) => typeof value === "string" ? normalizeKeyboardShortcut(value) : value,
   z.string().regex(/^(?:Ctrl\+[1-9]|F2|F4|F8|F9)$/).nullable(),
@@ -281,7 +281,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
       const method = methodById.get(leg.payment_method_id);
       if (!method) throw statusError("Payment method not found or inactive", 400);
       if (method.requiresReference && !leg.reference_number) throw statusError(`Reference required for ${method.name}`, 400);
-      if (method.allowedRoles.length > 0 && !method.allowedRoles.includes(request.user.role)) throw statusError(`Payment method "${method.name}" is not available for your role`, 403);
+      if (method.allowedRoles.length > 0 && !isPaymentMethodAllowedForRole(method.allowedRoles, request.user.role)) throw statusError(`Payment method "${method.name}" is not available for your role`, 403);
     }
     const result = await fastify.prisma.$transaction(async (tx) => {
       await tx.payment.createMany({
@@ -606,6 +606,15 @@ function upperString(value: unknown, fallback: string): string {
   }
 
   return fallback;
+}
+
+function normalizeAllowedRole(role: string): string {
+  const normalized = role.toUpperCase();
+  return normalized === "CASHIER" ? UserRole.STAFF : normalized;
+}
+
+function isPaymentMethodAllowedForRole(allowedRoles: string[], role: UserRole): boolean {
+  return allowedRoles.map(normalizeAllowedRole).includes(role);
 }
 
 function ensureManager(role: UserRole) {

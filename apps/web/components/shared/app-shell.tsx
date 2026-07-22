@@ -83,6 +83,15 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           const nextSession = { user: current.user };
           storeAuthSession(nextSession);
           setSession(nextSession);
+          if (current.user.role === "DELIVERY" && pathname !== "/delivery-app") {
+            router.replace("/delivery-app");
+            return;
+          }
+          if (!canAccessPath(current.user.role, pathname)) {
+            router.replace(defaultPathForRole(current.user.role));
+            return;
+          }
+          void fetchBadges(current.user.role);
         } else {
           setSession(null);
           setBadgeCounts({});
@@ -106,8 +115,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     window.addEventListener("offline", handleOnlineState);
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
 
-    async function fetchBadges() {
+    async function fetchBadges(role: string | undefined) {
       try {
+        if (role === "STAFF" || role === "DELIVERY") {
+          setBadgeCounts({});
+          return;
+        }
+
         const api = createAuthenticatedApiClient();
         const [inventory, deliveries, invoices] = await Promise.all([
           api.get<{ lowStockCount: number }>("/reports/inventory"),
@@ -127,7 +141,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     }
 
     void verifySession();
-    void fetchBadges();
 
     return () => {
       window.removeEventListener("online", handleOnlineState);
@@ -190,6 +203,14 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     { href: "/settings#password", label: "Change password", description: "Secure this login", icon: KeyRound },
     { href: "/audit", label: "Audit log", description: "Track important activity", icon: History },
   ] satisfies AccountMenuLink[];
+  const visibleDashboard = dashboard && canAccessNavigation(role, dashboard.href) ? dashboard : null;
+  const visibleNavGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccessNavigation(role, item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
+  const visibleAccountLinks = accountLinks.filter((link) => canAccessAccountLink(role, link.href));
 
   if (pathname === "/impersonate") {
     return <>{children}</>;
@@ -234,10 +255,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             </div>
         </div>
         <nav className={cn("px-3 py-4", sidebarCollapsed && "px-2")} aria-label="Main navigation">
-          {dashboard ? (
-            <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} collapsed={sidebarCollapsed} />
+          {visibleDashboard ? (
+            <NavigationLink item={visibleDashboard} pathname={pathname} badgeCount={badgeCounts[visibleDashboard.href] ?? 0} collapsed={sidebarCollapsed} />
           ) : null}
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label} className="mt-4 border-t border-border pt-3">
               <div className={cn("px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400", sidebarCollapsed && "sr-only")}>{group.label}</div>
               <div className="space-y-1">
@@ -295,7 +316,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 </button>
                 {accountMenuOpen ? (
                   <AccountMenu
-                    links={accountLinks}
+                    links={visibleAccountLinks}
                     userName={userName}
                     userEmail={userEmail}
                     role={role}
@@ -313,10 +334,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
             </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto border-t border-border px-2 py-2 lg:hidden" aria-label="Main navigation">
-            {dashboard ? (
-              <NavigationLink item={dashboard} pathname={pathname} badgeCount={badgeCounts[dashboard.href] ?? 0} mobile />
+            {visibleDashboard ? (
+              <NavigationLink item={visibleDashboard} pathname={pathname} badgeCount={badgeCounts[visibleDashboard.href] ?? 0} mobile />
             ) : null}
-            {navGroups.map((group) => (
+            {visibleNavGroups.map((group) => (
               <div key={group.label} className="flex shrink-0 items-stretch gap-1 rounded-md border border-border bg-slate-50 p-1">
                 <div className="flex w-14 items-center justify-center px-1 text-[9px] font-semibold uppercase tracking-wide text-slate-400">
                   {group.label}
@@ -592,4 +613,93 @@ function navigationIconClass(href: string): string {
   }
 
   return "text-emerald-600";
+}
+
+function canAccessNavigation(role: string | undefined, href: string): boolean {
+  if (role === "DELIVERY") {
+    return false;
+  }
+
+  if (role === "STAFF") {
+    if (href === "/customers/campaigns" || href.startsWith("/customers/campaigns/")) {
+      return false;
+    }
+
+    return [
+      "/billing",
+      "/quotations",
+      "/coupons",
+      "/loyalty",
+      "/inventory",
+      "/customers",
+      "/payments",
+      "/expenses",
+      "/restaurant",
+    ].some((allowed) => href === allowed || href.startsWith(`${allowed}/`));
+  }
+
+  return true;
+}
+
+function canAccessAccountLink(role: string | undefined, href: string): boolean {
+  if (role === "OWNER") {
+    return true;
+  }
+
+  if (role === "MANAGER") {
+    return [
+      "/settings#users",
+      "/settings/payment-methods",
+      "/settings/printer",
+      "/settings/templates",
+      "/settings#password",
+      "/audit",
+    ].includes(href);
+  }
+
+  return href === "/settings#password";
+}
+
+function canAccessPath(role: string | undefined, pathname: string): boolean {
+  if (!role || role === "OWNER") {
+    return true;
+  }
+
+  if (role === "DELIVERY") {
+    return pathname === "/delivery-app";
+  }
+
+  if (role === "MANAGER") {
+    return !pathname.startsWith("/settings/whatsapp");
+  }
+
+  const staffPaths = [
+    "/billing",
+    "/quotations",
+    "/coupons",
+    "/loyalty",
+    "/inventory",
+    "/customers",
+    "/payments",
+    "/expenses",
+    "/restaurant",
+  ];
+
+  if (pathname.startsWith("/customers/")) {
+    return false;
+  }
+
+  return pathname === "/settings" || staffPaths.some((allowedPath) => pathname === allowedPath || pathname.startsWith(`${allowedPath}/`));
+}
+
+function defaultPathForRole(role: string | undefined): string {
+  if (role === "DELIVERY") {
+    return "/delivery-app";
+  }
+
+  if (role === "STAFF") {
+    return "/billing";
+  }
+
+  return "/dashboard";
 }

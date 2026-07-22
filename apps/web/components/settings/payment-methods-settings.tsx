@@ -68,7 +68,7 @@ const typeOptions: Array<{ value: PaymentMethodType; label: string }> = [
 ];
 const colors = ["#1a6e4a", "#7f77dd", "#378add", "#854f0b", "#0f766e", "#be123c", "#4338ca", "#525252"];
 const icons = ["ti-cash", "ti-qrcode", "ti-credit-card", "ti-user-dollar", "ti-wallet", "ti-building-bank", "ti-gift", "ti-receipt"];
-const roles = ["CASHIER", "MANAGER", "OWNER"];
+const roles = ["STAFF", "MANAGER", "OWNER"];
 
 export function PaymentMethodsSettings() {
   const queryClient = useQueryClient();
