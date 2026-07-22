@@ -104,9 +104,6 @@ export function requiredPermission(method: string, url: string): Permission | un
   if (path.startsWith("/api/inventory/products")) {
     return verb === "GET" ? "inventory:view" : "inventory:manage";
   }
-  if (path.startsWith("/api/labels")) {
-    return verb === "GET" ? "inventory:view" : "inventory:manage";
-  }
 
   if (path.startsWith("/api/loyalty")) return "loyalty:use";
   if (path.startsWith("/api/payment-methods") || path.startsWith("/api/partners") || path.startsWith("/api/settlements")) {

@@ -67,7 +67,6 @@ export const pharmacyConfig: VerticalConfig = {
     { label: "Dashboard", icon: "dashboard", href: "/dashboard" },
     { label: "Billing", icon: "receipt", href: "/billing" },
     { label: "Inventory", icon: "boxes", href: "/inventory" },
-    { label: "Labels", icon: "tag", href: "/labels" },
     { label: "Expiry", icon: "alert", href: "/inventory/expiry" },
     { label: "Delivery", icon: "truck", href: "/delivery" },
     { label: "Payments", icon: "wallet", href: "/payments" },

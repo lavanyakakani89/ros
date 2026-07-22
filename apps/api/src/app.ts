@@ -25,7 +25,6 @@ import { deliveryRouteRoutes } from "./modules/delivery-routing/delivery-route.r
 import { createDeliveryRouteWorker } from "./modules/delivery-routing/delivery-route.worker.js";
 import { expensesRoutes } from "./modules/expenses/expenses.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
-import { labelsRoutes } from "./modules/labels/labels.routes.js";
 import { loyaltyRoutes } from "./modules/loyalty/loyalty.routes.js";
 import { paymentsRoutes } from "./modules/payments/payments.routes.js";
 import { paymentMethodsRoutes } from "./modules/payment-methods/payment-methods.routes.js";
@@ -141,7 +140,6 @@ export async function buildServer(): Promise<FastifyInstance> {
   await fastify.register(purchaseOrdersRoutes);
   await fastify.register(purchaseReturnsRoutes);
   await fastify.register(inventoryRoutes);
-  await fastify.register(labelsRoutes);
   await fastify.register(billingRoutes);
   await fastify.register(templatesRoutes);
   await fastify.register(printerRoutes);
