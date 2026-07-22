@@ -36,7 +36,14 @@ export class DeliveryRouteRepository {
         status: { in: [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.OUT_FOR_DELIVERY] },
       },
       include: {
-        customer: true,
+        customer: {
+          include: {
+            locations: {
+              where: { isDefault: true },
+              take: 1,
+            },
+          },
+        },
         customerLocation: true,
         invoice: true,
       },
@@ -89,6 +96,7 @@ export class DeliveryRouteRepository {
         const assignedDeliveries = deliveries.filter((_, index) => index % drivers.length === driverIndex);
         for (const [stopIndex, delivery] of assignedDeliveries.entries()) {
           const snapshot = deliverySnapshot(delivery);
+          const fallbackLocation = delivery.customer.locations[0];
           await tx.deliveryRouteStop.create({
             data: {
               tenantId,
@@ -96,8 +104,8 @@ export class DeliveryRouteRepository {
               deliveryId: delivery.id,
               sequence: stopIndex + 1,
               addressSnapshot: snapshot,
-              latitude: delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? null,
-              longitude: delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? null,
+              latitude: delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? fallbackLocation?.latitude ?? null,
+              longitude: delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? fallbackLocation?.longitude ?? null,
               serviceSeconds: input.serviceSeconds,
             },
           });

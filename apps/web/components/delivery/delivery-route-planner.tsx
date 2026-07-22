@@ -30,6 +30,10 @@ export interface RoutePlannerDelivery {
   customer?: {
     name: string;
     phone: string;
+    locations?: Array<{
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+    }>;
   };
 }
 
@@ -318,8 +322,8 @@ export function DeliveryRoutePlanner({ deliveries, users, depot }: Readonly<{ de
               {activeDeliveries.map((delivery) => {
                 const locationReady = hasLocation(delivery);
                 const pin = pinInputs[delivery.id] ?? {
-                  latitude: String(delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? ""),
-                  longitude: String(delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? ""),
+                  latitude: String(delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude ?? ""),
+                  longitude: String(delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude ?? ""),
                 };
                 return (
                   <article key={delivery.id} className="rounded-md border border-slate-200 p-3">
@@ -431,7 +435,10 @@ export function DeliveryRoutePlanner({ deliveries, users, depot }: Readonly<{ de
 }
 
 function hasLocation(delivery: RoutePlannerDelivery): boolean {
-  return Boolean((delivery.deliveryLatitude ?? delivery.customerLocation?.latitude) && (delivery.deliveryLongitude ?? delivery.customerLocation?.longitude));
+  return Boolean(
+    (delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude) &&
+      (delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude),
+  );
 }
 
 function validCoordinates(latitudeValue: string, longitudeValue: string): { latitude: number; longitude: number } | null {

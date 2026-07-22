@@ -30,6 +30,10 @@ interface DeliveryItem {
   customer?: {
     name: string;
     phone: string;
+    locations?: Array<{
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+    }>;
   };
   customerLocation?: {
     latitude?: string | number | null;
@@ -182,7 +186,9 @@ export function DeliveryBoard() {
               <div className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{items.length}</div>
             </div>
             <div className="space-y-2 p-3">
-              {items.map((delivery) => (
+              {items.map((delivery) => {
+                const coordinates = deliveryCoordinates(delivery);
+                return (
                 <article key={delivery.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-start gap-2">
                     <Truck className="mt-0.5 size-4 text-emerald-700" aria-hidden="true" />
@@ -190,6 +196,16 @@ export function DeliveryBoard() {
                       <div className="truncate text-sm font-semibold text-slate-950">{delivery.invoice?.invoiceNumber ?? delivery.id}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.customer?.name ?? "Customer"}</div>
                       <div className="mt-1 text-xs text-slate-500">{delivery.deliveryAddress}</div>
+                      {coordinates ? (
+                        <a
+                          href={googleMapsUrl(coordinates)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 font-mono text-[11px] font-medium text-emerald-700"
+                        >
+                          Pin {coordinates.latitude.toFixed(7)}, {coordinates.longitude.toFixed(7)}
+                        </a>
+                      ) : null}
                       <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {(delivery.proofs ?? []).slice(0, 3).map((proof) => (
@@ -239,7 +255,8 @@ export function DeliveryBoard() {
                     </div>
                   </div>
                 </article>
-              ))}
+              );
+              })}
               {items.length === 0 ? (
                 <div className="rounded-md border border-dashed border-slate-200 p-3 text-xs text-slate-400">
                   {isLoadingBoard ? "Loading deliveries..." : "No deliveries"}
@@ -253,6 +270,20 @@ export function DeliveryBoard() {
       )}
     </div>
   );
+}
+
+function deliveryCoordinates(delivery: DeliveryItem): { latitude: number; longitude: number } | null {
+  const latitude = Number(delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude);
+  const longitude = Number(delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function googleMapsUrl(coordinates: { latitude: number; longitude: number }): string {
+  return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
 }
 
 function nextStatuses(status: DeliveryStatus): DeliveryStatus[] {

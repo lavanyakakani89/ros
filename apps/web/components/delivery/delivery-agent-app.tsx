@@ -24,6 +24,8 @@ interface DeliveryItem {
   id: string;
   status: DeliveryStatus;
   deliveryAddress: string;
+  deliveryLatitude?: string | number | null;
+  deliveryLongitude?: string | number | null;
   notes?: string | null;
   assignedTo?: string | null;
   invoice?: {
@@ -36,6 +38,14 @@ interface DeliveryItem {
   customer?: {
     name: string;
     phone: string;
+    locations?: Array<{
+      latitude?: string | number | null;
+      longitude?: string | number | null;
+    }>;
+  };
+  customerLocation?: {
+    latitude?: string | number | null;
+    longitude?: string | number | null;
   };
   proofs?: DeliveryProof[];
   scheduledAt?: string | null;
@@ -95,7 +105,11 @@ export function DeliveryAgentApp() {
     refetchInterval: 15_000,
   });
   const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: DeliveryStatus }) => createAuthenticatedApiClient().put(`/delivery/${id}/status`, { status }),
+    mutationFn: ({ id, status, notes }: { id: string; status: DeliveryStatus; notes?: string }) =>
+      createAuthenticatedApiClient().put(`/delivery/${id}/status`, {
+        status,
+        ...(notes?.trim() ? { notes: notes.trim() } : {}),
+      }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["delivery-agent", "orders"] }),
@@ -292,8 +306,10 @@ export function DeliveryAgentApp() {
             {driverRoute.stops.map((stop) => {
               const delivery = stop.delivery;
               const address = delivery?.deliveryAddress ?? "";
-              const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-              const appleUrl = `https://maps.apple.com/?q=${encodeURIComponent(address)}`;
+              const coordinates = delivery ? deliveryCoordinates(delivery) : null;
+              const mapQuery = coordinates ? `${coordinates.latitude.toString()},${coordinates.longitude.toString()}` : address;
+              const googleUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
+              const appleUrl = `https://maps.apple.com/?q=${encodeURIComponent(mapQuery)}`;
               return (
                 <article key={stop.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="flex items-start gap-3">
@@ -305,6 +321,11 @@ export function DeliveryAgentApp() {
                       </div>
                       <div className="mt-1 text-sm font-semibold">{delivery?.customer?.name ?? "Customer"}</div>
                       <div className="mt-1 text-xs text-slate-500">{address}</div>
+                      {coordinates ? (
+                        <div className="mt-1 font-mono text-[11px] text-emerald-700">
+                          Pin {coordinates.latitude.toFixed(7)}, {coordinates.longitude.toFixed(7)}
+                        </div>
+                      ) : null}
                       <div className="mt-3 grid grid-cols-2 gap-2">
                         <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-300 text-xs font-semibold text-slate-700" href={googleUrl} target="_blank" rel="noreferrer">
                           <MapPin className="size-4" aria-hidden="true" />
@@ -334,7 +355,7 @@ export function DeliveryAgentApp() {
             setProofNotes={setProofNotes}
             updating={updateStatus.isPending}
             uploading={uploadProof.isPending}
-            onStatus={(status) => updateStatus.mutate({ id: delivery.id, status })}
+            onStatus={(status, notes) => updateStatus.mutate({ id: delivery.id, status, ...(notes ? { notes } : {}) })}
             onProof={(file, proofType) => uploadProof.mutate({ delivery, file, proofType })}
           />
         ))}
@@ -379,13 +400,16 @@ function DeliveryCard({
   setProofNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   updating: boolean;
   uploading: boolean;
-  onStatus: (status: DeliveryStatus) => void;
+  onStatus: (status: DeliveryStatus, notes?: string) => void;
   onProof: (file: File, proofType: ProofType) => void;
 }>) {
   const deliveryPhotoCount = delivery.proofs?.filter((proof) => proof.proofType === "DELIVERY_PHOTO").length ?? 0;
   const paymentProofCount = delivery.proofs?.filter((proof) => proof.proofType === "PAYMENT_SCREENSHOT").length ?? 0;
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.deliveryAddress)}`;
+  const coordinates = deliveryCoordinates(delivery);
+  const mapQuery = coordinates ? `${coordinates.latitude.toString()},${coordinates.longitude.toString()}` : delivery.deliveryAddress;
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`;
   const customerPhone = delivery.customer?.phone ?? "";
+  const deliveryNote = proofNotes[proofNoteKey(delivery.id, "DELIVERY_PHOTO")] ?? "";
 
   return (
     <article className="rounded-md border border-slate-200 bg-white shadow-sm">
@@ -404,6 +428,12 @@ function DeliveryCard({
             <MapPin className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden="true" />
             <span>{delivery.deliveryAddress}</span>
           </a>
+          {coordinates ? (
+            <a className="inline-flex items-center gap-2 font-mono text-xs text-emerald-700" href={mapUrl} target="_blank" rel="noreferrer">
+              <MapPin className="size-4" aria-hidden="true" />
+              {coordinates.latitude.toFixed(7)}, {coordinates.longitude.toFixed(7)}
+            </a>
+          ) : null}
         </div>
       </div>
 
@@ -424,7 +454,7 @@ function DeliveryCard({
         </div>
 
         <input
-          value={proofNotes[proofNoteKey(delivery.id, "DELIVERY_PHOTO")] ?? ""}
+          value={deliveryNote}
           onChange={(event) => setProofNotes((current) => ({ ...current, [proofNoteKey(delivery.id, "DELIVERY_PHOTO")]: event.target.value }))}
           placeholder="Proof note / cash collected note"
           className="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-emerald-600"
@@ -438,14 +468,14 @@ function DeliveryCard({
           ) : null}
           <button
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
-            disabled={updating || deliveryPhotoCount === 0}
-            title={deliveryPhotoCount === 0 ? "Upload delivery photo before marking delivered" : "Mark delivered"}
-            onClick={() => onStatus("DELIVERED")}
+            disabled={updating}
+            title="Mark delivered"
+            onClick={() => onStatus("DELIVERED", deliveryNote)}
           >
             <CheckCircle2 className="size-4" aria-hidden="true" />
             Delivered
           </button>
-          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 text-sm font-semibold text-red-700 disabled:opacity-50" disabled={updating} onClick={() => onStatus("FAILED")}>
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-red-200 text-sm font-semibold text-red-700 disabled:opacity-50" disabled={updating} onClick={() => onStatus("FAILED", deliveryNote)}>
             <XCircle className="size-4" aria-hidden="true" />
             Failed
           </button>
@@ -497,6 +527,16 @@ function statusClass(status: DeliveryStatus): string {
   if (status === "OUT_FOR_DELIVERY") return "bg-sky-50 text-sky-700";
   if (status === "FAILED" || status === "CANCELLED") return "bg-red-50 text-red-700";
   return "bg-amber-50 text-amber-700";
+}
+
+function deliveryCoordinates(delivery: DeliveryItem): { latitude: number; longitude: number } | null {
+  const latitude = Number(delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude);
+  const longitude = Number(delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
 }
 
 function proofNoteKey(deliveryId: string, proofType: ProofType): string {

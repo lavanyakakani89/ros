@@ -31,6 +31,12 @@ export class DeliveryRepository {
           id: input.customerId,
           tenantId,
         },
+        include: {
+          locations: {
+            where: { isDefault: true },
+            take: 1,
+          },
+        },
       }),
     ]);
 
@@ -38,11 +44,14 @@ export class DeliveryRepository {
       return null;
     }
 
+    const defaultLocation = customer.locations[0];
+
     return this.prisma.delivery.create({
       data: {
         tenantId,
         invoiceId: input.invoiceId,
         customerId: input.customerId,
+        ...(defaultLocation ? { customerLocationId: defaultLocation.id } : {}),
         deliveryAddress: input.deliveryAddress,
         deliveryAddressSnapshot: {
           address: input.deliveryAddress,
@@ -55,6 +64,8 @@ export class DeliveryRepository {
           grandTotal: invoice.grandTotal.toString(),
           amountDue: invoice.amountDue.toString(),
         },
+        ...(defaultLocation?.latitude ? { deliveryLatitude: defaultLocation.latitude } : {}),
+        ...(defaultLocation?.longitude ? { deliveryLongitude: defaultLocation.longitude } : {}),
         ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
         ...(input.notes ? { notes: input.notes } : {}),
       },
@@ -94,6 +105,12 @@ export class DeliveryRepository {
           id: input.customerId,
           tenantId,
         },
+        include: {
+          locations: {
+            where: { isDefault: true },
+            take: 1,
+          },
+        },
       }),
       this.getDeliveryByInvoice(tenantId, input.invoiceId),
     ]);
@@ -102,6 +119,7 @@ export class DeliveryRepository {
       return null;
     }
 
+    const defaultLocation = customer.locations[0];
     const deliveryAddressSnapshot = {
       address: input.deliveryAddress,
       customerName: customer.name,
@@ -127,6 +145,9 @@ export class DeliveryRepository {
           },
           deliveryAddress: input.deliveryAddress,
           deliveryAddressSnapshot,
+          customerLocation: defaultLocation ? { connect: { id: defaultLocation.id } } : { disconnect: true },
+          deliveryLatitude: defaultLocation?.latitude ?? null,
+          deliveryLongitude: defaultLocation?.longitude ?? null,
           scheduledAt: input.scheduledAt ?? null,
           notes: input.notes ?? null,
           ...(existing.status === DeliveryStatus.CANCELLED ? { status: DeliveryStatus.PENDING, assignedTo: null, deliveredAt: null } : {}),
@@ -140,8 +161,11 @@ export class DeliveryRepository {
         tenantId,
         invoiceId: input.invoiceId,
         customerId: input.customerId,
+        ...(defaultLocation ? { customerLocationId: defaultLocation.id } : {}),
         deliveryAddress: input.deliveryAddress,
         deliveryAddressSnapshot,
+        ...(defaultLocation?.latitude ? { deliveryLatitude: defaultLocation.latitude } : {}),
+        ...(defaultLocation?.longitude ? { deliveryLongitude: defaultLocation.longitude } : {}),
         ...(input.scheduledAt ? { scheduledAt: input.scheduledAt } : {}),
         ...(input.notes ? { notes: input.notes } : {}),
       },
@@ -382,7 +406,14 @@ export class DeliveryRepository {
 
 const deliveryInclude = {
   invoice: true,
-  customer: true,
+  customer: {
+    include: {
+      locations: {
+        where: { isDefault: true },
+        take: 1,
+      },
+    },
+  },
   customerLocation: true,
   proofs: {
     orderBy: {
