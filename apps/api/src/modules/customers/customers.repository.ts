@@ -1,4 +1,4 @@
-import { InvoiceStatus, type Prisma, type PrismaClient } from "@prisma/client";
+import { DeliveryRoutePlanStatus, DeliveryRouteStopStatus, DeliveryStatus, InvoiceStatus, type Prisma, type PrismaClient } from "@prisma/client";
 
 import type { CreateCustomerInput, CustomerListQuery, UpdateCustomerInput } from "./customers.schema.js";
 
@@ -209,15 +209,82 @@ async function upsertDefaultLocation(
       where: { id: existing.id },
       data,
     });
+    await syncActiveDeliveryPinsForCustomer(prisma, tenantId, customerId, existing.id, input.location.latitude, input.location.longitude);
     return;
   }
 
-  await prisma.customerLocation.create({
+  const created = await prisma.customerLocation.create({
     data: {
       tenantId,
       customerId,
       label: "Default",
       ...data,
+    },
+  });
+  await syncActiveDeliveryPinsForCustomer(prisma, tenantId, customerId, created.id, input.location.latitude, input.location.longitude);
+}
+
+async function syncActiveDeliveryPinsForCustomer(
+  prisma: Prisma.TransactionClient,
+  tenantId: string,
+  customerId: string,
+  customerLocationId: string,
+  latitude: number,
+  longitude: number,
+) {
+  const activeDeliveryStatus = [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.OUT_FOR_DELIVERY];
+  await prisma.delivery.updateMany({
+    where: {
+      tenantId,
+      customerId,
+      status: { in: activeDeliveryStatus },
+    },
+    data: {
+      customerLocationId,
+      deliveryLatitude: latitude,
+      deliveryLongitude: longitude,
+    },
+  });
+
+  await prisma.deliveryRouteStop.updateMany({
+    where: {
+      tenantId,
+      status: {
+        in: [
+          DeliveryRouteStopStatus.PLANNED,
+          DeliveryRouteStopStatus.LOCKED,
+          DeliveryRouteStopStatus.EN_ROUTE,
+          DeliveryRouteStopStatus.ARRIVED,
+          DeliveryRouteStopStatus.RESCHEDULED,
+        ],
+      },
+      delivery: {
+        tenantId,
+        customerId,
+        status: { in: activeDeliveryStatus },
+      },
+      route: {
+        routePlan: {
+          status: {
+            in: [
+              DeliveryRoutePlanStatus.DRAFT,
+              DeliveryRoutePlanStatus.GEOCODING,
+              DeliveryRoutePlanStatus.LOCATION_REVIEW_REQUIRED,
+              DeliveryRoutePlanStatus.QUEUED,
+              DeliveryRoutePlanStatus.OPTIMIZING,
+              DeliveryRoutePlanStatus.OPTIMIZATION_FAILED,
+              DeliveryRoutePlanStatus.READY_FOR_REVIEW,
+              DeliveryRoutePlanStatus.APPLIED,
+              DeliveryRoutePlanStatus.PUBLISHED,
+              DeliveryRoutePlanStatus.IN_PROGRESS,
+            ],
+          },
+        },
+      },
+    },
+    data: {
+      latitude,
+      longitude,
     },
   });
 }

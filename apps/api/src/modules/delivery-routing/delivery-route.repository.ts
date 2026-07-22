@@ -104,8 +104,8 @@ export class DeliveryRouteRepository {
               deliveryId: delivery.id,
               sequence: stopIndex + 1,
               addressSnapshot: snapshot,
-              latitude: delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? fallbackLocation?.latitude ?? null,
-              longitude: delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? fallbackLocation?.longitude ?? null,
+              latitude: delivery.customerLocation?.latitude ?? fallbackLocation?.latitude ?? delivery.deliveryLatitude ?? null,
+              longitude: delivery.customerLocation?.longitude ?? fallbackLocation?.longitude ?? delivery.deliveryLongitude ?? null,
               serviceSeconds: input.serviceSeconds,
             },
           });

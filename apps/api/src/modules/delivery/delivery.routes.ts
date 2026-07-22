@@ -18,6 +18,8 @@ import {
 } from "./delivery.schema.js";
 import { DeliveryError, DeliveryService, type DeliveryActor } from "./delivery.service.js";
 
+const DELIVERY_PROOF_MAX_BYTES = 300 * 1024;
+
 export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new DeliveryService(fastify);
 
@@ -82,6 +84,10 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
       }
 
       const buffer = await file.toBuffer();
+      if (buffer.length > DELIVERY_PROOF_MAX_BYTES) {
+        throw new DeliveryError("Proof image is too large. Upload a compressed image under 300 KB.", 413);
+      }
+
       const objectName = `delivery-proofs/${request.tenant.id}/${params.id}/${Date.now().toString()}-${randomUUID()}-${sanitizeFileName(file.filename)}`;
       await fastify.minio.putObject(fastify.minioBucket, objectName, buffer, buffer.length, {
         "Content-Type": file.mimetype,

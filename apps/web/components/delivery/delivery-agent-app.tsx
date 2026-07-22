@@ -11,6 +11,9 @@ import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession } from "@/l
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 type ProofType = "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
+const PROOF_IMAGE_MAX_DIMENSION = 960;
+const PROOF_IMAGE_MAX_UPLOAD_BYTES = 300 * 1024;
+const PROOF_IMAGE_QUALITY_STEPS = [0.62, 0.52, 0.42, 0.34] as const;
 
 interface DeliveryProof {
   id: string;
@@ -49,6 +52,7 @@ interface DeliveryItem {
   };
   proofs?: DeliveryProof[];
   scheduledAt?: string | null;
+  deliveredAt?: string | null;
 }
 
 interface AppNotification {
@@ -122,8 +126,9 @@ export function DeliveryAgentApp() {
   const uploadProof = useMutation({
     mutationFn: async ({ delivery, file, proofType }: { delivery: DeliveryItem; file: File; proofType: ProofType }) => {
       const location = await currentLocation().catch(() => null);
+      const proofFile = await compressProofImage(file);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", proofFile);
       form.append("proofType", proofType);
       const notes = proofNotes[proofNoteKey(delivery.id, proofType)]?.trim();
       if (notes) form.append("notes", notes);
@@ -157,7 +162,7 @@ export function DeliveryAgentApp() {
   const notifications = notificationsQuery.data ?? [];
   const unread = notifications.filter((notification) => !notification.isRead);
   const activeDeliveries = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status));
-  const completedDeliveries = deliveries.filter((delivery) => ["DELIVERED", "FAILED", "CANCELLED"].includes(delivery.status));
+  const completedDeliveries = deliveries.filter((delivery) => delivery.status === "DELIVERED" && isToday(delivery.deliveredAt));
   const driverRoute = routeQuery.data;
   const totalCash = useMemo(
     () => activeDeliveries.reduce((sum, delivery) => sum + Number(delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0), 0),
@@ -506,6 +511,78 @@ function ProofInput({ label, proofType, disabled, onProof }: Readonly<{ label: s
   );
 }
 
+async function compressProofImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("Only image proof files are allowed.");
+  }
+
+  const image = await loadImage(file);
+  const scale = Math.min(1, PROOF_IMAGE_MAX_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Unable to prepare proof image.");
+  }
+
+  context.drawImage(image, 0, 0, width, height);
+  URL.revokeObjectURL(image.src);
+  let blob: Blob | null = null;
+  for (const quality of PROOF_IMAGE_QUALITY_STEPS) {
+    blob = await canvasToBlob(canvas, "image/jpeg", quality);
+    if (blob.size <= PROOF_IMAGE_MAX_UPLOAD_BYTES) {
+      break;
+    }
+  }
+
+  if (!blob || blob.size > PROOF_IMAGE_MAX_UPLOAD_BYTES) {
+    throw new Error("Proof image is still too large after compression. Please choose a smaller image.");
+  }
+
+  return new File([blob], replaceImageExtension(file.name), { type: "image/jpeg", lastModified: Date.now() });
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => {
+      URL.revokeObjectURL(image.src);
+      reject(new Error("Unable to read proof image."));
+    };
+    image.src = URL.createObjectURL(file);
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error("Unable to compress proof image."));
+        return;
+      }
+
+      resolve(blob);
+    }, type, quality);
+  });
+}
+
+function replaceImageExtension(fileName: string): string {
+  const baseName = fileName.replace(/\.[^.]+$/, "");
+  return `${baseName || "delivery-proof"}.jpg`;
+}
+
+function isToday(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+}
+
 function Metric({ label, value, icon }: Readonly<{ label: string; value: string; icon: React.ReactNode }>) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
@@ -530,8 +607,8 @@ function statusClass(status: DeliveryStatus): string {
 }
 
 function deliveryCoordinates(delivery: DeliveryItem): { latitude: number; longitude: number } | null {
-  const latitude = Number(delivery.deliveryLatitude ?? delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude);
-  const longitude = Number(delivery.deliveryLongitude ?? delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude);
+  const latitude = Number(delivery.customerLocation?.latitude ?? delivery.customer?.locations?.[0]?.latitude ?? delivery.deliveryLatitude);
+  const longitude = Number(delivery.customerLocation?.longitude ?? delivery.customer?.locations?.[0]?.longitude ?? delivery.deliveryLongitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return null;
   }
