@@ -77,6 +77,12 @@ SELECT 'pm_credit_' || "id", "tenant_id", "id", 'Credit', 'CRED', 'CREDIT', '#85
 FROM "stores"
 ON CONFLICT DO NOTHING;
 
+INSERT INTO "payment_methods"
+  ("id", "tenant_id", "store_id", "name", "short_code", "type", "color", "icon", "keyboard_shortcut", "display_order", "is_default", "is_active", "requires_reference", "reference_label")
+SELECT 'pm_netbanking_' || "id", "tenant_id", "id", 'Net banking', 'NETBANKING', 'CUSTOM', '#2563eb', 'ti-building-bank', NULL, 5, false, true, true, 'Bank reference'
+FROM "stores"
+ON CONFLICT DO NOTHING;
+
 -- Migrate invoice display method to a payment method reference.
 ALTER TABLE "invoices" ADD COLUMN "payment_method_id" TEXT;
 
@@ -117,8 +123,9 @@ ALTER TABLE "invoice_payments" ADD COLUMN "void_authorised_by" TEXT;
 
 UPDATE "invoice_payments" ip
 SET "payment_method_id" = pm."id"
-FROM "invoices" i
-JOIN "payment_methods" pm ON pm."store_id" = COALESCE(
+FROM "invoices" i, "payment_methods" pm
+WHERE ip."invoice_id" = i."id"
+  AND pm."store_id" = COALESCE(
     i."store_id",
     (
       SELECT s."id"
@@ -131,8 +138,7 @@ JOIN "payment_methods" pm ON pm."store_id" = COALESCE(
   AND pm."short_code" = CASE COALESCE(ip."mode"::TEXT, i."payment_mode"::TEXT)
     WHEN 'CREDIT' THEN 'CRED'
     ELSE COALESCE(ip."mode"::TEXT, i."payment_mode"::TEXT)
-  END
-WHERE ip."invoice_id" = i."id";
+  END;
 
 UPDATE "invoice_payments" ip
 SET "cashier_id" = ip."created_by"
