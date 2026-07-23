@@ -116,7 +116,7 @@ export class BillingRepository {
         ? {
             invoiceDate: {
               ...(query.from ? { gte: query.from } : {}),
-              ...(query.to ? { lte: endOfDay(query.to) } : {}),
+              ...(query.to ? { lte: query.to } : {}),
             },
           }
         : {}),
@@ -491,12 +491,6 @@ export interface InvoiceTotals {
   totalCgst: number;
   totalSgst: number;
   grandTotal: number;
-}
-
-function endOfDay(date: Date): Date {
-  const result = new Date(date);
-  result.setHours(23, 59, 59, 999);
-  return result;
 }
 
 function readSplitPayments(verticalData: unknown): SplitPaymentInput[] {

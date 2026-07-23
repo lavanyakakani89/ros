@@ -8,6 +8,7 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 
 import { StatStrip } from "@/components/shared/stat-strip";
 import { createAuthenticatedApiClient, downloadApiFile } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { getStoredTenant } from "@/lib/vertical-config";
 
 type Tab = "sales" | "inventory" | "pnl" | "gstr" | "dayend" | "customers" | "suppliers" | "aging" | "stock" | "tally";
@@ -56,15 +57,12 @@ interface DayEndReport {
   closingCash: number;
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
-function weekAgoStr() { return new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10); }
-
 export function ReportsDashboard() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") as Tab | null) ?? "sales";
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [from, setFrom] = useState(weekAgoStr());
-  const [to, setTo] = useState(todayStr());
+  const [from, setFrom] = useState(() => defaultFromDate(6));
+  const [to, setTo] = useState(() => todayDate());
   const [gstEnabled, setGstEnabled] = useState(true);
 
   useEffect(() => {
@@ -77,8 +75,7 @@ export function ReportsDashboard() {
 
   const summaryQuery = useQuery({
     queryKey: ["reports-summary", from, to],
-    queryFn: () =>
-      createAuthenticatedApiClient().get<ReportSummary>(`/reports/summary?from=${from}&to=${to}`),
+    queryFn: () => createAuthenticatedApiClient().get<ReportSummary>(`/reports/summary?${reportDateQuery(from, to)}`),
     enabled: tab === "sales" || (gstEnabled && tab === "gstr"),
   });
   const inventoryQuery = useQuery({
@@ -88,7 +85,7 @@ export function ReportsDashboard() {
   });
   const pnlQuery = useQuery({
     queryKey: ["reports-pnl", from, to],
-    queryFn: () => createAuthenticatedApiClient().get<PnlReport>(`/reports/pnl?from=${from}&to=${to}`),
+    queryFn: () => createAuthenticatedApiClient().get<PnlReport>(`/reports/pnl?${reportDateQuery(from, to)}`),
     enabled: tab === "pnl",
   });
   const dayEndQuery = useQuery({
@@ -123,6 +120,12 @@ export function ReportsDashboard() {
     const a = document.createElement("a");
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function reportDateQuery(fromDate: string, toDate: string): string {
+    const params = new URLSearchParams();
+    appendDateRange(params, fromDate, toDate);
+    return params.toString();
   }
 
   function exportGstr1() {
@@ -181,9 +184,9 @@ export function ReportsDashboard() {
             To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 rounded-md border border-border px-3 text-sm" />
           </label>
           {[
-            { label: "Today", fn: () => { setFrom(todayStr()); setTo(todayStr()); } },
-            { label: "Last 7d", fn: () => { setFrom(weekAgoStr()); setTo(todayStr()); } },
-            { label: "This month", fn: () => { const d = new Date(); setFrom(`${String(d.getFullYear())}-${String(d.getMonth() + 1).padStart(2, "0")}-01`); setTo(todayStr()); } },
+            { label: "Today", fn: () => { setFrom(todayDate()); setTo(todayDate()); } },
+            { label: "Last 7d", fn: () => { setFrom(defaultFromDate(6)); setTo(todayDate()); } },
+            { label: "This month", fn: () => { setFrom(monthStartDate()); setTo(todayDate()); } },
           ].map((q) => (
             <button key={q.label} onClick={q.fn} className="h-9 rounded-md border border-border px-3 text-sm text-slate-600 hover:bg-slate-50">{q.label}</button>
           ))}
@@ -453,6 +456,10 @@ export function ReportsDashboard() {
       )}
     </div>
   );
+}
+
+function monthStartDate(): string {
+  return `${todayDate().slice(0, 8)}01`;
 }
 
 function ChartCard({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {

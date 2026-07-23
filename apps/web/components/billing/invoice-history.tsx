@@ -4,8 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, MessageCircle, Pencil, Printer, RotateCcw, Search, ShoppingBag, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { apiUrl, createAuthenticatedApiClient } from "@/lib/api-client";
+import { apiUrl, createAuthenticatedApiClient, downloadApiFile } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { appendDateRange, todayDate } from "@/lib/date-range";
+import { printViaLocalAgent } from "@/lib/local-print-agent";
 import { getStoredAuthSession, getStoredTenant } from "@/lib/vertical-config";
 import { fetchWhatsappMessageTemplates, formatInvoiceRecordWhatsappMessage, getWhatsappTemplateBody, openWhatsappMessage } from "@/lib/whatsapp";
 
@@ -89,6 +91,14 @@ interface RazorpayStatusResponse {
   source: "tenant" | "platform" | null;
 }
 
+interface PrinterResult {
+  status: string;
+  message: string;
+  bytesBase64?: string;
+  printerName?: string | null;
+  agentUrl?: string | null;
+}
+
 export function InvoiceHistory({
   surface = "embedded",
   onEdit,
@@ -97,7 +107,7 @@ export function InvoiceHistory({
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
 }>) {
   const queryClient = useQueryClient();
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = useMemo(() => todayDate(), []);
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [search, setSearch] = useState("");
@@ -118,9 +128,8 @@ export function InvoiceHistory({
     const params = new URLSearchParams({
       page: String(page),
       limit: "10",
-      from,
-      to,
     });
+    appendDateRange(params, from, to);
     if (search.trim()) params.set("search", search.trim());
     if (status) params.set("status", status);
     return params.toString();
@@ -192,6 +201,39 @@ export function InvoiceHistory({
       window.open(apiUrl(`/billing/invoices/${invoice.id}/pdf/view`), "_blank", "noopener,noreferrer");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Unable to prepare invoice PDF.");
+    }
+  }
+
+  async function printThermalInvoice(invoice: InvoiceRecord) {
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      const result = await createAuthenticatedApiClient().post<PrinterResult>(`/billing/invoices/${invoice.id}/print`, {});
+      if (result.status === "printed" || result.status === "queued") {
+        setActionNotice(result.message || "Thermal print sent.");
+        return;
+      }
+
+      if (result.status === "local_agent_payload") {
+        await printViaLocalAgent({
+          agentUrl: result.agentUrl,
+          printerName: result.printerName,
+          bytesBase64: result.bytesBase64,
+          jobName: `BizBil ${invoice.invoiceNumber}`,
+        });
+        setActionNotice("Printed through BizBil Local Print Agent.");
+        return;
+      }
+
+      if (result.status === "bluetooth_payload") {
+        setActionNotice("Bluetooth printer payload is ready. Use the paired browser printer flow to send it.");
+        return;
+      }
+
+      await downloadApiFile(`/billing/invoices/${invoice.id}/pdf/view`, `${invoice.invoiceNumber}.pdf`);
+      setActionNotice(`${result.message || "Thermal printer not available."} PDF downloaded instead.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Thermal print failed.");
     }
   }
 
@@ -377,7 +419,7 @@ export function InvoiceHistory({
         </div>
 
         {isDrawer ? (
-          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} canSendPaymentLinks={razorpayStatusQuery.data?.configured === true} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
+          <InvoiceDetailPanel invoice={selectedInvoice} onPrint={printInvoice} onThermalPrint={printThermalInvoice} onShareWhatsapp={shareInvoiceWhatsApp} onSendPaymentLink={sendPaymentLink} onEdit={onEdit} onReturn={openReturnDialog} canCancel={canCancelInvoices} canSendPaymentLinks={razorpayStatusQuery.data?.configured === true} onCancel={(invoice) => cancelInvoice.mutate(invoice.id)} />
         ) : null}
       </div>
     </section>
@@ -513,6 +555,7 @@ function InvoiceReturnDialog({
 function InvoiceDetailPanel({
   invoice,
   onPrint,
+  onThermalPrint,
   onShareWhatsapp,
   onSendPaymentLink,
   onEdit,
@@ -523,6 +566,7 @@ function InvoiceDetailPanel({
 }: Readonly<{
   invoice: InvoiceRecord | null;
   onPrint: (invoice: InvoiceRecord) => void | Promise<void>;
+  onThermalPrint: (invoice: InvoiceRecord) => void | Promise<void>;
   onShareWhatsapp: (invoice: InvoiceRecord) => void;
   onSendPaymentLink: (invoice: InvoiceRecord) => void | Promise<void>;
   onEdit?: ((invoice: InvoiceRecord) => void) | undefined;
@@ -599,6 +643,10 @@ function InvoiceDetailPanel({
               Print PDF
             </button>
           ) : null}
+          <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 text-sm font-medium text-amber-900" onClick={() => void onThermalPrint(invoice)}>
+            <Printer className="size-4" aria-hidden="true" />
+            Thermal print
+          </button>
           {invoice.customer?.phone ? (
             <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800" onClick={() => onShareWhatsapp(invoice)}>
               <MessageCircle className="size-4" aria-hidden="true" />

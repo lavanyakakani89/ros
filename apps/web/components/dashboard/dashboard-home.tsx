@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 
 import { iconMap } from "@/components/shared/icon-map";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { appendDateRange, defaultFromDate, todayDate } from "@/lib/date-range";
 import { dashboardModuleGroups } from "@/lib/navigation-groups";
 import { getPendingInvoiceCounts } from "@/lib/offline-queue";
 import { getStoredTenant, getStoredVerticalConfig, type StoredTenant } from "@/lib/vertical-config";
@@ -82,8 +83,8 @@ export function DashboardHome() {
   const [verticalConfig, setVerticalConfig] = useState<VerticalConfig>(pharmacyConfig);
   const [tenant, setTenant] = useState<StoredTenant | null>(null);
   const [offlineInvoices, setOfflineInvoices] = useState({ pending: 0, syncing: 0, failed: 0 });
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  const today = todayDate();
+  const weekAgo = defaultFromDate(6);
 
   useEffect(() => {
     setVerticalConfig(getStoredVerticalConfig() ?? pharmacyConfig);
@@ -96,12 +97,12 @@ export function DashboardHome() {
   const todaySalesQuery = useQuery({
     queryKey: ["dashboard-sales-today", today],
     queryFn: () =>
-      createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?from=${today}&to=${today}`),
+      createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?${reportDateQuery(today, today)}`),
   });
   const weekSalesQuery = useQuery({
     queryKey: ["dashboard-sales-week", weekAgo, today],
     queryFn: () =>
-      createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?from=${weekAgo}&to=${today}`),
+      createAuthenticatedApiClient().get<SalesSummary>(`/reports/summary?${reportDateQuery(weekAgo, today)}`),
   });
   const inventoryQuery = useQuery({
     queryKey: ["dashboard-inventory"],
@@ -110,7 +111,7 @@ export function DashboardHome() {
   const pnlQuery = useQuery({
     queryKey: ["dashboard-pnl"],
     queryFn: () =>
-      createAuthenticatedApiClient().get<PnlSummary>(`/reports/pnl?from=${weekAgo}&to=${today}`),
+      createAuthenticatedApiClient().get<PnlSummary>(`/reports/pnl?${reportDateQuery(weekAgo, today)}`),
   });
   const deliveriesQuery = useQuery({
     queryKey: ["dashboard-deliveries"],
@@ -436,6 +437,12 @@ function moduleColor(href: string): { bg: string; icon: string } {
 
 function money(value: number) {
   return `₹${value.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+function reportDateQuery(from: string, to: string): string {
+  const params = new URLSearchParams();
+  appendDateRange(params, from, to);
+  return params.toString();
 }
 
 function deliveryStatusClass(status: DeliveryRecord["status"]): string {

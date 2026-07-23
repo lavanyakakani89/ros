@@ -1,6 +1,7 @@
 import { InvoiceStatus, PaymentMode, type PrismaClient, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
+import { datePartInIndia, defaultBusinessRange } from "../../lib/date-range.js";
 import type { ReportDateRange } from "./reports.schema.js";
 
 const activeInvoiceStatuses = [InvoiceStatus.CONFIRMED, InvoiceStatus.PAID, InvoiceStatus.PARTIAL];
@@ -162,18 +163,17 @@ function roundNumber(value: number): number {
 type InvoiceItemForReport = InvoiceWithItems["items"][number];
 
 function toRange(query: ReportDateRange): { gte: Date; lte: Date } {
-  const now = new Date();
-  const from = query.from ?? new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000);
-  const to = query.to ?? now;
-  from.setHours(0, 0, 0, 0);
-  to.setHours(23, 59, 59, 999);
-  return { gte: from, lte: to };
+  const defaults = defaultBusinessRange(6);
+  return {
+    gte: query.from ?? defaults.gte,
+    lte: query.to ?? defaults.lte,
+  };
 }
 
 function groupDailySales(invoices: InvoiceWithItems[]) {
   const daily = new Map<string, { date: string; sales: number; invoices: number }>();
   for (const invoice of invoices) {
-    const date = invoice.invoiceDate.toISOString().slice(0, 10);
+    const date = datePartInIndia(invoice.invoiceDate);
     const current = daily.get(date) ?? { date, sales: 0, invoices: 0 };
     current.sales += invoice.grandTotal.toNumber();
     current.invoices += 1;

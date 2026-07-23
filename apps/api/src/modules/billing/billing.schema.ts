@@ -1,6 +1,8 @@
 import { PaymentMode } from "@prisma/client";
 import { z } from "zod";
 
+import { dateParamSchema } from "../../lib/date-range.js";
+
 const decimalSchema = z.coerce.number().finite();
 const queryBooleanSchema = z.preprocess((value) => {
   if (value === undefined) return false;
@@ -20,8 +22,8 @@ export const invoiceListQuerySchema = z.object({
   customerId: z.string().trim().min(1).optional(),
   storeId: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  from: dateParamSchema("start"),
+  to: dateParamSchema("end"),
 });
 
 const invoiceItemSchema = z.object({
