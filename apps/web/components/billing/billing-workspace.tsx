@@ -2,17 +2,31 @@
 
 import { History, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { InvoiceHistory, type InvoiceRecord } from "@/components/billing/invoice-history";
 import { PosInvoicePanel } from "@/components/billing/pos-invoice-panel";
 import { PageHeader } from "@/components/shared/page-header";
 import { createAuthenticatedApiClient } from "@/lib/api-client";
+import { useBillingStore } from "@/lib/billing-store";
 
 export function BillingWorkspace() {
   const searchParams = useSearchParams();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceRecord | null>(null);
+  const editingInvoiceRef = useRef<InvoiceRecord | null>(null);
+
+  useEffect(() => {
+    editingInvoiceRef.current = editingInvoice;
+  }, [editingInvoice]);
+
+  useEffect(() => {
+    return () => {
+      if (editingInvoiceRef.current) {
+        useBillingStore.getState().reset();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     // Next widens this to nullable during production builds when pages/ exists.

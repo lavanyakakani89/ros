@@ -1187,8 +1187,12 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         };
         await syncEditedInvoiceDeliveryPreference(editingInvoice.id, deliveryPayload);
         setLastBill(nextBill);
-        const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
-        if (outputOk) {
+        if (autoPrint) {
+          const outputOk = await handleConfiguredInvoiceOutput(nextBill.id, nextBill.invoiceNumber, "Invoice updated");
+          if (outputOk) {
+            showStockWarnings(updated.stockWarnings ?? localStockWarnings);
+          }
+        } else {
           showStockWarnings(updated.stockWarnings ?? localStockWarnings);
         }
         await Promise.all([

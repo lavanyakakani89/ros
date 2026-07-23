@@ -19,6 +19,7 @@ export async function generateGstInvoicePdf(input: {
 }): Promise<string> {
   registerInvoiceTemplateHelpers();
   const gstEnabled = input.tenant.gstEnabled;
+  const deliveryCharge = deliveryChargeFromInvoice(input.invoice);
   const templateData = {
     invoice: input.invoice,
     tenant: input.tenant,
@@ -45,6 +46,8 @@ export async function generateGstInvoicePdf(input: {
     totalDiscount: money(input.invoice.totalDiscount),
     totalCgst: gstEnabled ? money(input.invoice.totalCgst) : "",
     totalSgst: gstEnabled ? money(input.invoice.totalSgst) : "",
+    deliveryCharge: formatMoneyNumber(deliveryCharge),
+    hasDeliveryCharge: deliveryCharge > 0,
     grandTotal: money(input.invoice.grandTotal),
     amountPaid: money(input.invoice.amountPaid),
     amountDue: money(input.invoice.amountDue),
@@ -54,6 +57,8 @@ export async function generateGstInvoicePdf(input: {
       totalDiscount: money(input.invoice.totalDiscount),
       cgst: gstEnabled ? money(input.invoice.totalCgst) : "0.00",
       sgst: gstEnabled ? money(input.invoice.totalSgst) : "0.00",
+      deliveryCharge: formatMoneyNumber(deliveryCharge),
+      hasDeliveryCharge: deliveryCharge > 0,
       grandTotal: money(input.invoice.grandTotal),
       amountPaid: money(input.invoice.amountPaid),
       amountDue: money(input.invoice.amountDue),
@@ -339,6 +344,21 @@ function money(value: { toNumber: () => number }): string {
   return value.toNumber().toFixed(2);
 }
 
+function formatMoneyNumber(value: number): string {
+  return value.toFixed(2);
+}
+
+function deliveryChargeFromInvoice(invoice: InvoiceWithItems): number {
+  const verticalData = invoice.verticalData;
+  if (!verticalData || typeof verticalData !== "object" || Array.isArray(verticalData)) {
+    return 0;
+  }
+
+  const value = (verticalData as Record<string, unknown>).deliveryCharge;
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
 function getTemplate(): string {
   return `<!doctype html>
 <html>
@@ -418,6 +438,7 @@ function getTemplate(): string {
       <div><span>Discount</span><span>₹{{totalDiscount}}</span></div>
       {{#if gstEnabled}}<div><span>CGST</span><span>₹{{totalCgst}}</span></div>{{/if}}
       {{#if gstEnabled}}<div><span>SGST</span><span>₹{{totalSgst}}</span></div>{{/if}}
+      {{#if hasDeliveryCharge}}<div><span>Delivery charge</span><span>₹{{deliveryCharge}}</span></div>{{/if}}
       <div class="grand"><span>Grand total</span><span>₹{{grandTotal}}</span></div>
       <div><span>Paid</span><span>₹{{amountPaid}}</span></div>
       <div><span>Due</span><span>₹{{amountDue}}</span></div>

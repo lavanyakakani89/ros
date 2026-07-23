@@ -15,6 +15,7 @@ export type InvoiceForPrint = {
   grandTotal: { toNumber: () => number };
   amountPaid: { toNumber: () => number };
   amountDue: { toNumber: () => number };
+  verticalData?: unknown;
   customer?: { name: string; phone: string; address?: string | null } | null;
   items: InvoiceItem[];
 };
@@ -200,6 +201,7 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
   }
 
   const columns = config.columns;
+  const deliveryCharge = deliveryChargeFromInvoice(invoice);
   const lines: string[] = [
     config.showShopName ? center(tenant.name, columns) : "",
     config.showAddress && tenant.address ? center(tenant.address, columns) : "",
@@ -218,6 +220,7 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
     config.showDiscount && (!config.showDiscountOnlyWhenPresent || invoice.totalDiscount.toNumber() > 0) ? twoCol(config.labels.discount, money(invoice.totalDiscount), columns) : "",
     config.showCgst ? twoCol(config.labels.cgst, money(invoice.totalCgst), columns) : "",
     config.showSgst ? twoCol(config.labels.sgst, money(invoice.totalSgst), columns) : "",
+    deliveryCharge > 0 ? twoCol("Delivery charge", moneyNumber(deliveryCharge), columns) : "",
     rule(columns),
     twoCol(config.labels.total, money(invoice.grandTotal), columns),
     config.showPaid ? twoCol(config.labels.paid, money(invoice.amountPaid), columns) : "",
@@ -236,6 +239,7 @@ export function buildEscposInvoice(tenant: Tenant, invoice: InvoiceForPrint, tem
 function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, template: InvoiceTemplate, config: EscposTemplateConfig): { bytes: Buffer; text: string } {
   const columns = config.columns;
   const totalQuantity = invoice.items.reduce((sum, item) => sum + item.quantity.toNumber(), 0);
+  const deliveryCharge = deliveryChargeFromInvoice(invoice);
   const phone = [tenant.phone, config.alternatePhone].filter(Boolean).join(" / ");
   const customerName = invoice.customer?.name ?? "Walk-in";
   const customerPhone = invoice.customer?.phone ?? "";
@@ -286,6 +290,7 @@ function buildSivsanDetailedInvoice(tenant: Tenant, invoice: InvoiceForPrint, te
     ),
     rule(columns),
     twoCol("DISC. AMOUNT :", money(invoice.totalDiscount), columns),
+    deliveryCharge > 0 ? twoCol("DELIVERY :", moneyNumber(deliveryCharge), columns) : "",
     rule(columns),
     twoCol("GRAND TOTAL", `${config.currencyLabel} ${money(invoice.grandTotal)}`, columns),
     rule(columns),
@@ -585,6 +590,21 @@ function spacingConfig(value: unknown): EscposTemplateConfig["spacing"] {
 
 function money(value: { toNumber: () => number }): string {
   return value.toNumber().toFixed(2);
+}
+
+function moneyNumber(value: number): string {
+  return value.toFixed(2);
+}
+
+function deliveryChargeFromInvoice(invoice: InvoiceForPrint): number {
+  const verticalData = invoice.verticalData;
+  if (!verticalData || typeof verticalData !== "object" || Array.isArray(verticalData)) {
+    return 0;
+  }
+
+  const value = (verticalData as Record<string, unknown>).deliveryCharge;
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
 function detailedItemLines(item: InvoiceItem, serial: number, columns: number, widths: number[], lineGap: number): string[] {
