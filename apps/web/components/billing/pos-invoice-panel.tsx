@@ -524,9 +524,10 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
-      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.altKey || event.metaKey) return;
       const key = event.key;
-      const shortcut = paymentMethods.find((method) => method.keyboard_shortcut?.toLowerCase() === `ctrl+${key}`.toLowerCase());
+      const pressedShortcut = event.ctrlKey ? `Ctrl+${key}` : key;
+      const shortcut = paymentMethods.find((method) => normalizeShortcutKey(method.keyboard_shortcut) === normalizeShortcutKey(pressedShortcut));
       if (shortcut) {
         event.preventDefault();
         selectPaymentMethod(shortcut);
@@ -537,13 +538,14 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
         }
         return;
       }
+      if (!event.ctrlKey) return;
       if (key.toLowerCase() === "h") {
         event.preventDefault();
         if (isEditMode) {
           notify("Finish or cancel invoice editing before holding a bill.", "red");
           return;
         }
-        holdCurrentBill(selectedCustomer?.id ?? "");
+        holdCurrentBill();
       }
       if (key.toLowerCase() === "n") {
         event.preventDefault();
@@ -1437,14 +1439,43 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
     focusBarcodeSoon();
   }
 
-  function holdCurrentBill(customerId: string) {
-    holdBill(customerId);
+  function holdCurrentBill() {
+    holdBill({
+      customer: selectedCustomer,
+      delivery: {
+        required: deliveryRequired,
+        address: deliveryAddress,
+        notes: deliveryNotes,
+        charge: deliveryCharge,
+        scheduledTime: scheduledDeliveryTime,
+      },
+    });
     setQuantityDrafts({});
+    setSelectedCustomer(null);
+    setCustomerSearch("");
+    setDeliveryRequired(false);
+    setDeliveryAddress("");
+    setDeliveryNotes("");
+    setDeliveryCharge(0);
+    setScheduledDeliveryTime("");
     focusBarcodeSoon();
   }
 
   function restoreHeldBill(billId: string) {
-    restoreHeld(billId);
+    const bill = restoreHeld(billId);
+    if (!bill) return;
+    if (bill.customer) {
+      setSelectedCustomer(bill.customer);
+      setCustomerSearch(`${bill.customer.name} ${bill.customer.phone}`.trim());
+    } else {
+      setSelectedCustomer(null);
+      setCustomerSearch("");
+    }
+    setDeliveryRequired(Boolean(bill.delivery?.required));
+    setDeliveryAddress(bill.delivery?.address ?? bill.customer?.address ?? "");
+    setDeliveryNotes(bill.delivery?.notes ?? "");
+    setDeliveryCharge(bill.delivery?.charge ?? 0);
+    setScheduledDeliveryTime(bill.delivery?.scheduledTime ?? "");
     setQuantityDrafts({});
     setShowHeld(false);
     focusBarcodeSoon();
@@ -1577,7 +1608,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <div className="grid gap-2 rounded-md border border-amber-200 bg-amber-50 p-2">
               {heldBills.map((bill) => (
                 <div key={bill.id} className="flex items-center justify-between gap-2 rounded-md border border-amber-200 bg-white px-2 py-1.5">
-                  <span className="min-w-0 truncate text-xs text-slate-700">{bill.label} ({bill.lines.length} items)</span>
+                  <span className="min-w-0 truncate text-xs text-slate-700">{formatHeldBillSummary(bill)}</span>
                   <div className="flex shrink-0 gap-2">
                     <button className="text-xs font-semibold text-emerald-700" onClick={() => restoreHeldBill(bill.id)}>Restore</button>
                     <button className="text-xs font-semibold text-red-600" onClick={() => deleteHeld(bill.id)}>Remove</button>
@@ -1936,7 +1967,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               ) : null}
               <button
                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 text-sm font-semibold text-amber-800 disabled:opacity-50"
-                onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")}
+                onClick={holdCurrentBill}
                 disabled={lines.length === 0 || isEditMode}
               >
                 <Pause className="size-4" aria-hidden="true" />
@@ -2023,7 +2054,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
               className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium disabled:opacity-50 ${
                 heldBills.length > 0 ? "border-amber-300 bg-amber-50 text-amber-800" : "border-border text-amber-700"
               }`}
-              onClick={() => holdCurrentBill(selectedCustomer?.id ?? "")}
+              onClick={holdCurrentBill}
               disabled={lines.length === 0 || isEditMode}
             >
               <Pause className="size-4" aria-hidden="true" />
@@ -2057,7 +2088,7 @@ export function PosInvoicePanel({ editingInvoice = null, onEditComplete, onDraft
             <div className="flex flex-wrap gap-2">
               {heldBills.map((bill) => (
                 <div key={bill.id} className="flex items-center gap-2 rounded-md border border-amber-200 bg-white px-2 py-1">
-                  <span className="text-xs text-slate-700">{bill.label} ({bill.lines.length} items)</span>
+                  <span className="text-xs text-slate-700">{formatHeldBillSummary(bill)}</span>
                   <button className="text-xs font-medium text-emerald-700" onClick={() => restoreHeldBill(bill.id)}>Restore</button>
                   <button className="text-xs text-red-600" onClick={() => deleteHeld(bill.id)}>Remove</button>
                 </div>
@@ -2824,6 +2855,14 @@ function productSearchPlaceholder(mode: ProductSearchMode): string {
   return "Type product name, or scan exact barcode/SKU + Enter";
 }
 
+function formatHeldBillSummary(bill: { label: string; lines: unknown[]; customer?: CustomerRecord | null; delivery?: { required: boolean } }): string {
+  const parts = [bill.customer ? bill.customer.name.trim() : bill.label, `${String(bill.lines.length)} items`];
+  if (bill.delivery?.required) {
+    parts.push("Delivery");
+  }
+  return parts.join(" | ");
+}
+
 function mergeProducts(...groups: ProductRecord[][]): ProductRecord[] {
   const byId = new Map<string, ProductRecord>();
   for (const group of groups) {
@@ -2993,6 +3032,10 @@ function paymentMethodToMode(method: PaymentMethodRecord): PaymentMode {
   if (method.type === "credit") return "CREDIT";
   if (method.type === "cash") return "CASH";
   return "CASH";
+}
+
+function normalizeShortcutKey(value: string | null | undefined): string {
+  return (value ?? "").trim().toLowerCase();
 }
 
 function buildPhonePeOrderLabel(existingInvoiceNumber?: string | null): string {

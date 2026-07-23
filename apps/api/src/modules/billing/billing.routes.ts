@@ -1,3 +1,4 @@
+import { InvoiceStatus, PaymentMode, UserRole } from "@prisma/client";
 import { z } from "zod";
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply } from "fastify";
 
@@ -5,6 +6,7 @@ import { BillingError, BillingService } from "./billing.service.js";
 import { createInvoiceSchema, invoiceIdParamsSchema, invoiceListQuerySchema, updateInvoiceSchema } from "./billing.schema.js";
 import { whatsappNotifyQueue } from "../../jobs/whatsapp-notify.job.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
+import { DeliveryError, DeliveryService } from "../delivery/delivery.service.js";
 
 const customerLedgerQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -13,8 +15,28 @@ const customerLedgerQuerySchema = z.object({
   to: z.coerce.date().optional(),
 });
 
+const posPaymentSchema = z.object({
+  mode: z.nativeEnum(PaymentMode),
+  amount: z.coerce.number().finite().positive(),
+  paymentMethodId: z.string().min(1).optional(),
+  referenceNumber: z.string().trim().min(1).optional(),
+  integrationAttemptId: z.string().trim().min(1).optional(),
+});
+
+const posConfirmSchema = z.object({
+  invoice: createInvoiceSchema,
+  payments: z.array(posPaymentSchema).default([]),
+  delivery: z.object({
+    customerId: z.string().min(1),
+    deliveryAddress: z.string().trim().min(5),
+    scheduledAt: z.coerce.date().optional(),
+    notes: z.string().trim().min(1).optional(),
+  }).optional(),
+});
+
 export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) => {
   const service = new BillingService(fastify);
+  const deliveryService = new DeliveryService(fastify);
   const returnInvoiceSchema = z.object({
     reason: z.string().trim().min(1),
     items: z.array(z.object({
@@ -56,6 +78,46 @@ export const billingRoutes: FastifyPluginCallback = (fastify, _options, done) =>
   fastify.post("/api/billing/invoices/:id/confirm", async (request, reply) => {
     const params = invoiceIdParamsSchema.parse(request.params);
     return handleBilling(reply, () => service.confirmInvoice(request.tenant, params.id, request.user.userId));
+  });
+
+  fastify.post("/api/billing/invoices/pos-confirm", async (request, reply) => {
+    const input = posConfirmSchema.parse(request.body);
+    return handleBilling(reply, async () => {
+      const created = await service.createInvoice(request.tenant, {
+        ...input.invoice,
+        ...(input.payments.length > 0 ? { verticalData: withoutSplitPayments(input.invoice.verticalData) } : {}),
+        ...storeIdForWrite(request.user.role, request.storeId, input.invoice.storeId),
+      });
+      const confirmed = await service.confirmInvoice(request.tenant, created.id, request.user.userId);
+
+      if (input.payments.length > 0) {
+        await recordPosPayments(fastify, {
+          tenantId: request.tenant.id,
+          invoiceId: created.id,
+          userId: request.user.userId,
+          role: request.user.role,
+          grandTotal: Number(confirmed.grandTotal),
+          payments: input.payments,
+        });
+      }
+
+      if (input.delivery) {
+        await deliveryService.createDelivery(request.tenant, {
+          ...input.delivery,
+          invoiceId: created.id,
+        });
+      }
+
+      const updated = await service.getInvoice(request.tenant, created.id);
+      return {
+        id: updated.id,
+        invoiceNumber: updated.invoiceNumber,
+        grandTotal: updated.grandTotal,
+        amountDue: updated.amountDue,
+        status: updated.status,
+        stockWarnings: confirmed.stockWarnings,
+      };
+    });
   });
 
   fastify.post("/api/billing/invoices/:id/cancel", async (request, reply) => {
@@ -422,11 +484,117 @@ function formatQuantityForWhatsapp(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toLocaleString("en-IN", { maximumFractionDigits: 3 });
 }
 
+async function recordPosPayments(
+  fastify: FastifyInstance,
+  input: {
+    tenantId: string;
+    invoiceId: string;
+    userId: string;
+    role: UserRole;
+    grandTotal: number;
+    payments: z.infer<typeof posPaymentSchema>[];
+  },
+) {
+  const total = roundMoney(input.payments.reduce((sum, payment) => sum + payment.amount, 0));
+  if (Math.abs(total - input.grandTotal) > 0.01) {
+    throw new BillingError("Payment total must match invoice total", 400);
+  }
+
+  const paymentMethodIds = input.payments.flatMap((payment) => payment.paymentMethodId ? [payment.paymentMethodId] : []);
+  const paymentMethods = await fastify.prisma.paymentMethod.findMany({
+    where: {
+      tenantId: input.tenantId,
+      id: { in: paymentMethodIds },
+      isActive: true,
+      deletedAt: null,
+    },
+  });
+  const methodById = new Map(paymentMethods.map((method) => [method.id, method]));
+
+  for (const payment of input.payments) {
+    if (!payment.paymentMethodId) {
+      if (payment.mode === PaymentMode.CREDIT) continue;
+      throw new BillingError("Payment method is required", 400);
+    }
+
+    const method = methodById.get(payment.paymentMethodId);
+    if (!method) {
+      throw new BillingError("Payment method not found or inactive", 400);
+    }
+    if (method.requiresReference && !payment.referenceNumber) {
+      throw new BillingError(`Reference required for ${method.name}`, 400);
+    }
+    if (method.allowedRoles.length > 0 && !isPaymentMethodAllowedForRole(method.allowedRoles, input.role)) {
+      throw new BillingError(`Payment method "${method.name}" is not available for your role`, 403);
+    }
+  }
+
+  const payablePayments = input.payments.filter((payment) => payment.mode !== PaymentMode.CREDIT);
+  const amountPaid = roundMoney(payablePayments.reduce((sum, payment) => sum + payment.amount, 0));
+  const amountDue = Math.max(roundMoney(input.grandTotal - amountPaid), 0);
+  const firstPayment = input.payments[0];
+  const firstPayablePayment = payablePayments[0];
+  const status = amountDue <= 0.01
+    ? InvoiceStatus.PAID
+    : amountPaid > 0
+      ? InvoiceStatus.PARTIAL
+      : InvoiceStatus.CONFIRMED;
+  const invoicePaymentMethodId = firstPayablePayment?.paymentMethodId ?? firstPayment?.paymentMethodId;
+
+  await fastify.prisma.$transaction(async (tx) => {
+    if (payablePayments.length > 0) {
+      await tx.payment.createMany({
+        data: payablePayments.map((payment) => ({
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          paymentMethodId: payment.paymentMethodId ?? "",
+          amount: payment.amount,
+          mode: payment.mode,
+          createdBy: input.userId,
+          cashierId: input.userId,
+          ...(payment.referenceNumber ? { referenceNumber: payment.referenceNumber } : {}),
+          ...(payment.integrationAttemptId ? { razorpayId: payment.integrationAttemptId } : {}),
+        })),
+      });
+    }
+
+    await tx.invoice.update({
+      where: { id: input.invoiceId },
+      data: {
+        amountPaid,
+        amountDue,
+        status,
+        ...(invoicePaymentMethodId ? { paymentMethod: { connect: { id: invoicePaymentMethodId } } } : {}),
+        paymentMode: firstPayablePayment?.mode ?? firstPayment?.mode ?? PaymentMode.CASH,
+      },
+    });
+  });
+}
+
+function normalizeAllowedRole(role: string): string {
+  const normalized = role.toUpperCase();
+  return normalized === "CASHIER" ? UserRole.STAFF : normalized;
+}
+
+function isPaymentMethodAllowedForRole(allowedRoles: string[], role: UserRole): boolean {
+  return allowedRoles.map(normalizeAllowedRole).includes(role);
+}
+
+function withoutSplitPayments(verticalData: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!verticalData || !("splitPayments" in verticalData)) {
+    return verticalData;
+  }
+
+  const next = { ...verticalData };
+  delete next.splitPayments;
+  return next;
+}
+
 async function handleBilling<T>(reply: FastifyReply, handler: () => Promise<T>): Promise<T | undefined> {
   try {
     return await handler();
   } catch (error) {
-    if (error instanceof BillingError) {
+    if (error instanceof BillingError || error instanceof DeliveryError) {
       return reply.status(error.statusCode).send({ error: error.message });
     }
 

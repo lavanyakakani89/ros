@@ -10,12 +10,38 @@ export interface PosLine {
   gstRate: number;
 }
 
+export interface HeldBillCustomer {
+  id: string;
+  name: string;
+  phone: string;
+  address: string | null;
+  creditLimit?: number | null;
+  outstandingDue?: number | null;
+}
+
+export interface HeldBillDelivery {
+  required: boolean;
+  address: string;
+  notes: string;
+  charge: number;
+  scheduledTime: string;
+}
+
 export interface HeldBill {
   id: string;
   label: string;
   lines: PosLine[];
   customerId: string;
+  customer?: HeldBillCustomer | null;
+  delivery?: HeldBillDelivery;
   heldAt: string;
+}
+
+export interface HoldBillInput {
+  customerId?: string;
+  customer?: HeldBillCustomer | null;
+  delivery?: HeldBillDelivery;
+  label?: string;
 }
 
 interface BillingState {
@@ -27,8 +53,8 @@ interface BillingState {
   addLine: () => string;
   removeLine: (id: string) => void;
   reset: () => void;
-  holdBill: (customerId: string, label?: string) => void;
-  restoreHeld: (id: string) => void;
+  holdBill: (input?: HoldBillInput) => void;
+  restoreHeld: (id: string) => HeldBill | undefined;
   deleteHeld: (id: string) => void;
   setAutoPrint: (enabled: boolean) => void;
 }
@@ -89,13 +115,16 @@ export const useBillingStore = create<BillingState>((set, get) => ({
       lines: state.lines.filter((line) => line.id !== id),
     })),
   reset: () => set({ lines: [] }),
-  holdBill: (customerId, label) => {
+  holdBill: (input = {}) => {
     const { lines, heldBills } = get();
+    const customerName = input.customer ? input.customer.name.trim() : "";
     const held: HeldBill = {
       id: crypto.randomUUID(),
-      label: label ?? `Bill ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`,
+      label: input.label ?? (customerName || `Bill ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}`),
       lines: lines.filter((l) => l.productId),
-      customerId,
+      customerId: input.customerId ?? input.customer?.id ?? "",
+      customer: input.customer ?? null,
+      ...(input.delivery ? { delivery: input.delivery } : {}),
       heldAt: new Date().toISOString(),
     };
     const updated = [...heldBills, held];
@@ -105,10 +134,11 @@ export const useBillingStore = create<BillingState>((set, get) => ({
   restoreHeld: (id) => {
     const { heldBills } = get();
     const bill = heldBills.find((b) => b.id === id);
-    if (!bill) return;
+    if (!bill) return undefined;
     const updated = heldBills.filter((b) => b.id !== id);
     saveHeldBills(updated);
     set({ heldBills: updated, lines: bill.lines });
+    return bill;
   },
   deleteHeld: (id) => {
     const updated = get().heldBills.filter((b) => b.id !== id);

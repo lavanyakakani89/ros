@@ -292,6 +292,7 @@ export const paymentMethodsRoutes: FastifyPluginCallback = (fastify, _options, d
             invoiceId: id,
             paymentMethodId: leg.payment_method_id,
             amount: leg.amount,
+            createdBy: request.user.userId,
             cashierId: request.user.userId,
             ...(mode ? { mode } : {}),
             ...(leg.reference_number ? { referenceNumber: leg.reference_number } : {}),

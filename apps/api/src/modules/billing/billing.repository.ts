@@ -386,6 +386,7 @@ export class BillingRepository {
             amount: payment.amount,
             paymentMethodId: paymentMethod.id,
             mode: payment.mode,
+            createdBy: confirmedBy,
             cashierId: confirmedBy,
           });
         }
@@ -566,6 +567,7 @@ async function reconcileEditedInvoicePayments(
           amount: payment.amount,
           paymentMethodId: paymentMethod.id,
           mode: payment.mode,
+          createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
           cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
         };
         })),
@@ -638,6 +640,7 @@ async function reconcileEditedInvoicePayments(
         amount: amountPaid,
         paymentMethodId: paymentMethod.id,
         mode: input.selectedPaymentMode,
+        createdBy: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? "system",
         cashierId: input.updatedBy ?? input.existingPayments[0]?.cashierId ?? null,
       },
     });
