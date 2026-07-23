@@ -166,6 +166,16 @@ export function DeliveryRoutePlanner({ deliveries, users, depot }: Readonly<{ de
       ]);
     },
   });
+  const endPlan = useMutation({
+    mutationFn: (planId: string) => createAuthenticatedApiClient().post(`/delivery-route-plans/${planId}/cancel`, {}),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["delivery-route-plans"] }),
+        queryClient.invalidateQueries({ queryKey: ["deliveries"] }),
+        queryClient.invalidateQueries({ queryKey: ["delivery-agent"] }),
+      ]);
+    },
+  });
   const lockStop = useMutation({
     mutationFn: ({ planId, stopId, locked }: { planId: string; stopId: string; locked: boolean }) => createAuthenticatedApiClient().post(`/delivery-route-plans/${planId}/stops/${stopId}/${locked ? "lock" : "unlock"}`, {}),
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["delivery-route-plans"] }),
@@ -396,6 +406,18 @@ export function DeliveryRoutePlanner({ deliveries, users, depot }: Readonly<{ de
                   <button className="inline-flex h-8 items-center gap-1 rounded-md bg-emerald-700 px-2 text-xs font-semibold text-white disabled:opacity-50" disabled={plan.status !== "READY_FOR_REVIEW" && plan.status !== "APPLIED" && plan.status !== "PUBLISHED"} onClick={() => publishPlan.mutate(plan.id)}>
                     <Send className="size-3.5" aria-hidden="true" />
                     Publish
+                  </button>
+                  <button
+                    className="inline-flex h-8 items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                    disabled={plan.status === "COMPLETED" || plan.status === "CANCELLED" || endPlan.isPending}
+                    onClick={() => {
+                      if (window.confirm("End this route? Drivers will stop seeing it, completed deliveries stay completed, and unfinished deliveries return to pending.")) {
+                        endPlan.mutate(plan.id);
+                      }
+                    }}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    End route
                   </button>
                 </div>
                 {plan.routes.map((route) => (

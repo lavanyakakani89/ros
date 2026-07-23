@@ -208,6 +208,64 @@ export class DeliveryRouteRepository {
     return this.getPlan(tenantId, id);
   }
 
+  async cancelPlan(tenantId: string, id: string) {
+    const plan = await this.getPlan(tenantId, id);
+    if (!plan) {
+      return null;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.deliveryRoutePlan.update({
+        where: { id },
+        data: { status: DeliveryRoutePlanStatus.CANCELLED },
+      });
+
+      await tx.deliveryRoute.updateMany({
+        where: {
+          tenantId,
+          routePlanId: id,
+          status: { notIn: [DeliveryRouteStatus.COMPLETED, DeliveryRouteStatus.CANCELLED] },
+        },
+        data: {
+          status: DeliveryRouteStatus.CANCELLED,
+        },
+      });
+
+      await tx.deliveryRouteStop.updateMany({
+        where: {
+          tenantId,
+          route: { routePlanId: id },
+          status: { notIn: [DeliveryRouteStopStatus.DELIVERED, DeliveryRouteStopStatus.FAILED, DeliveryRouteStopStatus.CANCELLED] },
+        },
+        data: {
+          status: DeliveryRouteStopStatus.CANCELLED,
+        },
+      });
+
+      const activeDeliveryIds = plan.routes.flatMap((route) =>
+        route.stops
+          .filter((stop) => stop.deliveryId && !["DELIVERED", "FAILED", "CANCELLED"].includes(stop.status))
+          .map((stop) => stop.deliveryId as string),
+      );
+
+      if (activeDeliveryIds.length > 0) {
+        await tx.delivery.updateMany({
+          where: {
+            tenantId,
+            id: { in: activeDeliveryIds },
+            status: { in: [DeliveryStatus.PENDING, DeliveryStatus.ASSIGNED, DeliveryStatus.OUT_FOR_DELIVERY] },
+          },
+          data: {
+            assignedTo: null,
+            status: DeliveryStatus.PENDING,
+          },
+        });
+      }
+    });
+
+    return this.getPlan(tenantId, id);
+  }
+
   getPublishedRouteForDriver(tenantId: string, driverId: string) {
     return this.prisma.deliveryRoute.findFirst({
       where: {

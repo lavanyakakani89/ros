@@ -136,8 +136,12 @@ export class DeliveryRouteService {
   }
 
   async cancelPlan(tenant: Tenant, id: string) {
-    await this.patchPlan(tenant, id, { status: DeliveryRoutePlanStatus.CANCELLED });
-    return this.getPlan(tenant, id);
+    const plan = await this.repository.cancelPlan(tenant.id, id);
+    if (!plan) {
+      throw new DeliveryRouteError("Route plan not found", 404);
+    }
+
+    return plan;
   }
 
   async geocodeDelivery(tenant: Tenant, deliveryId: string) {
