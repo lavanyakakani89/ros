@@ -106,6 +106,10 @@ model User {
   isActive      Boolean        @default(true) @map("is_active")
   primaryStoreId String?       @map("primary_store_id")
   primaryStore  Store?         @relation("UserPrimaryStore", fields: [primaryStoreId], references: [id], onDelete: SetNull)
+  lastLatitude  Decimal?       @map("last_latitude") @db.Decimal(10, 7)
+  lastLongitude Decimal?       @map("last_longitude") @db.Decimal(10, 7)
+  lastLocationAccuracy Decimal? @map("last_location_accuracy") @db.Decimal(10, 2)
+  lastLocationAt DateTime?     @map("last_location_at")
   createdAt     DateTime       @default(now()) @map("created_at")
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
@@ -121,6 +125,7 @@ model User {
   @@unique([tenantId, email])
   @@unique([tenantId, username])
   @@index([tenantId])
+  @@index([tenantId, role, lastLocationAt])
   @@map("users")
 }
 

@@ -77,6 +77,12 @@ export const updateDeliveryStatusSchema = z.object({
   notes: z.string().trim().min(1).optional(),
 });
 
+export const updateMyLocationSchema = z.object({
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  accuracy: z.coerce.number().finite().nonnegative().optional(),
+});
+
 export const createDeliveryProofFieldsSchema = z.object({
   proofType: z.nativeEnum(DeliveryProofType).default(DeliveryProofType.DELIVERY_PHOTO),
   notes: z.string().trim().min(1).optional(),

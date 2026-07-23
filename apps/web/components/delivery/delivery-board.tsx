@@ -62,6 +62,10 @@ interface SettingsResponse {
     name: string;
     role: string;
     isActive: boolean;
+    lastLatitude?: string | number | null;
+    lastLongitude?: string | number | null;
+    lastLocationAccuracy?: string | number | null;
+    lastLocationAt?: string | null;
   }>;
 }
 
@@ -189,6 +193,8 @@ export function DeliveryBoard() {
             <div className="space-y-2 p-3">
               {items.map((delivery) => {
                 const coordinates = deliveryCoordinates(delivery);
+                const assignedUser = delivery.assignedTo ? deliveryUsers.find((user) => user.id === delivery.assignedTo) : null;
+                const driverLocation = assignedUser ? deliveryUserLocation(assignedUser) : null;
                 const deliveryProof = firstProofByType(delivery, "DELIVERY_PHOTO");
                 const paymentProof = firstProofByType(delivery, "PAYMENT_SCREENSHOT");
                 return (
@@ -210,6 +216,21 @@ export function DeliveryBoard() {
                         </a>
                       ) : null}
                       <div className="mt-2 text-sm font-semibold text-slate-900">₹{delivery.invoice?.grandTotal ?? "0.00"}</div>
+                      {assignedUser ? (
+                        driverLocation ? (
+                          <a
+                            href={googleMapsUrl(driverLocation)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`mt-2 inline-flex h-7 items-center rounded-md border px-2 text-[11px] font-semibold ${driverLocation.isStale ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}
+                            title={driverLocation.accuracy ? `Accuracy ${Math.round(driverLocation.accuracy).toString()} m` : "Latest delivery person location"}
+                          >
+                            {assignedUser.name} - {formatLocationAge(driverLocation.capturedAt)}
+                          </a>
+                        ) : (
+                          <div className="mt-2 text-[11px] font-semibold text-slate-400">{assignedUser.name} - No location</div>
+                        )
+                      ) : null}
                       {deliveryProof || paymentProof ? (
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           {deliveryProof ? <ProofThumb deliveryId={delivery.id} proof={deliveryProof} label="Delivery proof" /> : null}
@@ -279,6 +300,37 @@ function deliveryCoordinates(delivery: DeliveryItem): { latitude: number; longit
 
 function googleMapsUrl(coordinates: { latitude: number; longitude: number }): string {
   return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
+}
+
+function deliveryUserLocation(user: SettingsResponse["users"][number]): { latitude: number; longitude: number; accuracy: number | null; capturedAt: Date; isStale: boolean } | null {
+  const latitude = Number(user.lastLatitude);
+  const longitude = Number(user.lastLongitude);
+  const capturedAt = user.lastLocationAt ? new Date(user.lastLocationAt) : null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !capturedAt || Number.isNaN(capturedAt.getTime())) {
+    return null;
+  }
+
+  const ageMs = Date.now() - capturedAt.getTime();
+  return {
+    latitude,
+    longitude,
+    accuracy: user.lastLocationAccuracy === null || user.lastLocationAccuracy === undefined ? null : Number(user.lastLocationAccuracy),
+    capturedAt,
+    isStale: ageMs > 15 * 60 * 1000,
+  };
+}
+
+function formatLocationAge(capturedAt: Date): string {
+  const diffMs = Math.max(Date.now() - capturedAt.getTime(), 0);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "<1m ago";
+  if (minutes < 60) return `${minutes.toString()}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours.toString()}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days.toString()}d ago`;
 }
 
 function ProofThumb({ deliveryId, proof, label }: Readonly<{ deliveryId: string; proof: NonNullable<DeliveryItem["proofs"]>[number]; label: string }>) {

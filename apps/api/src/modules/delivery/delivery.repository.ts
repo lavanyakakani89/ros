@@ -1,4 +1,4 @@
-import { DeliveryRoutePlanStatus, DeliveryRouteStopStatus, DeliveryStatus, Prisma, type DeliveryProofType, type PrismaClient } from "@prisma/client";
+import { DeliveryRoutePlanStatus, DeliveryRouteStopStatus, DeliveryStatus, Prisma, UserRole, type DeliveryProofType, type PrismaClient } from "@prisma/client";
 
 import type { CreateDeliveryInput, DeliveryListQuery, UpdateDeliveryStatusInput } from "./delivery.types.js";
 
@@ -17,6 +17,47 @@ export interface CreateDeliveryProofInput {
 
 export class DeliveryRepository {
   constructor(private readonly prisma: PrismaClient) {}
+
+  updateDriverLocation(
+    tenantId: string,
+    userId: string,
+    input: {
+      latitude: number;
+      longitude: number;
+      accuracy?: number | undefined;
+    },
+  ) {
+    return this.prisma.user.updateMany({
+      where: {
+        id: userId,
+        tenantId,
+        role: UserRole.DELIVERY,
+        isActive: true,
+      },
+      data: {
+        lastLatitude: input.latitude,
+        lastLongitude: input.longitude,
+        lastLocationAccuracy: input.accuracy ?? null,
+        lastLocationAt: new Date(),
+      },
+    });
+  }
+
+  getDefaultDepot(tenantId: string) {
+    return this.prisma.store.findFirst({
+      where: {
+        tenantId,
+        isActive: true,
+      },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+      select: {
+        depotName: true,
+        depotAddress: true,
+        depotLatitude: true,
+        depotLongitude: true,
+      },
+    });
+  }
 
   async createDelivery(tenantId: string, input: CreateDeliveryInput) {
     const [invoice, customer] = await Promise.all([

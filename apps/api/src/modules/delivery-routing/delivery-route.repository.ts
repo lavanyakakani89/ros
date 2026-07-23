@@ -223,7 +223,15 @@ export class DeliveryRouteRepository {
           include: {
             delivery: {
               include: {
-                customer: true,
+                customer: {
+                  include: {
+                    locations: {
+                      where: { isDefault: true },
+                      take: 1,
+                    },
+                  },
+                },
+                customerLocation: true,
                 invoice: true,
                 proofs: { orderBy: { createdAt: "desc" } },
               },
@@ -302,7 +310,15 @@ export const routePlanInclude = {
         include: {
           delivery: {
             include: {
-              customer: true,
+              customer: {
+                include: {
+                  locations: {
+                    where: { isDefault: true },
+                    take: 1,
+                  },
+                },
+              },
+              customerLocation: true,
               invoice: true,
               proofs: {
                 orderBy: {

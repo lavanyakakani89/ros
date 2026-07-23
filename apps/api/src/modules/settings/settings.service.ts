@@ -325,6 +325,10 @@ const userSelect = {
   phone: true,
   role: true,
   isActive: true,
+  lastLatitude: true,
+  lastLongitude: true,
+  lastLocationAccuracy: true,
+  lastLocationAt: true,
   createdAt: true,
 };
 

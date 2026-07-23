@@ -28,7 +28,7 @@ export class BillingService {
   }
 
   async createInvoice(tenant: Tenant, input: CreateInvoiceInput) {
-    const calculated = await this.calculateInvoice(tenant, input.items, input.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, input.items, input.billDiscount, input.verticalData);
 
     return this.repository.createInvoice({
       tenantId: tenant.id,
@@ -77,7 +77,7 @@ export class BillingService {
       ...(input.notes !== undefined ? input.notes ? { notes: input.notes } : {} : existing.notes ? { notes: existing.notes } : {}),
     };
 
-    const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount);
+    const calculated = await this.calculateInvoice(tenant, merged.items, merged.billDiscount, merged.verticalData);
     let invoice: Awaited<ReturnType<BillingRepository["replaceInvoice"]>>;
     try {
       invoice = await this.repository.replaceInvoice({
@@ -196,7 +196,7 @@ export class BillingService {
     }
   }
 
-  private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0) {
+  private async calculateInvoice(tenant: Tenant, items: InvoiceItemInput[], billDiscount = 0, verticalData?: Record<string, unknown>) {
     const productIds = [...new Set(items.map((item) => item.productId))];
     const products = await this.repository.findProducts(tenant.id, productIds);
     const productById = new Map(products.map((product) => [product.id, product]));
@@ -210,7 +210,7 @@ export class BillingService {
     const cappedBillDiscount = Math.min(roundMoney(billDiscount), totalTaxableBase);
     const billDiscountShares = allocateBillDiscountShares(lineTaxableBases, cappedBillDiscount);
     const invoiceItems = items.map((item, index) => createInvoiceItem(tenant, item, productById.get(item.productId), billDiscountShares[index] ?? 0));
-    const totals = invoiceItems.reduce<InvoiceTotals>(
+    const lineTotals = invoiceItems.reduce<InvoiceTotals>(
       (accumulator, item) => ({
         subtotal: roundMoney(accumulator.subtotal + Number(item.sellingPrice) * Number(item.quantity)),
         totalDiscount: roundMoney(accumulator.totalDiscount + Number(item.discount)),
@@ -226,6 +226,11 @@ export class BillingService {
         grandTotal: 0,
       },
     );
+    const deliveryCharge = deliveryChargeFromVerticalData(verticalData);
+    const totals = {
+      ...lineTotals,
+      grandTotal: roundMoney(lineTotals.grandTotal + deliveryCharge),
+    };
 
     return {
       totals,
@@ -318,6 +323,16 @@ function isWhatsappSourced(value: unknown): boolean {
 
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function deliveryChargeFromVerticalData(verticalData: Record<string, unknown> | undefined): number {
+  if (!verticalData) {
+    return 0;
+  }
+
+  const value = verticalData.deliveryCharge;
+  const amount = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(amount) && amount > 0 ? roundMoney(amount) : 0;
 }
 
 function createInvoiceItem(

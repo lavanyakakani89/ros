@@ -20,6 +20,7 @@ export async function generateGstInvoicePdf(input: {
   registerInvoiceTemplateHelpers();
   const gstEnabled = input.tenant.gstEnabled;
   const deliveryCharge = deliveryChargeFromInvoice(input.invoice);
+  const grandTotal = effectiveGrandTotal(input.invoice, deliveryCharge);
   const templateData = {
     invoice: input.invoice,
     tenant: input.tenant,
@@ -48,7 +49,7 @@ export async function generateGstInvoicePdf(input: {
     totalSgst: gstEnabled ? money(input.invoice.totalSgst) : "",
     deliveryCharge: formatMoneyNumber(deliveryCharge),
     hasDeliveryCharge: deliveryCharge > 0,
-    grandTotal: money(input.invoice.grandTotal),
+    grandTotal: formatMoneyNumber(grandTotal),
     amountPaid: money(input.invoice.amountPaid),
     amountDue: money(input.invoice.amountDue),
     totals: {
@@ -59,11 +60,11 @@ export async function generateGstInvoicePdf(input: {
       sgst: gstEnabled ? money(input.invoice.totalSgst) : "0.00",
       deliveryCharge: formatMoneyNumber(deliveryCharge),
       hasDeliveryCharge: deliveryCharge > 0,
-      grandTotal: money(input.invoice.grandTotal),
+      grandTotal: formatMoneyNumber(grandTotal),
       amountPaid: money(input.invoice.amountPaid),
       amountDue: money(input.invoice.amountDue),
     },
-    inWords: `${money(input.invoice.grandTotal)} rupees only`,
+    inWords: `${formatMoneyNumber(grandTotal)} rupees only`,
     generatedAt: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
   };
   const html = input.template?.renderType === RenderType.ESC_POS
@@ -357,6 +358,24 @@ function deliveryChargeFromInvoice(invoice: InvoiceWithItems): number {
   const value = (verticalData as Record<string, unknown>).deliveryCharge;
   const amount = typeof value === "number" ? value : Number(value);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function effectiveGrandTotal(invoice: InvoiceWithItems, deliveryCharge: number): number {
+  const storedGrandTotal = invoice.grandTotal.toNumber();
+  if (deliveryCharge <= 0) {
+    return storedGrandTotal;
+  }
+
+  const lineTotal = invoice.items.reduce((sum, item) => sum + item.total.toNumber(), 0);
+  if (Math.abs(storedGrandTotal - lineTotal) <= 0.01) {
+    return roundMoney(storedGrandTotal + deliveryCharge);
+  }
+
+  return storedGrandTotal;
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function getTemplate(): string {

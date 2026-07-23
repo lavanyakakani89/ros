@@ -42,6 +42,31 @@ export class DeliveryService {
     return delivery;
   }
 
+  async updateMyLocation(
+    tenant: Tenant,
+    actor: DeliveryActor,
+    input: {
+      latitude: number;
+      longitude: number;
+      accuracy?: number | undefined;
+    },
+  ) {
+    if (actor.role !== UserRole.DELIVERY) {
+      throw new DeliveryError("Only delivery users can update delivery location", 403);
+    }
+
+    const result = await this.repository.updateDriverLocation(tenant.id, actor.userId, input);
+    if (result.count === 0) {
+      throw new DeliveryError("Delivery user not found", 404);
+    }
+
+    return { status: "ok" };
+  }
+
+  getMyDepot(tenant: Tenant) {
+    return this.repository.getDefaultDepot(tenant.id);
+  }
+
   async syncInvoiceDelivery(tenant: Tenant, input: SyncInvoiceDeliveryInput) {
     if (!this.verticalConfigRepository.getByVertical(tenant.vertical).modules.delivery) {
       throw new DeliveryError("Delivery module is not enabled for this tenant", 403);

@@ -79,6 +79,13 @@ interface DriverRoute {
   }>;
 }
 
+interface DepotResponse {
+  depotName?: string | null;
+  depotAddress?: string | null;
+  depotLatitude?: string | number | null;
+  depotLongitude?: string | number | null;
+}
+
 export function DeliveryAgentApp() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
@@ -108,6 +115,12 @@ export function DeliveryAgentApp() {
     enabled: hasSession,
     refetchInterval: 15_000,
   });
+  const depotQuery = useQuery({
+    queryKey: ["delivery-agent", "depot"],
+    queryFn: () => createAuthenticatedApiClient().get<DepotResponse | null>("/delivery/me/depot"),
+    enabled: hasSession,
+    staleTime: 60_000,
+  });
   const currentConfigQuery = useQuery({
     queryKey: ["delivery-agent", "current-config"],
     queryFn: getCurrentVerticalConfig,
@@ -115,11 +128,13 @@ export function DeliveryAgentApp() {
     staleTime: 60_000,
   });
   const updateStatus = useMutation({
-    mutationFn: ({ id, status, notes }: { id: string; status: DeliveryStatus; notes?: string }) =>
-      createAuthenticatedApiClient().put(`/delivery/${id}/status`, {
+    mutationFn: async ({ id, status, notes }: { id: string; status: DeliveryStatus; notes?: string }) => {
+      await sendCurrentDriverLocation().catch(() => undefined);
+      return createAuthenticatedApiClient().put(`/delivery/${id}/status`, {
         status,
         ...(notes?.trim() ? { notes: notes.trim() } : {}),
-      }),
+      });
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["delivery-agent", "orders"] }),
@@ -159,7 +174,10 @@ export function DeliveryAgentApp() {
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ["delivery-agent", "notifications"] }),
   });
   const startRoute = useMutation({
-    mutationFn: () => createAuthenticatedApiClient().post("/delivery/me/route/start", {}),
+    mutationFn: async () => {
+      await sendCurrentDriverLocation().catch(() => undefined);
+      return createAuthenticatedApiClient().post("/delivery/me/route/start", {});
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["delivery-agent", "route"] });
       notify("Route started.");
@@ -173,6 +191,8 @@ export function DeliveryAgentApp() {
   const activeDeliveries = deliveries.filter((delivery) => ["PENDING", "ASSIGNED", "OUT_FOR_DELIVERY"].includes(delivery.status));
   const completedDeliveries = deliveries.filter((delivery) => delivery.status === "DELIVERED" && isToday(delivery.deliveredAt));
   const driverRoute = routeQuery.data;
+  const depotCoordinates = depotLocationCoordinates(depotQuery.data);
+  const depotMapUrl = depotCoordinates ? googleMapsUrl(depotCoordinates) : null;
   const totalCash = useMemo(
     () => activeDeliveries.reduce((sum, delivery) => sum + Number(delivery.invoice?.amountDue ?? delivery.invoice?.grandTotal ?? 0), 0),
     [activeDeliveries],
@@ -197,6 +217,17 @@ export function DeliveryAgentApp() {
       showBrowserNotification(notification);
     }
   }, [notificationPermission, unread]);
+
+  useEffect(() => {
+    if (!hasSession) return;
+
+    void sendCurrentDriverLocation().catch(() => undefined);
+    const interval = window.setInterval(() => {
+      void sendCurrentDriverLocation().catch(() => undefined);
+    }, 180_000);
+
+    return () => window.clearInterval(interval);
+  }, [hasSession]);
 
   function notify(nextMessage: string, tone: "green" | "red" = "green") {
     setMessage(nextMessage);
@@ -265,6 +296,7 @@ export function DeliveryAgentApp() {
           <button
             className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white text-sm font-semibold text-slate-700"
             onClick={() => {
+              void sendCurrentDriverLocation().catch(() => undefined);
               void deliveriesQuery.refetch();
               void notificationsQuery.refetch();
             }}
@@ -272,6 +304,12 @@ export function DeliveryAgentApp() {
             <RefreshCcw className="size-4" aria-hidden="true" />
             Sync
           </button>
+          {depotMapUrl ? (
+            <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800" href={depotMapUrl} target="_blank" rel="noreferrer">
+              <MapPin className="size-4" aria-hidden="true" />
+              Depot
+            </a>
+          ) : null}
           <button className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700" onClick={() => void requestNotifications()}>
             Alerts: {notificationPermission}
           </button>
@@ -641,6 +679,25 @@ function deliveryCoordinates(delivery: DeliveryItem): { latitude: number; longit
   return { latitude, longitude };
 }
 
+function depotLocationCoordinates(depot: DepotResponse | null | undefined): { latitude: number; longitude: number } | null {
+  const latitude = Number(depot?.depotLatitude);
+  const longitude = Number(depot?.depotLongitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function googleMapsUrl(coordinates: { latitude: number; longitude: number }): string {
+  return `https://www.google.com/maps?q=${coordinates.latitude.toString()},${coordinates.longitude.toString()}`;
+}
+
+async function sendCurrentDriverLocation(): Promise<void> {
+  const location = await currentLocation();
+  await createAuthenticatedApiClient().post("/delivery/me/location", location);
+}
+
 function proofNoteKey(deliveryId: string, proofType: ProofType): string {
   return `${deliveryId}:${proofType}`;
 }
@@ -672,7 +729,7 @@ function showBrowserNotification(notification: AppNotification): void {
   }
 }
 
-function currentLocation(): Promise<{ latitude: number; longitude: number }> {
+function currentLocation(): Promise<{ latitude: number; longitude: number; accuracy?: number }> {
   return new Promise((resolve, reject) => {
     if (!("geolocation" in navigator)) {
       reject(new Error("Geolocation is not available"));
@@ -683,6 +740,7 @@ function currentLocation(): Promise<{ latitude: number; longitude: number }> {
       (position) => resolve({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
+        ...(Number.isFinite(position.coords.accuracy) ? { accuracy: position.coords.accuracy } : {}),
       }),
       reject,
       { enableHighAccuracy: true, timeout: 5000, maximumAge: 60_000 },
