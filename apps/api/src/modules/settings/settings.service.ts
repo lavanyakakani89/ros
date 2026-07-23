@@ -1,5 +1,5 @@
 import { hash, verify } from "@node-rs/argon2";
-import { UserRole, type PrismaClient, type Tenant } from "@prisma/client";
+import { Prisma, UserRole, type PrismaClient, type Tenant } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 
 import { defaultUsername, normalizeLoginIdentifier } from "../../config/login-identifiers.js";
@@ -173,6 +173,64 @@ export class SettingsService {
       },
       select: userSelect,
     });
+  }
+
+  async deleteUser(tenant: Tenant, currentUser: { userId: string; role: UserRole }, userId: string) {
+    ensureManager(currentUser.role);
+
+    if (userId === currentUser.userId) {
+      throw new SettingsError("You cannot delete your own account", 409);
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        tenantId: tenant.id,
+      },
+      select: {
+        id: true,
+        role: true,
+      },
+    });
+
+    if (!user) {
+      throw new SettingsError("User not found", 404);
+    }
+
+    if (user.role === UserRole.OWNER && currentUser.role !== UserRole.OWNER) {
+      throw new SettingsError("Only an owner can delete another owner", 403);
+    }
+
+    if (user.role === UserRole.OWNER) {
+      const ownerCount = await this.prisma.user.count({
+        where: {
+          tenantId: tenant.id,
+          role: UserRole.OWNER,
+        },
+      });
+      if (ownerCount <= 1) {
+        throw new SettingsError("At least one owner must remain active in the shop", 409);
+      }
+    }
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.refreshToken.deleteMany({ where: { tenantId: tenant.id, userId } });
+        await tx.appNotification.deleteMany({ where: { tenantId: tenant.id, userId } });
+        await tx.user.delete({
+          where: {
+            id: userId,
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+        throw new SettingsError("This user is linked to business history. Deactivate the user instead of deleting.", 409);
+      }
+      throw error;
+    }
+
+    return { deleted: true };
   }
 
   async changePassword(tenant: Tenant, currentUser: { userId: string }, input: ChangePasswordInput) {

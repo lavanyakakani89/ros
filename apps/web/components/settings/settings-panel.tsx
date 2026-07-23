@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, FileText, MapPin, MessageCircle, Printer, Save, UserPlus, X } from "lucide-react";
+import { ExternalLink, FileText, MapPin, MessageCircle, Printer, Save, Trash2, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -88,9 +88,16 @@ export function SettingsPanel() {
       await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
     },
   });
+  const deleteUser = useMutation({
+    mutationFn: (id: string) => createAuthenticatedApiClient().delete(`/settings/users/${id}`),
+    onSuccess: async () => {
+      setMessage("User deleted.");
+      await queryClient.invalidateQueries({ queryKey: ["settings-current"] });
+    },
+  });
   const verticalConfig = getStoredVerticalConfig();
   const settings = settingsQuery.data;
-  const error = settingsQuery.error ?? updateTenant.error ?? createUser.error ?? updateUser.error;
+  const error = settingsQuery.error ?? updateTenant.error ?? createUser.error ?? updateUser.error ?? deleteUser.error;
 
   useEffect(() => {
     if (settings?.tenant.gstEnabled !== undefined) {
@@ -180,6 +187,13 @@ export function SettingsPanel() {
     const form = new FormData(event.currentTarget);
     setMessage(null);
     updateUser.mutate({ id: userId, payload: { username: formString(form, "username") } });
+  }
+
+  function confirmDeleteUser(user: UserRecord) {
+    setMessage(null);
+    const confirmed = window.confirm(`Delete ${user.name}? This permanently removes the user login. Use Deactivate instead if the user has business history.`);
+    if (!confirmed) return;
+    deleteUser.mutate(user.id);
   }
 
   return (
@@ -325,6 +339,15 @@ export function SettingsPanel() {
                   onClick={() => updateUser.mutate({ id: user.id, payload: { isActive: !user.isActive } })}
                 >
                   {user.isActive ? "Deactivate" : "Activate"}
+                </button>
+                <button
+                  className="inline-flex h-9 items-center gap-1 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  onClick={() => confirmDeleteUser(user)}
+                  disabled={deleteUser.isPending}
+                  title="Delete user login"
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Delete
                 </button>
               </div>
             </div>

@@ -30,6 +30,11 @@ export const settingsRoutes: FastifyPluginCallback = (fastify, _options, done) =
     return handleSettings(reply, () => service.updateUser(request.tenant, request.user, params.id, input));
   });
 
+  fastify.delete("/api/settings/users/:id", async (request, reply) => {
+    const params = userIdParamsSchema.parse(request.params);
+    return handleSettings(reply, () => service.deleteUser(request.tenant, request.user, params.id));
+  });
+
   fastify.put("/api/settings/password", async (request, reply) => {
     const input = changePasswordSchema.parse(request.body);
     return handleSettings(reply, () => service.changePassword(request.tenant, request.user, input));
