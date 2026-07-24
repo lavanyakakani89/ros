@@ -11,9 +11,11 @@ import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession, storeTenan
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 type ProofType = "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
+type WebkitAudioWindow = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
 const PROOF_IMAGE_MAX_DIMENSION = 960;
 const PROOF_IMAGE_MAX_UPLOAD_BYTES = 300 * 1024;
 const PROOF_IMAGE_QUALITY_STEPS = [0.62, 0.52, 0.42, 0.34] as const;
+const DELIVERY_ALERT_SOUND_KEY = "bizbil_delivery_alert_sound";
 
 interface DeliveryProof {
   id: string;
@@ -59,6 +61,7 @@ interface AppNotification {
   id: string;
   title: string;
   body: string;
+  type?: string;
   isRead: boolean;
   createdAt: string;
 }
@@ -92,7 +95,10 @@ export function DeliveryAgentApp() {
   const [messageTone, setMessageTone] = useState<"green" | "red">("green");
   const [proofNotes, setProofNotes] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(false);
   const notifiedIds = useRef(new Set<string>());
+  const notificationsInitialized = useRef(false);
+  const alertAudioContext = useRef<AudioContext | null>(null);
   const hasSession = typeof window !== "undefined" && hasStoredAuthSession();
   const tenant = typeof window !== "undefined" ? getStoredTenant() : null;
   const session = typeof window !== "undefined" ? getStoredAuthSession() : null;
@@ -200,6 +206,7 @@ export function DeliveryAgentApp() {
 
   useEffect(() => {
     setNotificationPermission(getBrowserNotificationPermission());
+    setSoundAlertsEnabled(readSoundAlertsEnabled());
   }, []);
 
   useEffect(() => {
@@ -209,14 +216,25 @@ export function DeliveryAgentApp() {
   }, [currentConfigQuery.data?.tenant]);
 
   useEffect(() => {
-    if (notificationPermission !== "granted") return;
+    if (!notificationsInitialized.current) {
+      for (const notification of unread) {
+        notifiedIds.current.add(notification.id);
+      }
+      notificationsInitialized.current = true;
+      return;
+    }
 
     for (const notification of unread) {
       if (notifiedIds.current.has(notification.id)) continue;
       notifiedIds.current.add(notification.id);
-      showBrowserNotification(notification);
+      if (notificationPermission === "granted") {
+        showBrowserNotification(notification);
+      }
+      if (soundAlertsEnabled && isDeliveryAssignmentAlert(notification)) {
+        void playDeliveryAlert(alertAudioContext).catch(() => undefined);
+      }
     }
-  }, [notificationPermission, unread]);
+  }, [notificationPermission, soundAlertsEnabled, unread]);
 
   useEffect(() => {
     if (!hasSession) return;
@@ -234,10 +252,13 @@ export function DeliveryAgentApp() {
     setMessageTone(tone);
   }
 
-  async function requestNotifications() {
+  async function enableAlerts() {
+    await enableSoundAlerts(alertAudioContext);
+    setSoundAlertsEnabled(true);
     const notificationApi = getNotificationApi();
     if (!notificationApi) {
       setNotificationPermission("unsupported");
+      notify("Sound alerts enabled. Browser notifications are not available here.");
       return;
     }
 
@@ -245,13 +266,13 @@ export function DeliveryAgentApp() {
       const permission = await notificationApi.requestPermission();
       setNotificationPermission(permission);
       if (permission === "granted") {
-        notify("Alerts enabled.");
+        notify("Alerts enabled with ringtone.");
       } else if (permission === "denied") {
-        notify("Alerts are blocked in this browser.", "red");
+        notify("Ringtone enabled. Browser alerts are blocked in this browser.", "red");
       }
     } catch {
       setNotificationPermission("unsupported");
-      notify("Alerts are not available in this browser.", "red");
+      notify("Ringtone enabled. Browser alerts are not available here.");
     }
   }
 
@@ -310,8 +331,8 @@ export function DeliveryAgentApp() {
               Depot
             </a>
           ) : null}
-          <button className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700" onClick={() => void requestNotifications()}>
-            Alerts: {notificationPermission}
+          <button className={`h-9 rounded-md border px-3 text-xs font-semibold ${soundAlertsEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`} onClick={() => void enableAlerts()}>
+            Alerts: {soundAlertsEnabled ? "Sound on" : notificationPermission}
           </button>
         </div>
         {message ? (
@@ -700,6 +721,66 @@ async function sendCurrentDriverLocation(): Promise<void> {
 
 function proofNoteKey(deliveryId: string, proofType: ProofType): string {
   return `${deliveryId}:${proofType}`;
+}
+
+function readSoundAlertsEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(DELIVERY_ALERT_SOUND_KEY) === "true";
+}
+
+async function enableSoundAlerts(audioContextRef: React.MutableRefObject<AudioContext | null>): Promise<void> {
+  window.localStorage.setItem(DELIVERY_ALERT_SOUND_KEY, "true");
+  const context = getAlertAudioContext(audioContextRef);
+  if (context.state === "suspended") {
+    await context.resume();
+  }
+
+  await playDeliveryAlert(audioContextRef, { preview: true });
+}
+
+function isDeliveryAssignmentAlert(notification: AppNotification): boolean {
+  return notification.type === "DELIVERY_ASSIGNED" || notification.title.toLowerCase().includes("delivery");
+}
+
+async function playDeliveryAlert(audioContextRef: React.MutableRefObject<AudioContext | null>, options: { preview?: boolean } = {}): Promise<void> {
+  const context = getAlertAudioContext(audioContextRef);
+  if (context.state === "suspended") {
+    await context.resume();
+  }
+
+  const now = context.currentTime;
+  const pattern = options.preview ? [0] : [0, 0.38, 0.76, 1.14, 1.52, 1.9];
+  for (const [index, offset] of pattern.entries()) {
+    const frequency = index % 2 === 0 ? 1040 : 780;
+    scheduleAlarmBeep(context, now + offset, frequency);
+  }
+}
+
+function getAlertAudioContext(audioContextRef: React.MutableRefObject<AudioContext | null>): AudioContext {
+  if (!audioContextRef.current) {
+    const audioWindow = window as WebkitAudioWindow;
+    const AudioContextConstructor = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      throw new Error("Audio alerts are not available in this browser.");
+    }
+    audioContextRef.current = new AudioContextConstructor();
+  }
+
+  return audioContextRef.current;
+}
+
+function scheduleAlarmBeep(context: AudioContext, startAt: number, frequency: number): void {
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(frequency, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.42, startAt + 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.26);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start(startAt);
+  oscillator.stop(startAt + 0.28);
 }
 
 function getNotificationApi(): typeof Notification | null {

@@ -8,14 +8,14 @@ export interface MapboxConfig {
   routingProfile: string;
   trafficProfileEnabled: boolean;
   maxDirectionsCoordinates: number;
-  optimizationProvider: "v2" | "manual";
+  optimizationProvider: "v1" | "v2" | "manual";
 }
 
 export function getMapboxConfig(): MapboxConfig {
   const routingProfile = process.env.MAPBOX_ROUTING_PROFILE ?? "mapbox/driving";
-  const optimizationProvider = process.env.MAPBOX_OPTIMIZATION_PROVIDER === "manual" ? "manual" : "v2";
+  const optimizationProvider = parseOptimizationProvider(process.env.MAPBOX_OPTIMIZATION_PROVIDER);
   return {
-    enabled: process.env.MAPBOX_ROUTING_ENABLED === "true",
+    enabled: process.env.MAPBOX_ROUTING_ENABLED === "true" || Boolean(process.env.MAPBOX_SERVER_ACCESS_TOKEN),
     serverAccessToken: process.env.MAPBOX_SERVER_ACCESS_TOKEN,
     geocodingStorageMode: process.env.MAPBOX_GEOCODING_STORAGE_MODE === "temporary" ? "temporary" : "permanent",
     storeRawGeocodingResponse: process.env.MAPBOX_STORE_RAW_GEOCODING_RESPONSE === "true",
@@ -24,6 +24,14 @@ export function getMapboxConfig(): MapboxConfig {
     maxDirectionsCoordinates: Number(process.env.MAPBOX_MAX_DIRECTIONS_COORDINATES ?? 25),
     optimizationProvider,
   };
+}
+
+function parseOptimizationProvider(value: string | undefined): MapboxConfig["optimizationProvider"] {
+  if (value === "manual" || value === "v2") {
+    return value;
+  }
+
+  return "v1";
 }
 
 export function validateMapboxConfiguration(): void {

@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { getMapboxConfig, MapboxClient } from "../../integrations/mapbox/mapbox.client.js";
 import { MapboxDirectionsProvider } from "../../integrations/mapbox/mapbox-directions.provider.js";
 import { MapboxGeocodingProvider } from "../../integrations/mapbox/mapbox-geocoding.provider.js";
+import { canUseMapboxOptimizationV1, MapboxOptimizationV1Provider } from "../../integrations/mapbox/mapbox-optimization-v1.provider.js";
 import { MapboxOptimizationV2Provider } from "../../integrations/mapbox/mapbox-optimization-v2.provider.js";
 import { DeliveryRouteRepository } from "./delivery-route.repository.js";
 import type {
@@ -326,6 +327,11 @@ export class DeliveryRouteService {
   async generateGeometriesForWorker(routePlanId: string) {
     const plan = await this.repository.getPlanForWorker(routePlanId);
     if (!plan) return;
+    if (plan.provider === "mapbox-optimization-v1") {
+      await this.markPlanReadyFromOptimizedRoutes(routePlanId);
+      return;
+    }
+
     const geometryProvider = this.getGeometryProvider(plan.provider ?? undefined);
     let totalDistanceMeters = 0;
     let totalDurationSeconds = 0;
@@ -432,6 +438,13 @@ export class DeliveryRouteService {
   private getOptimizationProvider(provider?: string): RouteOptimizationProvider {
     const client = new MapboxClient();
     const config = getMapboxConfig();
+    if (provider === "mapbox-optimization-v1") {
+      if (!client.isConfigured()) {
+        throw new DeliveryRouteError("Mapbox Optimization v1 is not configured for this route plan.", 409);
+      }
+      return new MapboxOptimizationV1Provider(client);
+    }
+
     if (provider === "mapbox-optimization-v2") {
       if (!client.isConfigured()) {
         throw new DeliveryRouteError("Mapbox Optimization v2 is not configured for this route plan.", 409);
@@ -439,11 +452,31 @@ export class DeliveryRouteService {
       return new MapboxOptimizationV2Provider(client);
     }
 
+    if (!provider && config.enabled && config.optimizationProvider === "v1" && client.isConfigured()) {
+      return new EligibleMapboxOptimizationV1Provider(new MapboxOptimizationV1Provider(client));
+    }
+
     if (!provider && config.enabled && config.optimizationProvider === "v2" && client.isConfigured()) {
       return new MapboxOptimizationV2Provider(client);
     }
 
     return new ManualOrderingProvider();
+  }
+
+  private async markPlanReadyFromOptimizedRoutes(routePlanId: string) {
+    const plan = await this.repository.getPlanForWorker(routePlanId);
+    if (!plan) return;
+
+    const totalDistanceMeters = plan.routes.reduce((sum, route) => sum + (route.distanceMeters ?? 0), 0);
+    const totalDurationSeconds = plan.routes.reduce((sum, route) => sum + (route.durationSeconds ?? 0), 0);
+    await this.prisma.deliveryRoutePlan.update({
+      where: { id: routePlanId },
+      data: {
+        status: DeliveryRoutePlanStatus.READY_FOR_REVIEW,
+        totalDistanceMeters,
+        totalDurationSeconds,
+      },
+    });
   }
 
   private getGeometryProvider(provider?: string): RouteGeometryProvider {
@@ -530,6 +563,28 @@ function buildOptimizationInput(plan: NonNullable<Awaited<ReturnType<DeliveryRou
     services,
     objective: "min-schedule-completion-time",
   };
+}
+
+class EligibleMapboxOptimizationV1Provider implements RouteOptimizationProvider {
+  private readonly manualProvider = new ManualOrderingProvider();
+
+  constructor(private readonly mapboxProvider: MapboxOptimizationV1Provider) {}
+
+  submit(input: RouteOptimizationInput): Promise<Awaited<ReturnType<RouteOptimizationProvider["submit"]>>> {
+    if (!canUseMapboxOptimizationV1(input)) {
+      return this.manualProvider.submit(input);
+    }
+
+    return this.mapboxProvider.submit(input);
+  }
+
+  getResult(providerJobId: string): Promise<Awaited<ReturnType<RouteOptimizationProvider["getResult"]>>> {
+    if (providerJobId.startsWith("manual:")) {
+      return this.manualProvider.getResult(providerJobId);
+    }
+
+    return this.mapboxProvider.getResult(providerJobId);
+  }
 }
 
 function routeCoordinates(
