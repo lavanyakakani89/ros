@@ -21,6 +21,7 @@ const PROOF_IMAGE_MAX_DIMENSION = 960;
 const PROOF_IMAGE_MAX_UPLOAD_BYTES = 300 * 1024;
 const PROOF_IMAGE_QUALITY_STEPS = [0.62, 0.52, 0.42, 0.34] as const;
 const DELIVERY_ALERT_SOUND_KEY = "bizbil_delivery_alert_sound";
+type AlertMode = "off" | "sound" | "push";
 
 interface DeliveryProof {
   id: string;
@@ -106,7 +107,7 @@ export function DeliveryAgentApp() {
   const [proofNotes, setProofNotes] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(false);
-  const [pushAlertsEnabled, setPushAlertsEnabled] = useState(false);
+  const [alertMode, setAlertMode] = useState<AlertMode>("off");
   const notifiedIds = useRef(new Set<string>());
   const notificationsInitialized = useRef(false);
   const alertAudioContext = useRef<AudioContext | null>(null);
@@ -223,8 +224,13 @@ export function DeliveryAgentApp() {
 
   useEffect(() => {
     setNotificationPermission(getBrowserNotificationPermission());
-    setSoundAlertsEnabled(readSoundAlertsEnabled());
-    void detectExistingPushSubscription().then(setPushAlertsEnabled).catch(() => setPushAlertsEnabled(false));
+    const initialSoundEnabled = readSoundAlertsEnabled();
+    setSoundAlertsEnabled(initialSoundEnabled);
+    void detectExistingPushSubscription().then((hasPush) => {
+      setAlertMode(resolveAlertMode(initialSoundEnabled, hasPush));
+    }).catch(() => {
+      setAlertMode(resolveAlertMode(initialSoundEnabled, false));
+    });
   }, []);
 
   useEffect(() => {
@@ -273,9 +279,23 @@ export function DeliveryAgentApp() {
     setMessageTone(tone);
   }
 
-  async function enableAlerts() {
+  async function selectAlertMode(nextMode: AlertMode) {
+    if (nextMode === "off") {
+      disableSoundAlerts();
+      setSoundAlertsEnabled(false);
+      setAlertMode("off");
+      notify("Alerts turned off.");
+      return;
+    }
+
     await enableSoundAlerts(alertAudioContext);
     setSoundAlertsEnabled(true);
+    setAlertMode("sound");
+    if (nextMode === "sound") {
+      notify("Sound alerts enabled.");
+      return;
+    }
+
     const notificationApi = getNotificationApi();
     if (!notificationApi) {
       setNotificationPermission("unsupported");
@@ -291,9 +311,9 @@ export function DeliveryAgentApp() {
           notify(error instanceof Error ? error.message : "Unable to register Android push alerts.", "red");
           return false;
         });
-        setPushAlertsEnabled(pushRegistered);
         if (pushRegistered) {
-          notify("Alerts enabled with ringtone and background notifications.");
+          setAlertMode("push");
+          notify("Sound and notification alerts enabled.");
         } else if (pushPublicKeyQuery.data?.configured) {
           notify("Ringtone enabled, but background notifications could not be registered.", "red");
         } else {
@@ -363,9 +383,34 @@ export function DeliveryAgentApp() {
               Shop
             </a>
           ) : null}
-          <button className={`h-9 rounded-md border px-3 text-xs font-semibold ${soundAlertsEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`} onClick={() => void enableAlerts()}>
-            Alerts: {alertStatusLabel(soundAlertsEnabled, pushAlertsEnabled, notificationPermission, pushPublicKeyQuery.data)}
-          </button>
+          <div className="grid h-9 grid-cols-3 overflow-hidden rounded-md border border-slate-300 bg-white text-xs font-semibold">
+            <button
+              type="button"
+              className={alertMode === "off" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}
+              onClick={() => void selectAlertMode("off")}
+            >
+              Off
+            </button>
+            <button
+              type="button"
+              className={alertMode === "sound" ? "bg-emerald-600 text-white" : "bg-white text-slate-700"}
+              onClick={() => void selectAlertMode("sound")}
+            >
+              Sound
+            </button>
+            <button
+              type="button"
+              disabled={!canEnablePushAlerts(notificationPermission, pushPublicKeyQuery.data)}
+              className={cn(
+                alertMode === "push" ? "bg-emerald-700 text-white" : "bg-white text-slate-700",
+                !canEnablePushAlerts(notificationPermission, pushPublicKeyQuery.data) && "cursor-not-allowed bg-slate-100 text-slate-400",
+              )}
+              onClick={() => void selectAlertMode("push")}
+              title={pushButtonTitle(notificationPermission, pushPublicKeyQuery.data)}
+            >
+              Notify
+            </button>
+          </div>
         </div>
         {message ? (
           <div className={cn("rounded-md border px-3 py-2 text-sm", messageTone === "green" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700")}>{message}</div>
@@ -760,6 +805,11 @@ function readSoundAlertsEnabled(): boolean {
   return window.localStorage.getItem(DELIVERY_ALERT_SOUND_KEY) === "true";
 }
 
+function disableSoundAlerts(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(DELIVERY_ALERT_SOUND_KEY);
+}
+
 async function enableSoundAlerts(audioContextRef: AudioContextRef): Promise<void> {
   window.localStorage.setItem(DELIVERY_ALERT_SOUND_KEY, "true");
   const context = getAlertAudioContext(audioContextRef);
@@ -893,28 +943,44 @@ async function detectExistingPushSubscription(): Promise<boolean> {
   return Boolean(subscription);
 }
 
-function alertStatusLabel(
+function resolveAlertMode(
   soundAlertsEnabled: boolean,
   pushAlertsEnabled: boolean,
+): AlertMode {
+  if (pushAlertsEnabled) {
+    return "push";
+  }
+  if (soundAlertsEnabled) {
+    return "sound";
+  }
+  return "off";
+}
+
+function canEnablePushAlerts(
+  notificationPermission: NotificationPermission | "unsupported",
+  pushConfig: PushPublicKeyResponse | undefined,
+): boolean {
+  if (notificationPermission === "denied" || notificationPermission === "unsupported") {
+    return false;
+  }
+
+  return Boolean(pushConfig?.configured);
+}
+
+function pushButtonTitle(
   notificationPermission: NotificationPermission | "unsupported",
   pushConfig: PushPublicKeyResponse | undefined,
 ): string {
-  if (soundAlertsEnabled && pushAlertsEnabled) {
-    return "Sound + push";
-  }
-  if (soundAlertsEnabled && pushConfig?.configured) {
-    return notificationPermission === "granted" ? "Sound only" : "Sound only";
-  }
-  if (soundAlertsEnabled) {
-    return "Sound only";
-  }
-  if (notificationPermission === "granted") {
-    return pushConfig?.configured ? "Tap to enable" : "Push unavailable";
+  if (!pushConfig?.configured) {
+    return "Background notifications are not configured on the server yet.";
   }
   if (notificationPermission === "denied") {
-    return "Blocked";
+    return "Browser notifications are blocked for this app.";
   }
-  return "Tap to enable";
+  if (notificationPermission === "unsupported") {
+    return "This browser does not support background notifications.";
+  }
+  return "Enable background notification alerts.";
 }
 
 function currentLocation(): Promise<{ latitude: number; longitude: number; accuracy?: number }> {
