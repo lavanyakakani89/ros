@@ -11,7 +11,12 @@ import { getStoredAuthSession, getStoredTenant, hasStoredAuthSession, storeTenan
 
 type DeliveryStatus = "PENDING" | "ASSIGNED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "FAILED" | "CANCELLED";
 type ProofType = "DELIVERY_PHOTO" | "PAYMENT_SCREENSHOT" | "CUSTOMER_SIGNATURE" | "OTHER";
-type WebkitAudioWindow = Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+type AlertAudioContextConstructor = new () => AudioContext;
+type AudioContextRef = { current: AudioContext | null };
+type WebkitAudioWindow = {
+  AudioContext?: AlertAudioContextConstructor;
+  webkitAudioContext?: AlertAudioContextConstructor;
+};
 const PROOF_IMAGE_MAX_DIMENSION = 960;
 const PROOF_IMAGE_MAX_UPLOAD_BYTES = 300 * 1024;
 const PROOF_IMAGE_QUALITY_STEPS = [0.62, 0.52, 0.42, 0.34] as const;
@@ -728,7 +733,7 @@ function readSoundAlertsEnabled(): boolean {
   return window.localStorage.getItem(DELIVERY_ALERT_SOUND_KEY) === "true";
 }
 
-async function enableSoundAlerts(audioContextRef: React.MutableRefObject<AudioContext | null>): Promise<void> {
+async function enableSoundAlerts(audioContextRef: AudioContextRef): Promise<void> {
   window.localStorage.setItem(DELIVERY_ALERT_SOUND_KEY, "true");
   const context = getAlertAudioContext(audioContextRef);
   if (context.state === "suspended") {
@@ -742,7 +747,7 @@ function isDeliveryAssignmentAlert(notification: AppNotification): boolean {
   return notification.type === "DELIVERY_ASSIGNED" || notification.title.toLowerCase().includes("delivery");
 }
 
-async function playDeliveryAlert(audioContextRef: React.MutableRefObject<AudioContext | null>, options: { preview?: boolean } = {}): Promise<void> {
+async function playDeliveryAlert(audioContextRef: AudioContextRef, options: { preview?: boolean } = {}): Promise<void> {
   const context = getAlertAudioContext(audioContextRef);
   if (context.state === "suspended") {
     await context.resume();
@@ -756,9 +761,9 @@ async function playDeliveryAlert(audioContextRef: React.MutableRefObject<AudioCo
   }
 }
 
-function getAlertAudioContext(audioContextRef: React.MutableRefObject<AudioContext | null>): AudioContext {
+function getAlertAudioContext(audioContextRef: AudioContextRef): AudioContext {
   if (!audioContextRef.current) {
-    const audioWindow = window as WebkitAudioWindow;
+    const audioWindow = window as unknown as WebkitAudioWindow;
     const AudioContextConstructor = audioWindow.AudioContext || audioWindow.webkitAudioContext;
     if (!AudioContextConstructor) {
       throw new Error("Audio alerts are not available in this browser.");
