@@ -71,6 +71,7 @@ model Tenant {
   impersonationSessions ImpersonationSession[]
   appNotifications   AppNotification[]
   pushTokens         ExpoPushToken[]
+  webPushSubscriptions WebPushSubscription[]
   deliveryProofs     DeliveryProof[]
   whatsappIntegration WhatsappIntegration?
   whatsappMessageTemplates WhatsappMessageTemplate[]
@@ -114,6 +115,7 @@ model User {
   refreshTokens RefreshToken[]
   appNotifications AppNotification[]
   pushTokens    ExpoPushToken[]
+  webPushSubscriptions WebPushSubscription[]
   cashierPayments Payment[] @relation("PaymentCashier")
   voidedPayments Payment[] @relation("PaymentVoidAuthoriser")
   settledSettlements Settlement[] @relation("SettlementSettledBy")
@@ -202,6 +204,23 @@ model ExpoPushToken {
 
   @@index([tenantId, userId])
   @@map("expo_push_tokens")
+}
+
+model WebPushSubscription {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, userId])
+  @@map("web_push_subscriptions")
 }
 
 model Category {

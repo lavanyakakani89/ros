@@ -2,6 +2,7 @@ import withPWAInit from "next-pwa";
 
 const withPWA = withPWAInit({
   dest: "public",
+  customWorkerDir: "worker",
   disable: process.env.NODE_ENV === "development",
   fallbacks: {
     document: "/offline",

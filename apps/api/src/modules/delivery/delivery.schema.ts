@@ -83,6 +83,14 @@ export const updateMyLocationSchema = z.object({
   accuracy: z.coerce.number().finite().nonnegative().optional(),
 });
 
+export const webPushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+});
+
 export const createDeliveryProofFieldsSchema = z.object({
   proofType: z.nativeEnum(DeliveryProofType).default(DeliveryProofType.DELIVERY_PHOTO),
   notes: z.string().trim().min(1).optional(),

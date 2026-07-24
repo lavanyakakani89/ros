@@ -73,7 +73,7 @@ export function requiredPermission(method: string, url: string): Permission | un
   }
   if (path.startsWith("/api/customers")) return "customers:basic";
 
-  if (path === "/api/delivery/me" || path === "/api/delivery/mobile/sync" || path === "/api/delivery/me/notifications" || path === "/api/delivery/me/depot" || path.startsWith("/api/delivery/me/route")) {
+  if (path === "/api/delivery/me" || path === "/api/delivery/mobile/sync" || path === "/api/delivery/me/notifications" || path === "/api/delivery/me/depot" || path === "/api/delivery/me/push-public-key" || path === "/api/delivery/me/push-subscriptions" || path.startsWith("/api/delivery/me/route")) {
     return "delivery:mobile";
   }
   if (path.startsWith("/api/delivery/notifications/") && path.endsWith("/read")) return "delivery:mobile";

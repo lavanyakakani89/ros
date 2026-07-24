@@ -18,6 +18,55 @@ export interface CreateDeliveryProofInput {
 export class DeliveryRepository {
   constructor(private readonly prisma: PrismaClient) {}
 
+  upsertWebPushSubscription(
+    tenantId: string,
+    userId: string,
+    input: {
+      endpoint: string;
+      p256dh: string;
+      auth: string;
+      userAgent?: string | undefined;
+    },
+  ) {
+    return this.prisma.webPushSubscription.upsert({
+      where: {
+        endpoint: input.endpoint,
+      },
+      create: {
+        tenantId,
+        userId,
+        endpoint: input.endpoint,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+      },
+      update: {
+        tenantId,
+        userId,
+        p256dh: input.p256dh,
+        auth: input.auth,
+        ...(input.userAgent ? { userAgent: input.userAgent } : {}),
+      },
+    });
+  }
+
+  listWebPushSubscriptions(tenantId: string, userId: string) {
+    return this.prisma.webPushSubscription.findMany({
+      where: {
+        tenantId,
+        userId,
+      },
+    });
+  }
+
+  deleteWebPushSubscription(endpoint: string) {
+    return this.prisma.webPushSubscription.deleteMany({
+      where: {
+        endpoint,
+      },
+    });
+  }
+
   updateDriverLocation(
     tenantId: string,
     userId: string,

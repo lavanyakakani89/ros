@@ -94,6 +94,11 @@ interface DepotResponse {
   depotLongitude?: string | number | null;
 }
 
+interface PushPublicKeyResponse {
+  configured: boolean;
+  publicKey: string | null;
+}
+
 export function DeliveryAgentApp() {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string | null>(null);
@@ -135,6 +140,12 @@ export function DeliveryAgentApp() {
   const currentConfigQuery = useQuery({
     queryKey: ["delivery-agent", "current-config"],
     queryFn: getCurrentVerticalConfig,
+    enabled: hasSession,
+    staleTime: 60_000,
+  });
+  const pushPublicKeyQuery = useQuery({
+    queryKey: ["delivery-agent", "push-public-key"],
+    queryFn: () => createAuthenticatedApiClient().get<PushPublicKeyResponse>("/delivery/me/push-public-key"),
     enabled: hasSession,
     staleTime: 60_000,
   });
@@ -260,6 +271,9 @@ export function DeliveryAgentApp() {
   async function enableAlerts() {
     await enableSoundAlerts(alertAudioContext);
     setSoundAlertsEnabled(true);
+    await registerPushSubscription(pushPublicKeyQuery.data).catch((error: unknown) => {
+      notify(error instanceof Error ? error.message : "Unable to register Android push alerts.", "red");
+    });
     const notificationApi = getNotificationApi();
     if (!notificationApi) {
       setNotificationPermission("unsupported");
@@ -740,24 +754,31 @@ async function enableSoundAlerts(audioContextRef: AudioContextRef): Promise<void
     await context.resume();
   }
 
-  await playDeliveryAlert(audioContextRef, { preview: true });
+  await playDeliveryAlert(audioContextRef);
 }
 
 function isDeliveryAssignmentAlert(notification: AppNotification): boolean {
   return notification.type === "DELIVERY_ASSIGNED" || notification.title.toLowerCase().includes("delivery");
 }
 
-async function playDeliveryAlert(audioContextRef: AudioContextRef, options: { preview?: boolean } = {}): Promise<void> {
+async function playDeliveryAlert(audioContextRef: AudioContextRef): Promise<void> {
   const context = getAlertAudioContext(audioContextRef);
   if (context.state === "suspended") {
     await context.resume();
   }
 
+  vibrateDeliveryAlert();
   const now = context.currentTime;
-  const pattern = options.preview ? [0] : [0, 0.38, 0.76, 1.14, 1.52, 1.9];
+  const pattern = [0, 0.32, 0.64, 0.96, 1.28, 1.6, 1.92, 2.24, 2.56];
   for (const [index, offset] of pattern.entries()) {
-    const frequency = index % 2 === 0 ? 1040 : 780;
+    const frequency = index % 2 === 0 ? 1320 : 880;
     scheduleAlarmBeep(context, now + offset, frequency);
+  }
+}
+
+function vibrateDeliveryAlert(): void {
+  if ("vibrate" in navigator) {
+    navigator.vibrate([450, 120, 450, 120, 700]);
   }
 }
 
@@ -780,12 +801,12 @@ function scheduleAlarmBeep(context: AudioContext, startAt: number, frequency: nu
   oscillator.type = "square";
   oscillator.frequency.setValueAtTime(frequency, startAt);
   gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.42, startAt + 0.025);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.26);
+  gain.gain.exponentialRampToValueAtTime(0.9, startAt + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.24);
   oscillator.connect(gain);
   gain.connect(context.destination);
   oscillator.start(startAt);
-  oscillator.stop(startAt + 0.28);
+  oscillator.stop(startAt + 0.26);
 }
 
 function getNotificationApi(): typeof Notification | null {
@@ -813,6 +834,39 @@ function showBrowserNotification(notification: AppNotification): void {
   } catch {
     // Some mobile/PWA contexts expose Notification but reject direct construction.
   }
+}
+
+async function registerPushSubscription(pushConfig: PushPublicKeyResponse | undefined): Promise<void> {
+  if (!pushConfig?.configured || !pushConfig.publicKey) {
+    return;
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("This browser does not support background push alerts.");
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToArrayBuffer(pushConfig.publicKey),
+    });
+  }
+
+  await createAuthenticatedApiClient().post("/delivery/me/push-subscriptions", subscription.toJSON());
+}
+
+function base64UrlToArrayBuffer(value: string): ArrayBuffer {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(base64);
+  const buffer = new ArrayBuffer(raw.length);
+  const output = new Uint8Array(buffer);
+  for (let index = 0; index < raw.length; index += 1) {
+    output[index] = raw.charCodeAt(index);
+  }
+
+  return buffer;
 }
 
 function currentLocation(): Promise<{ latitude: number; longitude: number; accuracy?: number }> {

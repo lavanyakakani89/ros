@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 
 import { DeliveryRepository, type CreateDeliveryProofInput } from "./delivery.repository.js";
 import type { AssignDeliveryInput, CreateDeliveryInput, DeliveryListQuery, SyncInvoiceDeliveryInput, UpdateDeliveryStatusInput } from "./delivery.types.js";
+import { getWebPushPublicKey, isWebPushConfigured, sendWebPushNotification } from "./web-push.service.js";
 import { VerticalConfigRepository } from "../vertical-config/vertical-config.repository.js";
 import { queueWhatsappNotification } from "../whatsapp/whatsapp.notifications.js";
 import { moneyForWhatsapp, renderWhatsappMessageTemplate } from "../whatsapp/whatsapp.templates.js";
@@ -59,6 +60,39 @@ export class DeliveryService {
     if (result.count === 0) {
       throw new DeliveryError("Delivery user not found", 404);
     }
+
+    return { status: "ok" };
+  }
+
+  getPushPublicKey() {
+    return {
+      configured: isWebPushConfigured(),
+      publicKey: getWebPushPublicKey(),
+    };
+  }
+
+  async registerMyPushSubscription(
+    tenant: Tenant,
+    actor: DeliveryActor,
+    input: {
+      endpoint: string;
+      keys: {
+        p256dh: string;
+        auth: string;
+      };
+    },
+    userAgent?: string,
+  ) {
+    if (actor.role !== UserRole.DELIVERY) {
+      throw new DeliveryError("Only delivery users can register delivery push alerts", 403);
+    }
+
+    await this.repository.upsertWebPushSubscription(tenant.id, actor.userId, {
+      endpoint: input.endpoint,
+      p256dh: input.keys.p256dh,
+      auth: input.keys.auth,
+      ...(userAgent ? { userAgent } : {}),
+    });
 
     return { status: "ok" };
   }
@@ -244,6 +278,10 @@ export class DeliveryService {
       entityId: delivery.id,
     });
 
+    await this.notifyDeliveryAssignmentPush(tenant, delivery, userId).catch((error: unknown) => {
+      this.fastify.log.error({ error, tenantId: tenant.id, deliveryId: delivery.id, assignedTo: userId }, "Failed to send delivery push notification");
+    });
+
     const user = await this.fastify.prisma.user.findFirst({
       where: {
         id: userId,
@@ -269,6 +307,35 @@ export class DeliveryService {
         message,
       });
     }
+  }
+
+  private async notifyDeliveryAssignmentPush(
+    tenant: Tenant,
+    delivery: Awaited<ReturnType<DeliveryRepository["getDelivery"]>>,
+    userId: string,
+  ) {
+    if (!delivery || !isWebPushConfigured()) {
+      return;
+    }
+
+    const subscriptions = await this.repository.listWebPushSubscriptions(tenant.id, userId);
+    await Promise.all(subscriptions.map(async (subscription) => {
+      try {
+        await sendWebPushNotification(subscription, {
+          title: "New delivery assigned",
+          body: `${delivery.invoice.invoiceNumber} | ${delivery.customer.name} | ₹${delivery.invoice.grandTotal.toNumber().toFixed(2)}`,
+          url: "/delivery-app",
+          tag: `delivery-${delivery.id}`,
+        });
+      } catch (error) {
+        if (isGonePushSubscription(error)) {
+          await this.repository.deleteWebPushSubscription(subscription.endpoint);
+          return;
+        }
+
+        throw error;
+      }
+    }));
   }
 
   private async notifyWhatsappDeliveryStatus(
@@ -304,4 +371,13 @@ export class DeliveryService {
       jobName: `delivery-${label.replaceAll(" ", "-")}`,
     });
   }
+}
+
+function isGonePushSubscription(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const statusCode = "statusCode" in error ? Number((error as { statusCode?: unknown }).statusCode) : NaN;
+  return statusCode === 404 || statusCode === 410;
 }

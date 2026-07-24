@@ -16,6 +16,7 @@ import {
   syncInvoiceDeliverySchema,
   updateDeliveryStatusSchema,
   updateMyLocationSchema,
+  webPushSubscriptionSchema,
 } from "./delivery.schema.js";
 import { DeliveryError, DeliveryService, type DeliveryActor } from "./delivery.service.js";
 
@@ -44,6 +45,15 @@ export const deliveryRoutes: FastifyPluginCallback = (fastify, _options, done) =
 
   fastify.get("/api/delivery/me/depot", async (request, reply) => {
     return handleDelivery(reply, () => Promise.resolve(service.getMyDepot(request.tenant)));
+  });
+
+  fastify.get("/api/delivery/me/push-public-key", async (request, reply) => {
+    return handleDelivery(reply, () => Promise.resolve(service.getPushPublicKey()));
+  });
+
+  fastify.post("/api/delivery/me/push-subscriptions", async (request, reply) => {
+    const input = webPushSubscriptionSchema.parse(request.body);
+    return handleDelivery(reply, () => service.registerMyPushSubscription(request.tenant, getActor(request), input, request.headers["user-agent"]));
   });
 
   fastify.post("/api/delivery/me/location", async (request, reply) => {
