@@ -106,6 +106,7 @@ export function DeliveryAgentApp() {
   const [proofNotes, setProofNotes] = useState<Record<string, string>>({});
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(false);
+  const [pushAlertsEnabled, setPushAlertsEnabled] = useState(false);
   const notifiedIds = useRef(new Set<string>());
   const notificationsInitialized = useRef(false);
   const alertAudioContext = useRef<AudioContext | null>(null);
@@ -223,6 +224,7 @@ export function DeliveryAgentApp() {
   useEffect(() => {
     setNotificationPermission(getBrowserNotificationPermission());
     setSoundAlertsEnabled(readSoundAlertsEnabled());
+    void detectExistingPushSubscription().then(setPushAlertsEnabled).catch(() => setPushAlertsEnabled(false));
   }, []);
 
   useEffect(() => {
@@ -232,6 +234,9 @@ export function DeliveryAgentApp() {
   }, [currentConfigQuery.data?.tenant]);
 
   useEffect(() => {
+    if (!notificationsQuery.isSuccess) {
+      return;
+    }
     if (!notificationsInitialized.current) {
       for (const notification of unread) {
         notifiedIds.current.add(notification.id);
@@ -250,7 +255,7 @@ export function DeliveryAgentApp() {
         void playDeliveryAlert(alertAudioContext).catch(() => undefined);
       }
     }
-  }, [notificationPermission, soundAlertsEnabled, unread]);
+  }, [notificationPermission, notificationsQuery.isSuccess, soundAlertsEnabled, unread]);
 
   useEffect(() => {
     if (!hasSession) return;
@@ -271,9 +276,6 @@ export function DeliveryAgentApp() {
   async function enableAlerts() {
     await enableSoundAlerts(alertAudioContext);
     setSoundAlertsEnabled(true);
-    await registerPushSubscription(pushPublicKeyQuery.data).catch((error: unknown) => {
-      notify(error instanceof Error ? error.message : "Unable to register Android push alerts.", "red");
-    });
     const notificationApi = getNotificationApi();
     if (!notificationApi) {
       setNotificationPermission("unsupported");
@@ -285,7 +287,18 @@ export function DeliveryAgentApp() {
       const permission = await notificationApi.requestPermission();
       setNotificationPermission(permission);
       if (permission === "granted") {
-        notify("Alerts enabled with ringtone.");
+        const pushRegistered = await registerPushSubscription(pushPublicKeyQuery.data).catch((error: unknown) => {
+          notify(error instanceof Error ? error.message : "Unable to register Android push alerts.", "red");
+          return false;
+        });
+        setPushAlertsEnabled(pushRegistered);
+        if (pushRegistered) {
+          notify("Alerts enabled with ringtone and background notifications.");
+        } else if (pushPublicKeyQuery.data?.configured) {
+          notify("Ringtone enabled, but background notifications could not be registered.", "red");
+        } else {
+          notify("Ringtone enabled. Background notifications are not configured on the server yet.", "red");
+        }
       } else if (permission === "denied") {
         notify("Ringtone enabled. Browser alerts are blocked in this browser.", "red");
       }
@@ -347,11 +360,11 @@ export function DeliveryAgentApp() {
           {depotMapUrl ? (
             <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800" href={depotMapUrl} target="_blank" rel="noreferrer">
               <MapPin className="size-4" aria-hidden="true" />
-              Depot
+              Shop
             </a>
           ) : null}
           <button className={`h-9 rounded-md border px-3 text-xs font-semibold ${soundAlertsEnabled ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-700"}`} onClick={() => void enableAlerts()}>
-            Alerts: {soundAlertsEnabled ? "Sound on" : notificationPermission}
+            Alerts: {alertStatusLabel(soundAlertsEnabled, pushAlertsEnabled, notificationPermission, pushPublicKeyQuery.data)}
           </button>
         </div>
         {message ? (
@@ -836,9 +849,9 @@ function showBrowserNotification(notification: AppNotification): void {
   }
 }
 
-async function registerPushSubscription(pushConfig: PushPublicKeyResponse | undefined): Promise<void> {
+async function registerPushSubscription(pushConfig: PushPublicKeyResponse | undefined): Promise<boolean> {
   if (!pushConfig?.configured || !pushConfig.publicKey) {
-    return;
+    return false;
   }
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     throw new Error("This browser does not support background push alerts.");
@@ -854,6 +867,7 @@ async function registerPushSubscription(pushConfig: PushPublicKeyResponse | unde
   }
 
   await createAuthenticatedApiClient().post("/delivery/me/push-subscriptions", subscription.toJSON());
+  return true;
 }
 
 function base64UrlToArrayBuffer(value: string): ArrayBuffer {
@@ -867,6 +881,40 @@ function base64UrlToArrayBuffer(value: string): ArrayBuffer {
   }
 
   return buffer;
+}
+
+async function detectExistingPushSubscription(): Promise<boolean> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return false;
+  }
+
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.getSubscription();
+  return Boolean(subscription);
+}
+
+function alertStatusLabel(
+  soundAlertsEnabled: boolean,
+  pushAlertsEnabled: boolean,
+  notificationPermission: NotificationPermission | "unsupported",
+  pushConfig: PushPublicKeyResponse | undefined,
+): string {
+  if (soundAlertsEnabled && pushAlertsEnabled) {
+    return "Sound + push";
+  }
+  if (soundAlertsEnabled && pushConfig?.configured) {
+    return notificationPermission === "granted" ? "Sound only" : "Sound only";
+  }
+  if (soundAlertsEnabled) {
+    return "Sound only";
+  }
+  if (notificationPermission === "granted") {
+    return pushConfig?.configured ? "Tap to enable" : "Push unavailable";
+  }
+  if (notificationPermission === "denied") {
+    return "Blocked";
+  }
+  return "Tap to enable";
 }
 
 function currentLocation(): Promise<{ latitude: number; longitude: number; accuracy?: number }> {
